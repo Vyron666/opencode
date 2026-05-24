@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // 中文/English: runtime-shell/web 仅用于前端构建（Vite + React）。
+    // 放置独立 tsconfig 以避免向上查找仓库根 tsconfig 导致的 `@tsconfig/bun` 缺失告警。
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

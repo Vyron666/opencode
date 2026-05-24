@@ -1,0 +1,17 @@
+.git
+.github
+!.github
+!.github/TEAM_MEMBERS
+.husky
+.vscode
+.zed
+node_modules
+packages/*/node_modules
+packages/console/*/node_modules
+dist
+packages/*/dist
+!packages/opencode/dist
+!packages/opencode/dist/**
+docker-data
+.DS_Store
+Thumbs.db

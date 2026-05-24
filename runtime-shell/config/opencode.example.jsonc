@@ -5,31 +5,25 @@
       "name": "DeepSeek",
       "api": "@ai-sdk/openai-compatible",
       "options": {
-        "apiKey": "sk-e09ab88534fb45c7950c7366dab34677",
+        "apiKey": "",
         "baseURL": "https://api.deepseek.com/v1"
       },
       "models": {
         "deepseek-v4-flash": {
           "name": "DeepSeek V4 Flash",
-          "api": "deepseek-v4-flash",
-          "cost": { "input": 0.27, "output": 1.10, "cacheRead": 0.07 }
+          "api": "deepseek-v4-flash"
         },
         "deepseek-v4-pro": {
           "name": "DeepSeek V4 Pro",
-          "api": "deepseek-v4-pro",
-          "cost": { "input": 0.55, "output": 2.19, "cacheRead": 0.14 }
+          "api": "deepseek-v4-pro"
         }
       }
     }
   },
-  "model": "deepseek/deepseek-v4-flash",
-  "permission": {},
-  "mcp": {},
-  "tools": {
-    "github-triage": false,
-    "github-pr-search": false
-  },
   "enabled_providers": [
     "deepseek"
-  ]
+  ],
+  "model": "deepseek/deepseek-v4-flash",
+  "permission": {},
+  "mcp": {}
 }

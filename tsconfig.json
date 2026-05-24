@@ -1,5 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@tsconfig/bun/tsconfig.json",
+  // 说明(中文): 使用本地基座配置，避免某些工具在仓库根目录解析 extends 包名时找不到 node_modules 产生告警。
+  // Note(English): Use local base config to prevent tooling warnings when resolving package-based extends at repo root.
+  "extends": "./tsconfig.bun.json",
   "compilerOptions": {}
 }

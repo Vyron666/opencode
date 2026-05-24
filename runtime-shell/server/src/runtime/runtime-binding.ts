@@ -1,0 +1,186 @@
+﻿import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
+import { AcpProcessClient } from "../acp-process-client"
+import { getCustomModels } from "../config"
+import { createLogger } from "../log"
+import { store } from "../store"
+import type { BusinessSession } from "../types"
+import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
+import { createEvent, persistAndFanout, nextId } from "./runtime-events"
+import {
+  addPendingPermission,
+  addPendingQuestion,
+  clearPendingPermissionsBySession,
+  clearPendingQuestionsBySession,
+  consumeClosingSession,
+  deletePendingPermission,
+  deletePendingQuestion,
+  deleteRuntime,
+  setRuntime,
+} from "./runtime-registry"
+import type { RuntimeEntry, SessionBootstrap } from "./runtime-types"
+
+const log = createLogger("runtime")
+const UPSTREAM_QUIET_WINDOW_MS = 500
+
+export async function bindRuntime(
+  session: BusinessSession,
+  client: AcpProcessClient,
+  response: SessionBootstrap,
+  kind: "opened" | "loaded" | "resumed" | "forked",
+) {
+  const customModels = await getCustomModels()
+  if (customModels.length) {
+    log.info("custom models loaded", {
+      count: customModels.length,
+      models: customModels.map((model) => model.modelId),
+    })
+  }
+
+  const updated = await store.updateSession(session.id, {
+    binding: {
+      acpSessionId: response.sessionId,
+      runtimeKey: nextId("runtime"),
+      openedAt: new Date().toISOString(),
+      transport: "real",
+    },
+    status: "active",
+    capabilityState: {
+      ...session.capabilityState,
+      ...(await normalizeBootstrap(session, response)),
+    },
+  })
+  if (!updated) {
+    await client.close()
+    throw new Error("failed to bind session")
+  }
+
+  const runtime: RuntimeEntry = { client, transport: "real" }
+  setRuntime(session.id, runtime)
+  client.onExit((code, signal) => {
+    deleteRuntime(session.id)
+    clearPendingPermissionsBySession(session.id)
+    clearPendingQuestionsBySession(session.id)
+    if (consumeClosingSession(session.id)) return
+    void store
+      .updateSession(session.id, { status: "failed" })
+      .then(() =>
+        persistAndFanout(
+          createEvent(
+            updated,
+            "worker_disconnected",
+            {
+              code,
+              signal,
+              message: "ACP runtime exited unexpectedly",
+            },
+            response.sessionId,
+          ),
+        ),
+      )
+  })
+
+  client.onPermissionRequested((permission) => {
+    addPendingPermission(permission, {
+      resolve: ({ approved, optionId }) => {
+        const ok = approved && optionId ? client.resolvePermission(permission.requestId, optionId) : client.rejectPermission(permission.requestId)
+        if (!ok) return
+        deletePendingPermission(permission.requestId)
+      },
+    })
+  })
+
+  client.onQuestionRequested((question) => {
+    addPendingQuestion(question, {
+      resolve: (res) => {
+        const response: CreateElicitationResponse =
+          res.action === "accept"
+            ? { action: "accept", content: res.content ?? {} }
+            : res.action === "decline"
+              ? { action: "decline" }
+              : { action: "cancel" }
+        const ok = client.resolveQuestion(question.requestId, response)
+        if (!ok) return
+        deletePendingQuestion(question.requestId)
+      },
+    })
+  })
+
+  await persistAndFanout(
+    createEvent(
+      updated,
+      "session_opened",
+      {
+        transport: "real",
+        phase: kind,
+        models: response.models ?? null,
+        modes: response.modes ?? null,
+        configOptions: response.configOptions ?? [],
+      },
+      response.sessionId,
+    ),
+  )
+  return runtime
+}
+
+export function createClient(session: BusinessSession) {
+  let pendingEventWrite = Promise.resolve()
+  let upstreamEventVersion = 0
+  let lastUpstreamEventAt = 0
+
+  const waitForUpstreamQuiet = async () => {
+    let observedVersion = -1
+
+    while (true) {
+      await pendingEventWrite
+      const quietForMs = lastUpstreamEventAt ? Date.now() - lastUpstreamEventAt : Number.POSITIVE_INFINITY
+      if (observedVersion === upstreamEventVersion && quietForMs >= UPSTREAM_QUIET_WINDOW_MS) return
+      observedVersion = upstreamEventVersion
+      const waitMs = Math.max(UPSTREAM_QUIET_WINDOW_MS - quietForMs, 0)
+      if (waitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs))
+      }
+    }
+  }
+
+  return new AcpProcessClient(
+    {
+      cwd: session.workspacePath,
+      businessSessionId: session.id,
+      workerId: session.workerId,
+      onEvent: (event) => {
+        upstreamEventVersion += 1
+        lastUpstreamEventAt = Date.now()
+        ////////////// runtime-shell customization start //////////////
+        // 中文/English: serialize upstream event persistence so completion
+        // is emitted only after every earlier chunk for the same turn is flushed.
+        const nextWrite = pendingEventWrite.then(async () => {
+          if (event.eventType === "session_info_update") {
+            const upstreamError = extractUpstreamError(event.payload)
+            if (upstreamError) {
+              await persistAndFanout({
+                ...event,
+                eventType: "session_error",
+                payload: { error: upstreamError },
+              })
+              return
+            }
+          }
+          await persistAndFanout(event)
+        })
+        pendingEventWrite = nextWrite.then(
+          () => undefined,
+          () => undefined,
+        )
+        return nextWrite
+        ////////////// runtime-shell customization end //////////////
+      },
+    },
+    () => {
+      ////////////// runtime-shell customization start //////////////
+      // 中文/English: wait for the persisted queue first, then require one
+      // quiet window so prompt completion does not outrun late upstream chunks.
+      return waitForUpstreamQuiet()
+      ////////////// runtime-shell customization end //////////////
+    },
+  )
+}

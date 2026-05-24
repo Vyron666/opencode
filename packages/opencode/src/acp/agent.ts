@@ -70,7 +70,7 @@ async function getContextLimit(
 ): Promise<number | null> {
   const providers = await sdk.config
     .providers({ directory })
-    .then((x) => x.data?.providers ?? [])
+    .then((x) => x.data.providers)
     .catch((error) => {
       log.error("failed to get providers for context limit", { error })
       return []
@@ -501,6 +501,33 @@ export class Agent implements ACPAgent {
         }
         return
       }
+
+      //////////////
+      case "session.error": {
+        const props = event.properties
+        const session = props.sessionID ? this.sessionManager.tryGet(props.sessionID) : undefined
+        if (!session || !props.error) return
+
+        // 中文/English: forward the upstream ACP session error as-is via session info metadata.
+        // We do not fabricate assistant text; runtime-shell will render this upstream error directly.
+        await this.connection
+          .sessionUpdate({
+            sessionId: session.id,
+            update: {
+              sessionUpdate: "session_info_update",
+              _meta: {
+                opencode: {
+                  upstreamError: props.error,
+                },
+              },
+            },
+          })
+          .catch((error) => {
+            log.error("failed to send session error to ACP", { error })
+          })
+        return
+      }
+      //////////////
     }
   }
 
@@ -1107,7 +1134,9 @@ export class Agent implements ACPAgent {
     const sessionId = params.sessionId
     const model = this.sessionManager.get(sessionId).model ?? (await defaultModel(this.config, directory))
 
-    const providers = await this.sdk.config.providers({ directory }).then((x) => x.data!.providers)
+    const providers = await this.sdk.config
+      .providers({ directory }, { throwOnError: true })
+      .then((x) => x.data.providers)
     const entries = sortProvidersByName(providers)
     const availableVariants = modelVariantsFromProviders(entries, model)
     const currentVariant = this.sessionManager.getVariant(sessionId)
@@ -1220,7 +1249,7 @@ export class Agent implements ACPAgent {
     const session = this.sessionManager.get(params.sessionId)
     const providers = await this.sdk.config
       .providers({ directory: session.cwd }, { throwOnError: true })
-      .then((x) => x.data!.providers)
+      .then((x) => x.data.providers)
 
     const selection = parseModelSelection(params.modelId, providers)
     this.sessionManager.setModel(session.id, selection.model)
@@ -1269,7 +1298,7 @@ export class Agent implements ACPAgent {
     const session = this.sessionManager.get(params.sessionId)
     const providers = await this.sdk.config
       .providers({ directory: session.cwd }, { throwOnError: true })
-      .then((x) => x.data!.providers)
+      .then((x) => x.data.providers)
     const entries = sortProvidersByName(providers)
 
     if (params.configId === "model") {
@@ -1681,7 +1710,7 @@ async function defaultModel(config: ACPConfig, cwd?: string): Promise<{ provider
 
   const providers = await sdk.config
     .providers({ directory }, { throwOnError: true })
-    .then((x) => x.data?.providers ?? [])
+    .then((x) => x.data.providers)
     .catch((error) => {
       log.error("failed to list providers for default model", { error })
       return []

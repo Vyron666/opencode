@@ -1,0 +1,26 @@
+{
+  // 说明(中文): 这是从 @tsconfig/bun/tsconfig.json 复制出来的本地基座配置，用于避免在 monorepo 根目录解析 package 名称时找不到 node_modules 导致的告警。
+  // Note(English): Local copy of @tsconfig/bun/tsconfig.json to avoid base-config resolution warnings when tooling reads the repo-root tsconfig.
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "docs": "https://bun.com/docs/typescript",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  }
+}

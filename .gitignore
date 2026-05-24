@@ -6,6 +6,8 @@ node_modules
 .env.local
 .idea
 .vscode
+.zed
+.workbuddy
 .codex
 *~
 playground
@@ -23,6 +25,14 @@ a.out
 target
 .scripts
 .direnv/
+docker-data/*
+!docker-data/README.md
+!docker-data/config/
+!docker-data/opencode/
+!docker-data/config/.gitignore
+!docker-data/config/.gitkeep
+!docker-data/opencode/.gitignore
+!docker-data/opencode/.gitkeep
 
 # Local dev files
 opencode-dev
@@ -30,3 +40,4 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+log/
