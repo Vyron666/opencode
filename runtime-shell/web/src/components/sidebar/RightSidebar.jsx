@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { CreateSessionPanel, ForkSessionPanel } from './create-panels'
 import { EventStreamPanel, PlanPanel } from './event-panels'
 import { MetricsPanel, PermissionPanel, QuestionPanel, SessionDetailPanel } from './inspect-panels'
@@ -49,39 +49,52 @@ export default function RightSidebar() {
           ))}
         </div>
 
-        {activeTab === 'create' && (
-          <div className="grid gap-3 animate-fade-in">
-            <CreateSessionPanel />
-            <ForkSessionPanel />
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="grid gap-3 animate-fade-in">
-            <ModeSettingPanel />
-            <ModelSettingPanel />
-            <ConfigSettingPanel />
-            <ProviderConfigPanel />
-            <CustomModelsPanel />
-          </div>
-        )}
-
-        {activeTab === 'inspect' && (
-          <div className="grid gap-4 animate-fade-in">
-            <MetricsPanel />
-            <PermissionPanel />
-            <QuestionPanel />
-            <SessionDetailPanel />
-          </div>
-        )}
-
-        {activeTab === 'events' && (
-          <div className="grid gap-4 animate-fade-in">
-            <PlanPanel />
-            <EventStreamPanel />
-          </div>
-        )}
+        {activeTab === 'create' && <CreateTabContent />}
+        {activeTab === 'settings' && <SettingsTabContent />}
+        {activeTab === 'inspect' && <InspectTabContent />}
+        {activeTab === 'events' && <EventsTabContent />}
       </div>
     </aside>
   )
 }
+
+const CreateTabContent = memo(function CreateTabContent() {
+  return (
+    <div className="grid gap-3 animate-fade-in">
+      <CreateSessionPanel />
+      <ForkSessionPanel />
+    </div>
+  )
+})
+
+const SettingsTabContent = memo(function SettingsTabContent() {
+  return (
+    <div className="grid gap-3 animate-fade-in">
+      <ModeSettingPanel />
+      <ModelSettingPanel />
+      <ConfigSettingPanel />
+      <ProviderConfigPanel />
+      <CustomModelsPanel />
+    </div>
+  )
+})
+
+const InspectTabContent = memo(function InspectTabContent() {
+  return (
+    <div className="grid gap-4 animate-fade-in">
+      <MetricsPanel />
+      <PermissionPanel />
+      <QuestionPanel />
+      <SessionDetailPanel />
+    </div>
+  )
+})
+
+const EventsTabContent = memo(function EventsTabContent() {
+  return (
+    <div className="grid gap-4 animate-fade-in">
+      <PlanPanel />
+      <EventStreamPanel />
+    </div>
+  )
+})

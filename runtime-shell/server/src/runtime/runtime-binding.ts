@@ -20,7 +20,7 @@ import {
 import type { RuntimeEntry, SessionBootstrap } from "./runtime-types"
 
 const log = createLogger("runtime")
-const UPSTREAM_QUIET_WINDOW_MS = 500
+const UPSTREAM_QUIET_WINDOW_MS = 120
 
 export async function bindRuntime(
   session: BusinessSession,
@@ -123,7 +123,6 @@ export async function bindRuntime(
 }
 
 export function createClient(session: BusinessSession) {
-  let pendingEventWrite = Promise.resolve()
   let upstreamEventVersion = 0
   let lastUpstreamEventAt = 0
 
@@ -131,7 +130,6 @@ export function createClient(session: BusinessSession) {
     let observedVersion = -1
 
     while (true) {
-      await pendingEventWrite
       const quietForMs = lastUpstreamEventAt ? Date.now() - lastUpstreamEventAt : Number.POSITIVE_INFINITY
       if (observedVersion === upstreamEventVersion && quietForMs >= UPSTREAM_QUIET_WINDOW_MS) return
       observedVersion = upstreamEventVersion
@@ -151,27 +149,24 @@ export function createClient(session: BusinessSession) {
         upstreamEventVersion += 1
         lastUpstreamEventAt = Date.now()
         ////////////// runtime-shell customization start //////////////
-        // 中文/English: serialize upstream event persistence so completion
-        // is emitted only after every earlier chunk for the same turn is flushed.
-        const nextWrite = pendingEventWrite.then(async () => {
-          if (event.eventType === "session_info_update") {
-            const upstreamError = extractUpstreamError(event.payload)
-            if (upstreamError) {
-              await persistAndFanout({
+        // 中文/English: publish and stage each upstream chunk immediately so SSE
+        // does not wait for the previous event's disk write before seeing the next chunk.
+        // `flushPendingEvents()` still waits for the full persistence queue later.
+        const upstreamError =
+          event.eventType === "session_info_update"
+            ? extractUpstreamError(event.payload)
+            : undefined
+        const nextWrite = persistAndFanout(
+          upstreamError
+            ? {
                 ...event,
                 eventType: "session_error",
                 payload: { error: upstreamError },
-              })
-              return
-            }
-          }
-          await persistAndFanout(event)
-        })
-        pendingEventWrite = nextWrite.then(
-          () => undefined,
-          () => undefined,
+              }
+            : event,
         )
-        return nextWrite
+        void nextWrite
+        return
         ////////////// runtime-shell customization end //////////////
       },
     },

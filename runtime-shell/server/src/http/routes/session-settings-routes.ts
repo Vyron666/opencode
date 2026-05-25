@@ -59,7 +59,7 @@ export function registerSessionSettingsRoutes(app: Hono) {
       })
     }
 
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: user.tenantId,
       organizationId: user.organizationId,
       userId: user.id,
@@ -71,6 +71,11 @@ export function registerSessionSettingsRoutes(app: Hono) {
         reloadedSessionCount: affectedSessions.length,
       },
     })
+    ////////////// runtime-shell customization start //////////////
+    // 中文/English: provider save should return as soon as runtime reload work
+    // is done, without waiting on audit persistence.
+    void auditLogTask
+    ////////////// runtime-shell customization end //////////////
 
     return c.json(
       jsonOk(

@@ -59,7 +59,7 @@ export function registerSessionCoreRoutes(app: Hono) {
       user,
       workerId: worker.id,
     })
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: user.tenantId,
       organizationId: user.organizationId,
       userId: user.id,
@@ -74,6 +74,11 @@ export function registerSessionCoreRoutes(app: Hono) {
         workspacePath: workspace.rootPath,
       },
     })
+    ////////////// runtime-shell customization start //////////////
+    // 中文/English: session creation should return immediately after the session
+    // row exists, without waiting behind the shared disk write queue for audit persistence.
+    void auditLogTask
+    ////////////// runtime-shell customization end //////////////
     return c.json(jsonOk(sessionSummary(session), reqId))
   })
 
@@ -113,7 +118,7 @@ export function registerSessionCoreRoutes(app: Hono) {
     const closed = await store.updateSession(result.session.id, {
       status: "completed",
     })
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: result.session.tenantId,
       organizationId: result.session.organizationId,
       userId: user.id,
@@ -126,6 +131,9 @@ export function registerSessionCoreRoutes(app: Hono) {
         closedReal,
       },
     })
+    // 中文/English: closing the session should update the UI immediately;
+    // audit durability continues on the background write queue.
+    void auditLogTask
     return c.json(jsonOk(sessionSummary(closed || result.session), reqId))
   })
 
@@ -141,7 +149,7 @@ export function registerSessionCoreRoutes(app: Hono) {
     if ("response" in result) return result.response
     const opened = await openSessionWithFallback(result.session, store.getWorkspace(result.session.workspaceId))
     if (!opened) return c.json(jsonError("failed to open session", 500, reqId), 500)
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: opened.tenantId,
       organizationId: opened.organizationId,
       userId: user.id,
@@ -152,6 +160,8 @@ export function registerSessionCoreRoutes(app: Hono) {
       resourceId: opened.id,
       detail: {},
     })
+    // 中文/English: opening should not stall the frontend on audit persistence.
+    void auditLogTask
     return c.json(jsonOk(sessionSummary(opened), reqId))
   })
 }

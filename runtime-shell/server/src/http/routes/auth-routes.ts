@@ -19,7 +19,7 @@ export function registerAuthRoutes(app: Hono) {
       return c.json(jsonError("invalid username or password", 401, reqId), 401)
     }
     const token = await createSession(user)
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: user.tenantId,
       organizationId: user.organizationId,
       userId: user.id,
@@ -30,6 +30,11 @@ export function registerAuthRoutes(app: Hono) {
         username: user.username,
       },
     })
+    ////////////// runtime-shell customization start //////////////
+    // 中文/English: login should return the session cookie immediately.
+    // Audit persistence continues on the shared write queue in the background.
+    void auditLogTask
+    ////////////// runtime-shell customization end //////////////
     setCookie(c, Config.sessionCookie, token, {
       httpOnly: true,
       sameSite: "lax",
@@ -52,7 +57,7 @@ export function registerAuthRoutes(app: Hono) {
     const token = getCookie(c, Config.sessionCookie)
     await clearSession(token)
     if (user) {
-      await store.appendAuditLog({
+      const auditLogTask = store.appendAuditLog({
         tenantId: user.tenantId,
         organizationId: user.organizationId,
         userId: user.id,
@@ -63,6 +68,9 @@ export function registerAuthRoutes(app: Hono) {
           username: user.username,
         },
       })
+      // 中文/English: logout should clear the cookie immediately instead of
+      // waiting on audit durability.
+      void auditLogTask
     }
     deleteCookie(c, Config.sessionCookie, { path: "/" })
     return c.json(jsonOk({ success: true }, reqId))

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
+import { readErrorMessage } from '../../store/actions/interaction-action-support'
 import {
   Field,
   inputClassName,
@@ -14,6 +15,7 @@ import {
 export function ModeSettingPanel() {
   const updateMode = useStore((state) => state.updateMode)
   const currentSessionId = useStore((state) => state.currentSessionId)
+  const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
   const [selected, setSelected] = useState('')
 
@@ -34,8 +36,8 @@ export function ModeSettingPanel() {
       <Field label="模式">
         <Select value={selected} onChange={setSelected} options={capabilities.modes} emptyLabel="当前会话没有模式选项" />
       </Field>
-      <button type="submit" disabled={!selected || !currentSessionId} className={secondaryButtonClassName}>
-        切换模式
+      <button type="submit" disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction)} className={secondaryButtonClassName}>
+        {pendingSettingsAction === 'mode' ? '切换中...' : '切换模式'}
       </button>
     </form>
   )
@@ -44,6 +46,7 @@ export function ModeSettingPanel() {
 export function ModelSettingPanel() {
   const updateModel = useStore((state) => state.updateModel)
   const currentSessionId = useStore((state) => state.currentSessionId)
+  const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
   const [selected, setSelected] = useState('')
 
@@ -63,8 +66,8 @@ export function ModelSettingPanel() {
       <Field label="模型">
         <Select value={selected} onChange={setSelected} options={capabilities.models} emptyLabel="当前会话没有模型选项" />
       </Field>
-      <button type="submit" disabled={!selected || !currentSessionId} className={secondaryButtonClassName}>
-        切换模型
+      <button type="submit" disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction)} className={secondaryButtonClassName}>
+        {pendingSettingsAction === 'model' ? '切换中...' : '切换模型'}
       </button>
     </form>
   )
@@ -73,6 +76,7 @@ export function ModelSettingPanel() {
 export function ConfigSettingPanel() {
   const updateConfig = useStore((state) => state.updateConfig)
   const currentSessionId = useStore((state) => state.currentSessionId)
+  const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
   const configOptions = capabilities.configOptions || []
   const userConfigOptions = useMemo(() => configOptions.filter((item) => item.id !== 'mode' && item.id !== 'model'), [configOptions])
@@ -120,8 +124,8 @@ export function ConfigSettingPanel() {
         )}
       </Field>
       {selectedConfig?.description && <div className="text-[11px] text-[var(--text-muted)] -mt-1">{selectedConfig.description}</div>}
-      <button type="submit" disabled={!configId || !currentSessionId} className={secondaryButtonClassName}>
-        更新配置
+      <button type="submit" disabled={!configId || !currentSessionId || Boolean(pendingSettingsAction)} className={secondaryButtonClassName}>
+        {pendingSettingsAction === 'config' ? '更新中...' : '更新配置'}
       </button>
     </form>
   )
@@ -205,6 +209,9 @@ export function ProviderConfigPanel() {
   const disconnectSSE = useStore((state) => state.disconnectSSE)
   const updateCapability = useStore((state) => state.updateCapability)
   const setFlash = useStore((state) => state.setFlash)
+  const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
+  const pendingSessionAction = useStore((state) => state.pendingSessionAction)
+  const sessionSelectionVersion = useStore((state) => state.sessionSelectionVersion)
   const [expanded, setExpanded] = useState(false)
   const [providerId, setProviderId] = useState('deepseek')
   const [providerName, setProviderName] = useState('DeepSeek')
@@ -254,7 +261,8 @@ export function ProviderConfigPanel() {
               return
             }
 
-            await api.providerConfig.save({
+            useStore.setState({ pendingSettingsAction: 'provider' })
+            const saveResult = await api.providerConfig.save({
               providerId: providerId.trim(),
               name: providerName.trim(),
               npm: providerNpm.trim() || undefined,
@@ -263,7 +271,15 @@ export function ProviderConfigPanel() {
               apiKey: apiKey.trim() || undefined,
               defaultModel: defaultModel.trim(),
               models: cleanedModels,
-            })
+            }).then(
+              (value) => ({ ok: true, value }),
+              (error) => ({ ok: false, error }),
+            )
+            if (!saveResult.ok) {
+              useStore.setState({ pendingSettingsAction: '' })
+              setFlash(`Provider 配置保存失败: ${readErrorMessage(saveResult.error)}`)
+              throw saveResult.error
+            }
             setApiKey('')
             setFlash('Provider 配置已保存，正在刷新会话')
             disconnectSSE()
@@ -278,10 +294,32 @@ export function ProviderConfigPanel() {
               sessionInfo: null,
             })
             if (currentSessionId) {
-              await activateSession()
+              const activationResult =
+                useStore.getState().currentSessionId === currentSessionId &&
+                useStore.getState().sessionSelectionVersion === sessionSelectionVersion
+                  ? await activateSession().then(
+                      () => ({ ok: true }),
+                      (error) => ({ ok: false, error }),
+                    )
+                  : { ok: true }
+              if (!activationResult.ok) {
+                useStore.setState({ pendingSettingsAction: '' })
+                setFlash(`刷新会话失败: ${readErrorMessage(activationResult.error)}`)
+                throw activationResult.error
+              }
+              useStore.setState({ pendingSettingsAction: '' })
               return
             }
-            await loadSessionDetail()
+            const detailResult = await loadSessionDetail().then(
+              () => ({ ok: true }),
+              (error) => ({ ok: false, error }),
+            )
+            if (!detailResult.ok) {
+              useStore.setState({ pendingSettingsAction: '' })
+              setFlash(`刷新会话失败: ${readErrorMessage(detailResult.error)}`)
+              throw detailResult.error
+            }
+            useStore.setState({ pendingSettingsAction: '' })
           }}
           className="grid gap-2.5 animate-fade-in"
         >
@@ -324,8 +362,8 @@ export function ProviderConfigPanel() {
             </button>
           </div>
 
-          <button type="submit" className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow">
-            保存 Provider 配置
+          <button type="submit" disabled={Boolean(pendingSettingsAction) || Boolean(pendingSessionAction)} className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed">
+            {pendingSettingsAction === 'provider' ? '保存中...' : '保存 Provider 配置'}
           </button>
         </form>
       )}

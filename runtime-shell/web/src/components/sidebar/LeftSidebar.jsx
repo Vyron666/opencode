@@ -13,6 +13,7 @@ export default function LeftSidebar() {
   const closeSession = useStore((state) => state.closeSession)
   const loadSessions = useStore((state) => state.loadSessions)
   const setCurrentSession = useStore((state) => state.setCurrentSession)
+  const pendingSessionAction = useStore((state) => state.pendingSessionAction)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
 
@@ -68,24 +69,26 @@ export default function LeftSidebar() {
           <button
             onClick={() => openSession()}
             aria-label="打开当前选中会话"
+            disabled={Boolean(pendingSessionAction)}
             className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow focus-visible:ring-2 focus-visible:ring-brand"
           >
-            打开当前会话
+            {pendingSessionAction === 'open' ? '打开中...' : '打开当前会话'}
           </button>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => loadHistory()} aria-label="加载会话历史" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
-              加载历史
+            <button onClick={() => loadHistory()} aria-label="加载会话历史" disabled={Boolean(pendingSessionAction)} className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed">
+              {pendingSessionAction === 'load' ? '加载中...' : '加载历史'}
             </button>
-            <button onClick={() => resumeSession()} aria-label="恢复会话" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
-              恢复会话
+            <button onClick={() => resumeSession()} aria-label="恢复会话" disabled={Boolean(pendingSessionAction)} className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed">
+              {pendingSessionAction === 'resume' ? '恢复中...' : '恢复会话'}
             </button>
           </div>
           <button
             onClick={() => setConfirmClose(true)}
             aria-label="关闭当前会话"
-            className="text-xs px-3 py-1.5 rounded-[8px] bg-danger/10 text-[#e88a7a] border border-danger/20 hover:bg-danger/20 transition-colors focus-visible:ring-2 focus-visible:ring-danger"
+            disabled={Boolean(pendingSessionAction)}
+            className="text-xs px-3 py-1.5 rounded-[8px] bg-danger/10 text-[#e88a7a] border border-danger/20 hover:bg-danger/20 transition-colors focus-visible:ring-2 focus-visible:ring-danger disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            关闭当前会话
+            {pendingSessionAction === 'close' ? '关闭中...' : '关闭当前会话'}
           </button>
         </div>
       </div>
@@ -96,7 +99,7 @@ export default function LeftSidebar() {
             <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Sessions</span>
             <h3 className="text-sm font-bold mt-0.5">最近活动</h3>
           </div>
-          <button onClick={() => loadSessions()} aria-label="刷新会话列表" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
+          <button onClick={() => loadSessions()} aria-label="刷新会话列表" disabled={Boolean(pendingSessionAction)} className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed">
             刷新
           </button>
         </div>
@@ -120,13 +123,14 @@ export default function LeftSidebar() {
               <button
                 key={session.id}
                 onClick={() => setCurrentSession(session.id)}
+                disabled={Boolean(pendingSessionAction)}
                 aria-label={`选择会话: ${session.title}`}
                 aria-current={isActive ? 'true' : undefined}
                 className={`w-full text-left p-3 rounded-[14px] border text-sm transition-all ${
                   isActive
                     ? 'border-brand bg-brand/10 shadow-glow'
                     : 'border-[var(--line)] bg-black/30 hover:bg-black/50 hover:border-[var(--line-strong)]'
-                }`}
+                } disabled:opacity-60 disabled:cursor-not-allowed`}
               >
                 <div className="font-semibold text-sm">{session.title}</div>
                 <div className="mt-1.5 text-xs text-[var(--text-muted)] flex items-center gap-1.5">

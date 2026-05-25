@@ -9,19 +9,33 @@ export function PlanPanel() {
     () => [...eventBuffer].reverse().find((event) => event.eventType === 'plan'),
     [eventBuffer, eventBufferVersion],
   )
+  const entries = useMemo(() => readPlanEntries(lastPlan?.payload), [lastPlan])
 
   return (
     <div className="pb-3 border-b border-[var(--line)]">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div>
           <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Plan / Usage</span>
-          <h3 className="text-sm font-bold mt-0.5">运行输出</h3>
+          <h3 className="text-sm font-bold mt-0.5">运行摘要</h3>
         </div>
       </div>
 
-      <pre className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] font-mono text-xs leading-relaxed text-[var(--text-dim)] whitespace-pre-wrap break-words overflow-auto min-h-[100px] max-h-[160px] mb-2">
-        {lastPlan ? JSON.stringify(lastPlan.payload, null, 2) : '暂无 Plan 输出'}
-      </pre>
+      <div className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] text-xs leading-relaxed text-[var(--text-dim)] min-h-[100px] max-h-[180px] overflow-auto mb-2">
+        {entries.length > 0 ? (
+          <div className="grid gap-1.5">
+            {entries.map((entry, index) => (
+              <div key={`${entry.text}-${index}`} className="flex items-start gap-2">
+                <span className={`w-5 shrink-0 font-bold ${entry.status === 'in_progress' ? 'text-brand' : entry.status === 'completed' ? 'text-success' : 'text-[var(--text-muted)]'}`}>
+                  {entry.status === 'completed' ? '[✓]' : entry.status === 'in_progress' ? '[•]' : '[ ]'}
+                </span>
+                <span className="break-words">{entry.text}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span>暂无 Plan 输出</span>
+        )}
+      </div>
 
       <pre className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] font-mono text-xs leading-relaxed text-[var(--text-dim)] whitespace-pre-wrap break-words overflow-auto min-h-[100px] max-h-[160px]">
         {usage ? JSON.stringify(usage, null, 2) : '暂无 Usage 数据'}
@@ -33,7 +47,7 @@ export function PlanPanel() {
 export function EventStreamPanel() {
   const eventBuffer = useStore((state) => state.eventBuffer)
   const eventBufferVersion = useStore((state) => state.eventBufferVersion)
-  const recent = useMemo(() => eventBuffer.slice(-40).reverse(), [eventBuffer, eventBufferVersion])
+  const recent = useMemo(() => eventBuffer.slice(-30).reverse(), [eventBuffer, eventBufferVersion])
   const [selectedEventId, setSelectedEventId] = useState('')
   const selectedEvent = useMemo(
     () => recent.find((event) => event.eventId === selectedEventId) || recent[0] || null,
@@ -89,4 +103,18 @@ export function EventStreamPanel() {
       </div>
     </div>
   )
+}
+
+function readPlanEntries(payload) {
+  if (!Array.isArray(payload?.entries)) return []
+  return payload.entries.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    if (typeof item.content !== 'string' || !item.content) return []
+    return [
+      {
+        status: typeof item.status === 'string' ? item.status : 'pending',
+        text: item.content,
+      },
+    ]
+  })
 }

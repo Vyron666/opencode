@@ -169,9 +169,13 @@ export function registerAcpSessionRoutes(app: Hono) {
         ////////////// runtime-shell customization end //////////////
       },
     )
-    await userEventTask
+    ////////////// runtime-shell customization start //////////////
+    // 中文/English: do not block the HTTP response on local event persistence.
+    // The frontend should leave "发送中" as soon as runtime-shell accepts the turn,
+    // while event durability continues on the store write queue in the background.
+    void userEventTask
     ////////////// runtime-shell customization end //////////////
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: result.session.tenantId,
       organizationId: result.session.organizationId,
       userId: user.id,
@@ -184,6 +188,9 @@ export function registerAcpSessionRoutes(app: Hono) {
         partCount: body.data.parts.length,
       },
     })
+    // 中文/English: audit persistence must still happen, but it must not hold
+    // the request open behind the same write queue as upstream chunks.
+    void auditLogTask
     return c.json(jsonOk({ accepted: true }, reqId))
   })
 
@@ -201,7 +208,7 @@ export function registerAcpSessionRoutes(app: Hono) {
     if (!success) {
       return c.json(jsonError("session runtime is not active", 409, reqId), 409)
     }
-    await store.appendAuditLog({
+    const auditLogTask = store.appendAuditLog({
       tenantId: result.session.tenantId,
       organizationId: result.session.organizationId,
       userId: user.id,
@@ -212,6 +219,11 @@ export function registerAcpSessionRoutes(app: Hono) {
       resourceId: result.session.id,
       detail: {},
     })
+    ////////////// runtime-shell customization start //////////////
+    // 中文/English: cancellation feedback should return immediately so the UI
+    // can switch to "取消中" without waiting on audit persistence.
+    void auditLogTask
+    ////////////// runtime-shell customization end //////////////
     return c.json(jsonOk({ success: true }, reqId))
   })
 

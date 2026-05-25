@@ -11,12 +11,21 @@ export default function MainLayout() {
 
   useEffect(() => {
     if (currentSessionId) {
-      activateSession()
-    } else {
-      disconnectSSE()
+      void activateSession()
+      return
     }
-    return () => disconnectSSE()
+
+    disconnectSSE()
   }, [currentSessionId, activateSession, disconnectSSE])
+
+  useEffect(
+    () => () => {
+      // 中文/English: only close the stream on the real component unmount.
+      // Avoid per-render cleanup races with session activation in StrictMode.
+      disconnectSSE()
+    },
+    [disconnectSSE],
+  )
 
   return (
     <div className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch

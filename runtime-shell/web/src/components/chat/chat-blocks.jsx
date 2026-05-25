@@ -1,7 +1,8 @@
-﻿import { useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../../store'
+import { subscribeAssistantChunk } from '../../store/sse/assistant-stream-channel'
 import { QuestionInlineBlock } from './question-form'
 
 export function ChatBlockItem({ block }) {
@@ -14,6 +15,8 @@ export function ChatBlockItem({ block }) {
       return <ThinkingBlock block={block} />
     case 'tool':
       return <ToolBlock block={block} />
+    case 'todo':
+      return <TodoBlock block={block} />
     case 'plan':
       return <PlanBlock block={block} />
     case 'permission':
@@ -59,7 +62,59 @@ function UserMessageBlock({ block }) {
   )
 }
 
-function AssistantMessageBlock({ block }) {
+const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
+  const textRef = useRef(null)
+  const textNodeRef = useRef(null)
+  const chunkVersionRef = useRef(0)
+
+  useLayoutEffect(() => {
+    if (!block.streaming || !textRef.current) return
+    if (!textNodeRef.current) {
+      textNodeRef.current = document.createTextNode('')
+      textRef.current.replaceChildren(textNodeRef.current)
+    }
+    if (chunkVersionRef.current > block.chunkVersion) {
+      textNodeRef.current.nodeValue = ''
+      chunkVersionRef.current = 0
+    }
+    if (chunkVersionRef.current === block.chunkVersion) return
+    if (!block.latestChunk) return
+    // 中文/English: append only the latest upstream chunk so the DOM path stays
+    // incremental end-to-end on a single Text node to avoid node explosion.
+    textNodeRef.current.nodeValue += block.latestChunk
+    chunkVersionRef.current = block.chunkVersion
+  }, [block.chunkVersion, block.latestChunk, block.streaming])
+
+  useEffect(() => {
+    if (!block.streaming || !textRef.current) return
+    return subscribeAssistantChunk(block.key, ({ chunk, chunkVersion, publishedAt }) => {
+      if (!textRef.current || !chunk) return
+      if (!textNodeRef.current) {
+        textNodeRef.current = document.createTextNode('')
+        textRef.current.replaceChildren(textNodeRef.current)
+      }
+      if (typeof chunkVersion === 'number' && chunkVersion <= chunkVersionRef.current) return
+      textNodeRef.current.nodeValue += chunk
+      if (typeof chunkVersion === 'number') chunkVersionRef.current = chunkVersion
+      // 中文/English: keep latency measurement on the direct chunk path so we can
+      // verify whether streaming delay still happens before or after DOM append.
+      if (window.__RUNTIME_SHELL_STREAM_DEBUG__) {
+        console.debug('[runtime-shell stream]', {
+          blockKey: block.key,
+          domAppendDelayMs: Number((performance.now() - publishedAt).toFixed(2)),
+          chunkLength: chunk.length,
+        })
+      }
+    })
+  }, [block.key, block.streaming])
+
+  useEffect(() => {
+    if (block.streaming || !textRef.current) return
+    textRef.current.textContent = ''
+    textNodeRef.current = null
+    chunkVersionRef.current = 0
+  }, [block.streaming])
+
   return (
     <div className="flex gap-3 items-start">
       <div
@@ -83,7 +138,7 @@ function AssistantMessageBlock({ block }) {
           }}
         >
           {block.streaming ? (
-            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{block.message}</pre>
+            <pre ref={textRef} className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" />
           ) : (
             <MarkdownContent content={block.message} />
           )}
@@ -91,7 +146,7 @@ function AssistantMessageBlock({ block }) {
       </div>
     </div>
   )
-}
+})
 
 function ThinkingBlock({ block }) {
   const [expanded, setExpanded] = useState(false)
@@ -180,6 +235,36 @@ function ToolBlock({ block }) {
   )
 }
 
+function TodoBlock({ block }) {
+  const todos = Array.isArray(block.todos) ? block.todos : []
+  const showPlaceholder = todos.length === 0
+
+  return (
+    <div className="flex gap-3 items-start">
+      <div className="rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-2 max-w-[560px] w-full">
+        <div className="flex items-center gap-2">
+          <div className="text-[10px] font-bold text-brand tracking-widest uppercase">Todo</div>
+          <span className="text-[10px] text-[var(--text-muted)] uppercase">{block.status}</span>
+        </div>
+        {showPlaceholder ? (
+          <div className="text-xs text-[var(--text-dim)]">Updating todos...</div>
+        ) : (
+          <div className="grid gap-1.5">
+            {todos.map((todo, index) => (
+              <div key={`${todo.content}-${index}`} className="flex items-start gap-2 text-xs text-[var(--text-dim)]">
+                <span className={`w-5 shrink-0 font-bold ${todo.status === 'in_progress' ? 'text-brand' : todo.status === 'completed' ? 'text-success' : 'text-[var(--text-muted)]'}`}>
+                  {todo.status === 'completed' ? '[✓]' : todo.status === 'in_progress' ? '[•]' : '[ ]'}
+                </span>
+                <span className="leading-relaxed break-words">{todo.content}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ToolData({ label, value }) {
   return (
     <div className="grid gap-1">
@@ -193,10 +278,12 @@ function ToolData({ label, value }) {
 
 function PlanBlock({ block }) {
   const [expanded, setExpanded] = useState(false)
+  const entries = Array.isArray(block.entries) ? block.entries : []
+  const preview = block.message || entries.map((item) => `- ${item.text}`).join('\n')
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-1 max-w-[520px] w-full">
+      <div className="rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-1 max-w-[560px] w-full">
         <div className="flex items-center gap-2">
           <div className="text-[10px] font-bold text-brand tracking-widest uppercase">Plan</div>
           <button
@@ -207,9 +294,23 @@ function PlanBlock({ block }) {
             {expanded ? '收起' : '展开'}
           </button>
         </div>
-        <div className={`text-xs text-[var(--text-dim)] leading-relaxed whitespace-pre-wrap break-words ${expanded ? '' : 'line-clamp-4'}`}>
-          {block.message}
-        </div>
+        {block.message && (
+          <div className={`text-xs text-[var(--text-dim)] leading-relaxed whitespace-pre-wrap break-words ${expanded ? '' : 'line-clamp-4'}`}>
+            {preview}
+          </div>
+        )}
+        {entries.length > 0 && (
+          <div className="grid gap-1.5 pt-1">
+            {entries.map((entry, index) => (
+              <div key={`${entry.text}-${index}`} className="flex items-start gap-2 text-xs text-[var(--text-dim)]">
+                <span className={`w-5 shrink-0 font-bold ${entry.status === 'in_progress' ? 'text-brand' : entry.status === 'completed' ? 'text-success' : 'text-[var(--text-muted)]'}`}>
+                  {entry.status === 'completed' ? '[✓]' : entry.status === 'in_progress' ? '[•]' : '[ ]'}
+                </span>
+                <span className="leading-relaxed break-words">{entry.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -226,9 +327,7 @@ function PermissionInlineBlock({ block }) {
       <div className="rounded-[16px] px-4 py-3 border border-brand/20 bg-brand/5 w-full max-w-[540px] grid gap-2 text-center">
         <div className="text-[10px] font-bold text-brand tracking-widest uppercase">权限请求</div>
         <div className="text-xs font-semibold text-[var(--text)]">{block.data?.toolName || '权限审批'}</div>
-        <div className="text-[11px] text-[var(--text-muted)]">
-          当前会话正在等待你处理这个权限请求，处理完成后会继续运行。
-        </div>
+        <div className="text-[11px] text-[var(--text-muted)]">当前会话正在等待你处理这个权限请求，处理完成后会继续运行。</div>
         {block.data?.rawInput && (
           <pre className="text-xs text-[var(--text-dim)] bg-black/30 rounded-[10px] p-2 whitespace-pre-wrap break-words overflow-x-auto">
             {formatData(block.data.rawInput)}

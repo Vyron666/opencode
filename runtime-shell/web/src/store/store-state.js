@@ -26,6 +26,9 @@ export function createBaseState(createConversationState, defaultCapabilities) {
     isConnected: false,
     reconnectAttempt: 0,
     activeSSESessionId: '',
+    sessionSelectionVersion: 0,
+    pendingSessionAction: '',
+    pendingSettingsAction: '',
   }
 }
 
@@ -47,6 +50,8 @@ export function resetConversationState(createConversationState, defaultCapabilit
     respondingPermissionIds: new Set(),
     respondingQuestionIds: new Set(),
     capabilities: defaultCapabilities,
+    pendingSessionAction: '',
+    pendingSettingsAction: '',
     ...patch,
   }
 }

@@ -6,12 +6,13 @@ const DEFAULT_TITLE = 'Runtime Shell 会话'
 
 export function CreateSessionPanel() {
   const createSession = useStore((state) => state.createSession)
+  const pendingSessionAction = useStore((state) => state.pendingSessionAction)
   const workspaces = useStore((state) => state.workspaces)
   const [title, setTitle] = useState(DEFAULT_TITLE)
   const [workspaceId, setWorkspaceId] = useState('')
   const hasWorkspaces = workspaces.length > 0
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId) || null
-  const canSubmit = Boolean(title.trim() && selectedWorkspace)
+  const canSubmit = Boolean(title.trim() && selectedWorkspace) && !pendingSessionAction
 
   useEffect(() => {
     if (!hasWorkspaces) {
@@ -78,7 +79,7 @@ export function CreateSessionPanel() {
         disabled={!canSubmit}
         className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100 disabled:active:scale-100"
       >
-        创建并进入
+        {pendingSessionAction === 'create' ? '创建中...' : '创建并进入'}
       </button>
     </form>
   )
@@ -86,6 +87,7 @@ export function CreateSessionPanel() {
 
 export function ForkSessionPanel() {
   const forkSession = useStore((state) => state.forkSession)
+  const pendingSessionAction = useStore((state) => state.pendingSessionAction)
   const [title, setTitle] = useState('Forked Session')
 
   return (
@@ -100,8 +102,8 @@ export function ForkSessionPanel() {
       <Field label="分支标题">
         <input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClassName} />
       </Field>
-      <button type="submit" className="rounded-[10px] py-2 px-4 text-xs font-semibold bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors">
-        从当前会话创建分支
+      <button type="submit" disabled={Boolean(pendingSessionAction)} className="rounded-[10px] py-2 px-4 text-xs font-semibold bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+        {pendingSessionAction === 'fork' ? '创建分支中...' : '从当前会话创建分支'}
       </button>
     </form>
   )

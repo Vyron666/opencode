@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../store'
+import { readErrorMessage } from '../store/actions/interaction-action-support'
 
 export default function LoginScreen() {
   const login = useStore((s) => s.login)
@@ -14,15 +15,27 @@ export default function LoginScreen() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    try {
-      const data = await login(username, password)
-      setFlash(`欢迎回来，${data.user.displayName}`)
-      loadSessions()
-    } catch (err) {
-      setError(err.message || '登录失败')
-    } finally {
+    const loginResult = await login(username, password).then(
+      (value) => ({ ok: true, value }),
+      (error) => ({ ok: false, error }),
+    )
+    if (!loginResult.ok) {
+      setError(readErrorMessage(loginResult.error) || '登录失败')
       setLoading(false)
+      return
     }
+    const data = loginResult.value
+    const sessionResult = await loadSessions().then(
+      (value) => ({ ok: true, value }),
+      (error) => ({ ok: false, error }),
+    )
+    if (!sessionResult.ok) {
+      setError(`加载会话失败: ${readErrorMessage(sessionResult.error)}`)
+      setLoading(false)
+      return
+    }
+    setFlash(`欢迎回来，${data.user.displayName}`)
+    setLoading(false)
   }
 
   return (

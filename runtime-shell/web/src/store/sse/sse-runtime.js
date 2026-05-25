@@ -1,7 +1,8 @@
-﻿import {
+import {
   appendConversationEvent,
   finalizeConversationBlocks,
 } from '../../components/chat/conversation-blocks'
+import { publishAssistantChunk } from './assistant-stream-channel'
 import { deriveCapPatch, mergeCapabilities } from '../capabilities'
 import {
   deriveRunningState,
@@ -32,12 +33,10 @@ export function createSseActions(input) {
       input.set({ activeSSESessionId: currentSessionId })
       const queuedEvents = []
       let flushScheduled = false
-      let flushTimer = null
       let stopped = false
 
       const flushQueuedEvents = () => {
         flushScheduled = false
-        flushTimer = null
         if (stopped) return
         if (!queuedEvents.length) return
 
@@ -59,8 +58,9 @@ export function createSseActions(input) {
             if (event.eventId) state.seenEventIds.add(event.eventId)
             state.eventBuffer.push(event)
             ////////////// runtime-shell customization start //////////////
-            // 中文/English: mutate conversation state incrementally and only rebuild
-            // the full rendered block list when structure or running state really changes.
+            // 中文/English: only rebuild rendered blocks when the conversation
+            // structure or the running phase changes; later assistant chunks stream
+            // through a dedicated side channel instead of React props churn.
             const previousLastAssistantKey = state.conversationState.lastAssistantKey
             const previousConversationBlockCount = state.conversationState.blocks.length
             appendConversationEvent(state.conversationState, event, false)
@@ -82,22 +82,26 @@ export function createSseActions(input) {
             const structureChanged =
               state.conversationState.blocks.length !== previousConversationBlockCount ||
               state.conversationState.lastAssistantKey !== previousLastAssistantKey
-            const canPatchAssistantBlock =
+            const canStreamAssistantChunk =
               !runningChanged &&
               !structureChanged &&
               latestAssistantBlock &&
               latestAssistantIndex !== undefined &&
               state.conversationBlocks[latestAssistantIndex]?.key === latestAssistantBlock.key
-            if (canPatchAssistantBlock) {
-              const nextBlocks = state.conversationBlocks.slice()
-              nextBlocks[latestAssistantIndex] = latestAssistantBlock
-              state.conversationBlocks = nextBlocks
+
+            if (canStreamAssistantChunk && latestAssistantBlock.latestChunk) {
+              publishAssistantChunk(
+                latestAssistantBlock.key,
+                latestAssistantBlock.latestChunk,
+                latestAssistantBlock.chunkVersion,
+              )
             }
+
             shouldRefreshConversationBlocks =
               shouldRefreshConversationBlocks ||
               runningChanged ||
               structureChanged ||
-              !canPatchAssistantBlock
+              !canStreamAssistantChunk
             isRunning = nextRunning
             isSubmitting = shouldStartRunning(event) || shouldStopSending(event) ? false : isSubmitting
             isCancelling = shouldStopSending(event) ? false : isCancelling
@@ -133,7 +137,7 @@ export function createSseActions(input) {
       const scheduleFlush = () => {
         if (flushScheduled) return
         flushScheduled = true
-        flushTimer = setTimeout(flushQueuedEvents, 0)
+        queueMicrotask(flushQueuedEvents)
       }
 
       const onEvent = (event) => {
@@ -145,7 +149,6 @@ export function createSseActions(input) {
 
       const onError = () => {
         if (stopped) return
-        if (flushTimer) clearTimeout(flushTimer)
         input.set({ isConnected: false })
         const reconnectAttempt = input.get().reconnectAttempt
         const delay = Math.min(1000 * 2 ** reconnectAttempt, 15000)
@@ -157,9 +160,7 @@ export function createSseActions(input) {
       disposeActiveStream = () => {
         stopped = true
         queuedEvents.length = 0
-        if (flushTimer) clearTimeout(flushTimer)
         flushScheduled = false
-        flushTimer = null
       }
 
       eventSourceInstance = input.createEventSource(currentSessionId, onEvent, onError, lastEventId)

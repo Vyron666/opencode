@@ -17,6 +17,8 @@ export default function App() {
     authBootstrapPromise ??= checkAuth().then((ok) => {
       if (ok) return loadSessions()
       return null
+    }).finally(() => {
+      authBootstrapPromise = null
     })
 
     return () => disconnectSSE()

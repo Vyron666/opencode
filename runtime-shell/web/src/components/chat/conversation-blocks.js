@@ -100,6 +100,7 @@ export function appendConversationEvent(state, event, showDebug = false) {
         output: null,
         locations: [],
         content: [],
+        todos: [],
       },
       event.payload,
     )
@@ -119,12 +120,14 @@ export function appendConversationEvent(state, event, showDebug = false) {
   }
 
   if (event.eventType === 'plan') {
-    const plan = readPlanText(event.payload)
+    const plan = readPlanBlock(event.payload)
     if (!plan) return state
+    if (plan.kind === 'todo') return state
     pushBlock(state, {
       key: event.eventId || `plan-${state.blocks.length}`,
       type: 'plan',
-      message: plan,
+      message: plan.message,
+      entries: plan.entries,
     })
     return state
   }
@@ -211,8 +214,6 @@ export function appendConversationEvent(state, event, showDebug = false) {
 }
 
 export function finalizeConversationBlocks(state, isRunning) {
-  const lastAssistantKey = [...state.blocks].reverse().find((block) => block.type === 'assistant')?.key
-
   return state.blocks.reduce((result, block, index) => {
     const previous = state.blocks[index - 1]
     if ((block.type === 'status' || block.type === 'error') && previous?.type === block.type && previous?.message === block.message) {
@@ -227,8 +228,29 @@ export function finalizeConversationBlocks(state, isRunning) {
     ////////////// runtime-shell customization start //////////////
     // 中文/English: keep unchanged assistant block references stable so only
     // the currently growing assistant row re-renders during streaming.
-    const streaming = isRunning && block.key === lastAssistantKey
-    result.push(block.streaming === streaming ? block : { ...block, streaming })
+    const streaming = isRunning && block.key === state.lastAssistantKey
+    if (streaming) {
+      result.push(block.streaming === true ? block : { ...block, streaming: true })
+      return result
+    }
+
+    if (Array.isArray(block.chunks) && block.chunks.length > 0) {
+      // 中文/English: keep chunk storage incremental during streaming and only
+      // join once after the upstream turn actually stops.
+      const finalized = {
+        ...block,
+        message: block.message || block.chunks.join(''),
+        latestChunk: '',
+        chunks: [],
+        streaming: false,
+      }
+      state.assistantBlocks.set(block.key, finalized)
+      state.blocks[index] = finalized
+      result.push(finalized)
+      return result
+    }
+
+    result.push(block.streaming === false ? block : { ...block, streaming: false })
     ////////////// runtime-shell customization end //////////////
     return result
   }, [])
@@ -257,10 +279,25 @@ function appendMessageChunk(input) {
   if (input.event.eventId && handledEventIds.has(input.event.eventId)) return
 
   if (existing) {
+    if (input.blockType !== 'assistant') {
+      const nextBlock = {
+        ...existing,
+        message: appendChunk(existing.message, message),
+      }
+      input.registry.set(blockKey, nextBlock)
+      replaceBlock(input.state, nextBlock)
+      if (input.event.eventId) handledEventIds.add(input.event.eventId)
+      input.handledEvents.set(blockKey, handledEventIds)
+      return
+    }
+
     const nextBlock = {
       ...existing,
-      message: appendChunk(existing.message, message),
+      latestChunk: message,
+      chunkVersion: existing.chunkVersion + 1,
+      chunks: existing.chunks,
     }
+    nextBlock.chunks.push(message)
     input.registry.set(blockKey, nextBlock)
     if (input.blockType === 'assistant') input.state.lastAssistantKey = blockKey
     replaceBlock(input.state, nextBlock)
@@ -272,7 +309,10 @@ function appendMessageChunk(input) {
   const block = {
     key: blockKey,
     type: input.blockType,
-    message,
+    message: input.blockType === 'assistant' ? '' : message,
+    latestChunk: input.blockType === 'assistant' ? message : '',
+    chunkVersion: input.blockType === 'assistant' ? 1 : 0,
+    chunks: input.blockType === 'assistant' ? [message] : [],
     streaming: false,
     turnId: input.turnId,
     messageId,
@@ -287,6 +327,7 @@ function appendMessageChunk(input) {
 function applyToolPayload(block, payload) {
   return {
     ...block,
+    type: readToolBlockType(payload, block.type),
     title: payload?.title || payload?.toolName || block.title || '工具调用',
     kind: payload?.kind || block.kind || '',
     status: payload?.status || block.status || 'pending',
@@ -294,6 +335,7 @@ function applyToolPayload(block, payload) {
     output: payload?.rawOutput !== undefined ? payload.rawOutput : block.output,
     locations: Array.isArray(payload?.locations) ? payload.locations : block.locations,
     content: Array.isArray(payload?.content) ? payload.content : block.content,
+    todos: readTodoItems(payload?.rawInput?.todos, block.todos),
   }
 }
 
@@ -333,22 +375,78 @@ function appendChunk(current, chunk) {
   if (!current) return chunk
   if (!chunk) return current
   if (current === chunk) return current
-  // 中文/English: runtime-shell only receives incremental ACP text chunks here,
-  // so append directly by messageId instead of rescanning the whole string.
+  // 中文/English: only non-assistant blocks still use whole-string append here.
   return `${current}${chunk}`
 }
 
-function readPlanText(payload) {
-  if (!payload) return ''
-  if (typeof payload.text === 'string') return payload.text
-  if (Array.isArray(payload.entries)) {
-    return payload.entries
-      .map((item) => `- [${String(item.status || 'pending').toUpperCase()}] ${item.content || item.step || item.title || JSON.stringify(item)}`)
-      .join('\n')
+function readToolBlockType(payload, currentType) {
+  if (isTodoToolPayload(payload)) return 'todo'
+  return currentType || 'tool'
+}
+
+function isTodoToolPayload(payload) {
+  if (Array.isArray(payload?.rawInput?.todos)) return true
+  if (typeof payload?.toolName === 'string' && payload.toolName.toLowerCase() === 'todowrite') return true
+  if (typeof payload?.title === 'string' && payload.title.toLowerCase() === 'todowrite') return true
+  return false
+}
+
+function readTodoItems(input, fallback = []) {
+  if (!Array.isArray(input)) return fallback
+  return input.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const content = typeof item.content === 'string' ? item.content : ''
+    if (!content) return []
+    return [
+      {
+        status: typeof item.status === 'string' ? item.status : 'pending',
+        content,
+      },
+    ]
+  })
+}
+
+function readPlanBlock(payload) {
+  if (!payload) return null
+  const entries = readPlanEntries(payload)
+  const message = readPlanMessage(payload)
+  if (!message && entries.length === 0) return null
+  return {
+    kind: isTodoPlanPayload(payload, entries) ? 'todo' : 'plan',
+    message,
+    entries,
   }
-  if (Array.isArray(payload.plan)) return payload.plan.map((item) => `- ${item.step || item.title || item.text || JSON.stringify(item)}`).join('\n')
-  if (typeof payload.plan === 'string') return payload.plan
+}
+
+function readPlanEntries(payload) {
+  if (Array.isArray(payload?.entries)) return payload.entries.flatMap((item) => readPlanEntry(item))
+  if (Array.isArray(payload?.plan)) return payload.plan.flatMap((item) => readPlanEntry(item))
+  return []
+}
+
+function readPlanEntry(item) {
+  if (!item || typeof item !== 'object') return []
+  const text = item.content || item.step || item.title || item.text
+  if (typeof text !== 'string' || !text) return []
+  return [
+    {
+      status: typeof item.status === 'string' ? item.status : 'pending',
+      text,
+    },
+  ]
+}
+
+function readPlanMessage(payload) {
+  if (typeof payload?.text === 'string') return payload.text
+  if (typeof payload?.explanation === 'string') return payload.explanation
+  if (typeof payload?.plan === 'string') return payload.plan
+  if (Array.isArray(payload?.entries) || Array.isArray(payload?.plan)) return ''
   return JSON.stringify(payload, null, 2)
+}
+
+function isTodoPlanPayload(payload, entries) {
+  if (!Array.isArray(payload?.entries) || entries.length === 0) return false
+  return payload.entries.every((item) => item && typeof item === 'object' && typeof item.content === 'string' && !('step' in item))
 }
 
 function readSessionErrorText(payload) {
