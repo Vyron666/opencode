@@ -6,10 +6,14 @@ import MainLayout from './components/MainLayout.jsx'
 let authBootstrapPromise = null
 
 export default function App() {
-  const { isAuthenticated, checkAuth, loadSessions, disconnectSSE } = useStore()
+  const isAuthenticated = useStore((state) => state.isAuthenticated)
+  const checkAuth = useStore((state) => state.checkAuth)
+  const loadSessions = useStore((state) => state.loadSessions)
+  const disconnectSSE = useStore((state) => state.disconnectSSE)
 
   useEffect(() => {
-    // 中文/English: dedupe the initial auth bootstrap so React StrictMode does not fire duplicate 401 checks in dev.
+    // 中文/English: dedupe the initial auth bootstrap so React StrictMode
+    // does not fire duplicate 401 checks in development.
     authBootstrapPromise ??= checkAuth().then((ok) => {
       if (ok) return loadSessions()
       return null

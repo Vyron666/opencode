@@ -1,9 +1,10 @@
-﻿export function createBaseState(createConversationState, defaultCapabilities) {
+export function createBaseState(createConversationState, defaultCapabilities) {
   return {
     user: null,
     users: [],
     isAuthenticated: false,
     sessions: [],
+    workspaces: [],
     currentSessionId: '',
     sessionDetail: null,
     eventBuffer: [],
@@ -11,6 +12,7 @@
     seenEventIds: new Set(),
     conversationState: createConversationState(),
     conversationBlocks: [],
+    conversationVersion: 0,
     pendingPermissions: [],
     pendingQuestions: [],
     respondingPermissionIds: new Set(),
@@ -36,6 +38,7 @@ export function resetConversationState(createConversationState, defaultCapabilit
     seenEventIds: new Set(),
     conversationState: createConversationState(),
     conversationBlocks: [],
+    conversationVersion: 0,
     isSubmitting: false,
     isRunning: false,
     isCancelling: false,

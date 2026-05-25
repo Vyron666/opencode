@@ -10,6 +10,9 @@ export function createConversationState() {
   return {
     blocks: [],
     blockIndexes: new Map(),
+    latestBlocks: [],
+    latestVersion: 0,
+    lastAssistantKey: '',
     assistantBlocks: new Map(),
     thinkingBlocks: new Map(),
     toolBlocks: new Map(),
@@ -259,6 +262,7 @@ function appendMessageChunk(input) {
       message: appendChunk(existing.message, message),
     }
     input.registry.set(blockKey, nextBlock)
+    if (input.blockType === 'assistant') input.state.lastAssistantKey = blockKey
     replaceBlock(input.state, nextBlock)
     if (input.event.eventId) handledEventIds.add(input.event.eventId)
     input.handledEvents.set(blockKey, handledEventIds)
@@ -274,6 +278,7 @@ function appendMessageChunk(input) {
     messageId,
   }
   input.registry.set(blockKey, block)
+  if (input.blockType === 'assistant') input.state.lastAssistantKey = blockKey
   if (input.event.eventId) handledEventIds.add(input.event.eventId)
   input.handledEvents.set(blockKey, handledEventIds)
   pushBlock(input.state, block)
@@ -295,14 +300,16 @@ function applyToolPayload(block, payload) {
 function pushBlock(state, block) {
   state.blockIndexes.set(block.key, state.blocks.length)
   state.blocks.push(block)
+  state.latestBlocks = [block]
+  state.latestVersion += 1
 }
 
 function replaceBlock(state, block) {
   const index = state.blockIndexes.get(block.key)
   if (index === undefined) return
-  const nextBlocks = [...state.blocks]
-  nextBlocks[index] = block
-  state.blocks = nextBlocks
+  state.blocks[index] = block
+  state.latestBlocks = [block]
+  state.latestVersion += 1
 }
 
 function readMessageText(payload) {
@@ -326,16 +333,9 @@ function appendChunk(current, chunk) {
   if (!current) return chunk
   if (!chunk) return current
   if (current === chunk) return current
-  const overlapLength = findOverlapLength(current, chunk)
-  return `${current}${chunk.slice(overlapLength)}`
-}
-
-function findOverlapLength(current, chunk) {
-  const max = Math.min(current.length, chunk.length)
-  for (let size = max; size > 0; size -= 1) {
-    if (current.slice(-size) === chunk.slice(0, size)) return size
-  }
-  return 0
+  // 中文/English: runtime-shell only receives incremental ACP text chunks here,
+  // so append directly by messageId instead of rescanning the whole string.
+  return `${current}${chunk}`
 }
 
 function readPlanText(payload) {

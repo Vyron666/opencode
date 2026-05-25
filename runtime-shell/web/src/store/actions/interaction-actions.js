@@ -21,11 +21,10 @@ export function createInteractionActions(input) {
         () => undefined,
         createRequestFailureHandler(input, resetPromptState, '消息发送失败'),
       )
-      ////////////// runtime-shell customization start //////////////
+
       // 中文/English: `accepted: true` only means the request reached runtime-shell.
       // Wait for real upstream events before switching to running.
       input.set({ isSubmitting: true, isRunning: false, isCancelling: false })
-      ////////////// runtime-shell customization end //////////////
       input.get().setFlash(attachments?.length ? `消息已发送，包含 ${attachments.length} 个附件` : '消息已发送')
       return true
     },
@@ -129,6 +128,7 @@ async function buildPromptParts(text, attachments, businessSessionId, set) {
         seenEventIds: state.seenEventIds,
         conversationState: state.conversationState,
         conversationBlocks: finalizeConversationBlocks(state.conversationState, state.isRunning),
+        conversationVersion: state.conversationState.latestVersion,
       }
     })
   }

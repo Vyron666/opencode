@@ -1,5 +1,5 @@
 import path from "node:path"
-import { applyEdits, modify, parse } from "jsonc-parser"
+import { type ParseError, applyEdits, modify, parse } from "jsonc-parser"
 
 const CONFIG_FILE_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
 const DEFAULT_RUNTIME_CONFIG = '{\n  "$schema": "https://opencode.ai/config.json"\n}\n'
@@ -156,8 +156,9 @@ export async function ensureRuntimeConfigInitialized() {
 
 function maskSecret(secret: string) {
   if (!secret) return ""
-  if (secret.length <= 8) return "••••••••"
-  return `${secret.slice(0, 4)}••••${secret.slice(-4)}`
+  // 中文/English: use plain ASCII so masking is stable across terminals and encodings.
+  if (secret.length <= 8) return "********"
+  return `${secret.slice(0, 4)}****${secret.slice(-4)}`
 }
 
 async function resolveRuntimeConfigFile() {
@@ -195,13 +196,12 @@ function parseRuntimeConfig(text: string): WritableConfig {
       $schema: "https://opencode.ai/config.json",
     }
   }
-
-  try {
-    const parsed = parse(text)
-    return isRecord(parsed) ? (parsed as WritableConfig) : { $schema: "https://opencode.ai/config.json" }
-  } catch {
+  const errors: ParseError[] = []
+  const parsed = parse(text, errors)
+  if (errors.length > 0 || !isRecord(parsed)) {
     return { $schema: "https://opencode.ai/config.json" }
   }
+  return parsed as WritableConfig
 }
 
 function patchJsonc(input: string, patch: unknown, currentPath: string[] = []): string {

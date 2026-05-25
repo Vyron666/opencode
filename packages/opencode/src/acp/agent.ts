@@ -51,6 +51,7 @@ import type { AssistantMessage, Event, OpencodeClient, SessionMessageResponse, T
 import { applyPatch } from "diff"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { ShellID } from "@/tool/shell/id"
+import { handleRuntimeShellQuestion } from "./runtime-shell/question-bridge"
 
 type ModeOption = { id: string; name: string; description?: string }
 type ModelOption = { modelId: string; name: string }
@@ -147,6 +148,11 @@ export class Agent implements ACPAgent {
   private shellSnapshots = new Map<string, string>()
   private toolStarts = new Set<string>()
   private permissionQueues = new Map<string, Promise<void>>()
+  ////////////// runtime-shell customization start //////////////
+  // 中文/English: question requests must stay serialized per session so the ACP
+  // client only sees one blocking elicitation at a time, matching opencode's queue.
+  private questionQueues = new Map<string, Promise<void>>()
+  ////////////// runtime-shell customization end //////////////
   private permissionOptions: PermissionOption[] = [
     { optionId: "once", kind: "allow_once", name: "Allow once" },
     { optionId: "always", kind: "allow_always", name: "Always allow" },
@@ -269,6 +275,33 @@ export class Agent implements ACPAgent {
         this.permissionQueues.set(permission.sessionID, next)
         return
       }
+
+      ////////////// runtime-shell customization start //////////////
+      // 中文/English: bridge opencode's internal question queue into ACP elicitation
+      // so runtime-shell can render interactive inline question cards and send answers back.
+      case "question.asked": {
+        const question = event.properties
+        const session = this.sessionManager.tryGet(question.sessionID)
+        if (!session) return
+        const prev = this.questionQueues.get(question.sessionID) ?? Promise.resolve()
+        const next = prev
+          .then(async () => {
+            await handleRuntimeShellQuestion({
+              connection: this.connection,
+              sdk: this.sdk,
+              question,
+              directory: session.cwd,
+            })
+          })
+          .finally(() => {
+            if (this.questionQueues.get(question.sessionID) === next) {
+              this.questionQueues.delete(question.sessionID)
+            }
+          })
+        this.questionQueues.set(question.sessionID, next)
+        return
+      }
+      ////////////// runtime-shell customization end //////////////
 
       case "message.part.updated": {
         log.info("message part updated", { event: event.properties })
@@ -1991,5 +2024,6 @@ function formatVariantName(variant: string) {
     .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
     .join(" ")
 }
+
 
 export * as ACP from "./agent"

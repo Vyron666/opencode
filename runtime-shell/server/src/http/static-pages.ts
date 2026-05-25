@@ -4,12 +4,7 @@ const DIST_DIR = path.resolve(process.cwd(), "./web/dist")
 
 export async function page(file: string) {
   const filePath = path.join(DIST_DIR, file)
-  let blob
-  try {
-    blob = Bun.file(filePath)
-  } catch {
-    return undefined
-  }
+  const blob = Bun.file(filePath)
   if (!(await blob.exists())) return undefined
   const ext = file.split(".").pop() || ""
   const mime: Record<string, string> = {

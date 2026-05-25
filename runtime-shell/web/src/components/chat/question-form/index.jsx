@@ -10,11 +10,16 @@ import {
 } from './question-form-support'
 
 export function QuestionInlineBlock({ block }) {
-  const store = useStore()
+  const respondQuestion = useStore((state) => state.respondQuestion)
   const respondingQuestionIds = useStore((state) => state.respondingQuestionIds)
   const requestId = block.data?.requestId || block.data?.id
   const schema = block.data?.requestedSchema
-  const prompts = Array.isArray(schema?.questions) ? schema.questions : []
+  const promptMeta = block.data?.meta?.opencode
+  const prompts = Array.isArray(promptMeta?.prompts)
+    ? promptMeta.prompts
+    : Array.isArray(schema?.questions)
+      ? schema.questions
+      : []
   const fields = useMemo(() => buildQuestionFields(schema), [schema])
   const [legacyAnswers, setLegacyAnswers] = useState([])
   const [legacyCustomAnswers, setLegacyCustomAnswers] = useState({})
@@ -51,7 +56,7 @@ export function QuestionInlineBlock({ block }) {
             legacyCustomAnswers={legacyCustomAnswers}
             setLegacyAnswers={setLegacyAnswers}
             setLegacyCustomAnswers={setLegacyCustomAnswers}
-            respondQuestion={store.respondQuestion}
+            respondQuestion={respondQuestion}
           />
         ) : hasSchemaFields ? (
           <QuestionSchemaForm
@@ -61,7 +66,7 @@ export function QuestionInlineBlock({ block }) {
             submitting={submitting}
             formValues={formValues}
             setFormValues={setFormValues}
-            respondQuestion={store.respondQuestion}
+            respondQuestion={respondQuestion}
           />
         ) : (
           <>
@@ -72,14 +77,14 @@ export function QuestionInlineBlock({ block }) {
             )}
             <div className="flex gap-2 justify-end">
               <button
-                onClick={() => store.respondQuestion(requestId, 'decline', {})}
+                onClick={() => respondQuestion(requestId, 'decline', {})}
                 disabled={submitting}
                 className="text-xs px-3 py-1 rounded-[8px] bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? '提交中...' : '拒绝'}
               </button>
               <button
-                onClick={() => store.respondQuestion(requestId, 'accept', {})}
+                onClick={() => respondQuestion(requestId, 'accept', {})}
                 disabled={submitting}
                 className="text-xs px-3 py-1 rounded-[8px] bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >

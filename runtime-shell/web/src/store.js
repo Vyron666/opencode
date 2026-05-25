@@ -29,7 +29,7 @@ export const useStore = create((set, get) => ({
   logout: async () => {
     await api.logout()
     get().disconnectSSE()
-    set(resetSessionState({ user: null, users: [], isAuthenticated: false }))
+    set(resetSessionState({ user: null, users: [], sessions: [], workspaces: [], isAuthenticated: false }))
   },
 
   checkAuth: async () => {

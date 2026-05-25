@@ -50,6 +50,16 @@ export type Workspace = {
   updatedAt: string
 }
 
+export type WorkspaceAccessResult =
+  | {
+      ok: true
+      workspace: Workspace
+    }
+  | {
+      ok: false
+      reason: "workspace_not_found" | "forbidden" | "invalid_path"
+    }
+
 export type AuditAction =
   | "auth.login"
   | "auth.logout"
@@ -134,6 +144,7 @@ export type PendingQuestion = {
   // 中文/English: Elicitation mode. We only implement "form" for now.
   mode: "form"
   requestedSchema: Record<string, unknown>
+  meta?: Record<string, unknown>
   createdAt: string
 }
 

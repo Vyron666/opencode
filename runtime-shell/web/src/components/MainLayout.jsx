@@ -5,7 +5,9 @@ import RightSidebar from './sidebar/RightSidebar.jsx'
 import ChatView from './chat/ChatView.jsx'
 
 export default function MainLayout() {
-  const { currentSessionId, activateSession, disconnectSSE } = useStore()
+  const currentSessionId = useStore((state) => state.currentSessionId)
+  const activateSession = useStore((state) => state.activateSession)
+  const disconnectSSE = useStore((state) => state.disconnectSSE)
 
   useEffect(() => {
     if (currentSessionId) {

@@ -7,8 +7,7 @@ import { deriveConversationPhase } from '../../store/runtime-phase'
 
 export default function ChatView() {
   const conversationBlocks = useStore((state) => state.conversationBlocks)
-  const eventBuffer = useStore((state) => state.eventBuffer)
-  const eventBufferVersion = useStore((state) => state.eventBufferVersion)
+  const conversationVersion = useStore((state) => state.conversationVersion)
   const isSubmitting = useStore((state) => state.isSubmitting)
   const isRunning = useStore((state) => state.isRunning)
   const isCancelling = useStore((state) => state.isCancelling)
@@ -42,15 +41,13 @@ export default function ChatView() {
     [isSubmitting, isRunning, isCancelling, pendingPermissions.length, pendingQuestions.length, respondingPermissionIds.size, respondingQuestionIds.size],
   )
   const sendDisabled = !currentSessionId || conversationPhase.isBusy
-  const blocks = useMemo(
-    () => (showDebug ? buildConversationBlocks(eventBuffer, true, isRunning) : conversationBlocks),
-    [conversationBlocks, eventBuffer, eventBufferVersion, isRunning, showDebug],
-  )
+  const blocks = showDebug ? null : conversationBlocks
 
   useEffect(() => {
+    if (showDebug) return
     if (!autoScroll || !timelineRef.current) return
     timelineRef.current.scrollTop = timelineRef.current.scrollHeight
-  }, [blocks, autoScroll])
+  }, [conversationVersion, autoScroll, showDebug, blocks])
 
   const handleScroll = useCallback(() => {
     const element = timelineRef.current
@@ -154,20 +151,10 @@ export default function ChatView() {
           className="relative h-full overflow-y-auto px-4 py-4"
           style={{ background: 'linear-gradient(180deg, rgba(20,16,13,0.3), rgba(20,16,13,0.55))' }}
         >
-          {blocks.length === 0 ? (
-            <EmptyConversation currentSessionId={currentSessionId} />
-          ) : (
-            <div className="grid content-start gap-4 pb-4">
-              <AnimatePresence initial={false}>
-                {blocks.map((block) => (
-                  <ConversationBlockRow key={block.key} block={block} />
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
+          {showDebug ? <DebugConversationTimeline /> : <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} />}
 
           <AnimatePresence>
-            {!autoScroll && blocks.length > 0 && (
+            {!showDebug && !autoScroll && blocks.length > 0 && (
               <motion.button
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -270,11 +257,47 @@ export default function ChatView() {
   )
 }
 
+function ConversationTimeline({ blocks, currentSessionId }) {
+  if (blocks.length === 0) return <EmptyConversation currentSessionId={currentSessionId} />
+
+  return (
+    <div className="grid content-start gap-4 pb-4">
+      <AnimatePresence initial={false}>
+        {blocks.map((block) => (
+          <ConversationBlockRow key={block.key} block={block} />
+        ))}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function DebugConversationTimeline() {
+  const eventBuffer = useStore((state) => state.eventBuffer)
+  const eventBufferVersion = useStore((state) => state.eventBufferVersion)
+  const isRunning = useStore((state) => state.isRunning)
+  const blocks = useMemo(
+    () => buildConversationBlocks(eventBuffer, true, isRunning),
+    [eventBuffer, eventBufferVersion, isRunning],
+  )
+
+  if (blocks.length === 0) return <EmptyConversation currentSessionId={useStore.getState().currentSessionId} />
+
+  // 中文/English: keep the expensive raw-event replay path inside debug mode only,
+  // so normal chat streaming does not subscribe to eventBuffer churn.
+  return (
+    <div className="grid content-start gap-4 pb-4">
+      <AnimatePresence initial={false}>
+        {blocks.map((block) => (
+          <ConversationBlockRow key={block.key} block={block} />
+        ))}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 const ConversationBlockRow = memo(function ConversationBlockRow({ block }) {
-  ////////////// runtime-shell customization start //////////////
   // 中文/English: memoized rows keep unchanged blocks out of the hot streaming
   // render path so the latest chunk can appear almost immediately.
-  ////////////// runtime-shell customization end //////////////
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}>
       <ChatBlockItem block={block} />

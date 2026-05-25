@@ -8,7 +8,7 @@ export const loginSchema = z.object({
 export const createSessionSchema = z.object({
   title: z.string().min(1),
   projectId: z.string().min(1).default("default"),
-  workspacePath: z.string().min(1),
+  workspaceId: z.string().min(1),
 })
 
 export const sessionIdSchema = z.object({

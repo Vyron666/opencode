@@ -1,4 +1,5 @@
 import path from "node:path"
+import { type ParseError, parse } from "jsonc-parser"
 
 export type CustomModel = {
   modelId: string
@@ -7,27 +8,19 @@ export type CustomModel = {
 }
 
 function parseCustomModels(raw: string): CustomModel[] {
-  try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (item): item is CustomModel =>
-        typeof item === "object" && item && typeof item.modelId === "string" && typeof item.name === "string",
-    )
-  } catch {
-    return []
-  }
+  const errors: ParseError[] = []
+  const parsed = parse(raw, errors)
+  if (errors.length > 0 || !Array.isArray(parsed)) return []
+  return parsed.filter(
+    (item): item is CustomModel =>
+      typeof item === "object" && item !== null && typeof item.modelId === "string" && typeof item.name === "string",
+  )
 }
 
 async function loadCustomModelsFile(filePath: string): Promise<CustomModel[]> {
   const file = Bun.file(filePath)
   if (!(await file.exists())) return []
-  try {
-    const text = await file.text()
-    return parseCustomModels(text)
-  } catch {
-    return []
-  }
+  return parseCustomModels(await file.text())
 }
 
 let customModelsCache: CustomModel[] | null = null

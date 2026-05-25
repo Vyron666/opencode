@@ -16,6 +16,7 @@ import {
 
 let eventSourceInstance = null
 let reconnectTimer = null
+let disposeActiveStream = null
 
 export function createSseActions(input) {
   return {
@@ -31,12 +32,17 @@ export function createSseActions(input) {
       input.set({ activeSSESessionId: currentSessionId })
       const queuedEvents = []
       let flushScheduled = false
+      let flushTimer = null
+      let stopped = false
 
       const flushQueuedEvents = () => {
         flushScheduled = false
+        flushTimer = null
+        if (stopped) return
         if (!queuedEvents.length) return
 
         input.set((state) => {
+          if (stopped || state.activeSSESessionId !== currentSessionId) return {}
           const nextEvents = queuedEvents.splice(0, queuedEvents.length)
           let pendingPermissions = state.pendingPermissions
           let pendingQuestions = state.pendingQuestions
@@ -46,15 +52,23 @@ export function createSseActions(input) {
           let isSubmitting = state.isSubmitting
           let isRunning = state.isRunning
           let isCancelling = state.isCancelling
+          let shouldRefreshConversationBlocks = false
 
           nextEvents.forEach((event) => {
             if (event.eventId && state.seenEventIds.has(event.eventId)) return
             if (event.eventId) state.seenEventIds.add(event.eventId)
             state.eventBuffer.push(event)
             ////////////// runtime-shell customization start //////////////
-            // 中文/English: apply one animation-frame batch so the UI keeps streaming
-            // in order without paying one full Zustand + React update per chunk.
+            // 中文/English: mutate conversation state incrementally and only rebuild
+            // the full rendered block list when structure or running state really changes.
+            const previousLastAssistantKey = state.conversationState.lastAssistantKey
+            const previousConversationBlockCount = state.conversationState.blocks.length
             appendConversationEvent(state.conversationState, event, false)
+            const latestBlocks = state.conversationState.latestBlocks
+            const latestAssistantBlock = latestBlocks.length === 1 && latestBlocks[0]?.type === 'assistant' ? latestBlocks[0] : null
+            const latestAssistantIndex = latestAssistantBlock
+              ? state.conversationState.blockIndexes.get(latestAssistantBlock.key)
+              : undefined
             ////////////// runtime-shell customization end //////////////
 
             pendingPermissions = reducePendingPermissions(pendingPermissions, event)
@@ -63,7 +77,28 @@ export function createSseActions(input) {
             respondingQuestionIds = resolveRespondingQuestionIds(respondingQuestionIds, event)
             const capabilityPatch = deriveCapPatch(event)
             capabilities = capabilityPatch ? mergeCapabilities(capabilities, capabilityPatch) : capabilities
-            isRunning = deriveRunningState(isRunning, event)
+            const nextRunning = deriveRunningState(isRunning, event)
+            const runningChanged = nextRunning !== isRunning
+            const structureChanged =
+              state.conversationState.blocks.length !== previousConversationBlockCount ||
+              state.conversationState.lastAssistantKey !== previousLastAssistantKey
+            const canPatchAssistantBlock =
+              !runningChanged &&
+              !structureChanged &&
+              latestAssistantBlock &&
+              latestAssistantIndex !== undefined &&
+              state.conversationBlocks[latestAssistantIndex]?.key === latestAssistantBlock.key
+            if (canPatchAssistantBlock) {
+              const nextBlocks = state.conversationBlocks.slice()
+              nextBlocks[latestAssistantIndex] = latestAssistantBlock
+              state.conversationBlocks = nextBlocks
+            }
+            shouldRefreshConversationBlocks =
+              shouldRefreshConversationBlocks ||
+              runningChanged ||
+              structureChanged ||
+              !canPatchAssistantBlock
+            isRunning = nextRunning
             isSubmitting = shouldStartRunning(event) || shouldStopSending(event) ? false : isSubmitting
             isCancelling = shouldStopSending(event) ? false : isCancelling
             state.sessionDetail = mergeSessionDetail(state.sessionDetail, event)
@@ -74,7 +109,12 @@ export function createSseActions(input) {
             eventBufferVersion: state.eventBufferVersion + nextEvents.length,
             seenEventIds: state.seenEventIds,
             conversationState: state.conversationState,
-            conversationBlocks: finalizeConversationBlocks(state.conversationState, isRunning),
+            conversationBlocks: shouldRefreshConversationBlocks
+              ? finalizeConversationBlocks(state.conversationState, isRunning)
+              : state.conversationBlocks,
+            conversationVersion: shouldRefreshConversationBlocks
+              ? state.conversationState.latestVersion
+              : state.conversationVersion,
             sessionDetail: state.sessionDetail,
             pendingPermissions,
             pendingQuestions,
@@ -93,20 +133,19 @@ export function createSseActions(input) {
       const scheduleFlush = () => {
         if (flushScheduled) return
         flushScheduled = true
-        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-          window.requestAnimationFrame(flushQueuedEvents)
-          return
-        }
-        setTimeout(flushQueuedEvents, 0)
+        flushTimer = setTimeout(flushQueuedEvents, 0)
       }
 
       const onEvent = (event) => {
+        if (stopped) return
         if (input.get().activeSSESessionId !== currentSessionId) return
         queuedEvents.push(event)
         scheduleFlush()
       }
 
       const onError = () => {
+        if (stopped) return
+        if (flushTimer) clearTimeout(flushTimer)
         input.set({ isConnected: false })
         const reconnectAttempt = input.get().reconnectAttempt
         const delay = Math.min(1000 * 2 ** reconnectAttempt, 15000)
@@ -115,11 +154,21 @@ export function createSseActions(input) {
         reconnectTimer = setTimeout(() => input.get().connectSSE(), delay)
       }
 
+      disposeActiveStream = () => {
+        stopped = true
+        queuedEvents.length = 0
+        if (flushTimer) clearTimeout(flushTimer)
+        flushScheduled = false
+        flushTimer = null
+      }
+
       eventSourceInstance = input.createEventSource(currentSessionId, onEvent, onError, lastEventId)
       input.set({ isConnected: true, reconnectAttempt: 0 })
     },
 
     disconnectSSE: () => {
+      disposeActiveStream?.()
+      disposeActiveStream = null
       if (eventSourceInstance) {
         eventSourceInstance.close()
         eventSourceInstance = null

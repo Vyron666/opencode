@@ -3,18 +3,28 @@ import { useStore } from '../../store'
 import ConfirmDialog from '../ConfirmDialog.jsx'
 
 export default function LeftSidebar() {
-  const store = useStore()
+  const user = useStore((state) => state.user)
+  const sessions = useStore((state) => state.sessions)
+  const currentSessionId = useStore((state) => state.currentSessionId)
+  const logout = useStore((state) => state.logout)
+  const openSession = useStore((state) => state.openSession)
+  const loadHistory = useStore((state) => state.loadHistory)
+  const resumeSession = useStore((state) => state.resumeSession)
+  const closeSession = useStore((state) => state.closeSession)
+  const loadSessions = useStore((state) => state.loadSessions)
+  const setCurrentSession = useStore((state) => state.setCurrentSession)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
 
   return (
     <aside className="min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden">
-      {/* Brand */}
       <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
         <div className="flex gap-3 items-start">
-          <div className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
+          <div
+            className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
             style={{ background: 'linear-gradient(135deg, #d4a05a, #9c6e38)', boxShadow: '0 0 0 1px rgba(212,160,90,0.14), 0 4px 20px rgba(212,160,90,0.08)' }}
-            aria-hidden="true">
+            aria-hidden="true"
+          >
             RS
           </div>
           <div>
@@ -25,8 +35,7 @@ export default function LeftSidebar() {
         </div>
       </div>
 
-      {/* Account */}
-      {store.user && (
+      {user && (
         <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
@@ -42,13 +51,14 @@ export default function LeftSidebar() {
             </button>
           </div>
           <div className="grid gap-1">
-            <div className="font-bold text-sm">{store.user.displayName}</div>
-            <div className="text-xs text-[var(--text-muted)]">{store.user.username} · {store.user.role}</div>
+            <div className="font-bold text-sm">{user.displayName}</div>
+            <div className="text-xs text-[var(--text-muted)]">
+              {user.username} · {user.role}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Session Actions */}
       <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
         <div className="mb-3">
           <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Actions</span>
@@ -56,17 +66,17 @@ export default function LeftSidebar() {
         </div>
         <div className="grid gap-2">
           <button
-            onClick={() => store.openSession()}
+            onClick={() => openSession()}
             aria-label="打开当前选中会话"
             className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow focus-visible:ring-2 focus-visible:ring-brand"
           >
             打开当前会话
           </button>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => store.loadHistory()} aria-label="加载会话历史" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
+            <button onClick={() => loadHistory()} aria-label="加载会话历史" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
               加载历史
             </button>
-            <button onClick={() => store.resumeSession()} aria-label="恢复会话" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
+            <button onClick={() => resumeSession()} aria-label="恢复会话" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
               恢复会话
             </button>
           </div>
@@ -80,34 +90,37 @@ export default function LeftSidebar() {
         </div>
       </div>
 
-      {/* Session List */}
       <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Sessions</span>
-            <h3 className="text-sm font-bold mt-0.5">最近活跃</h3>
+            <h3 className="text-sm font-bold mt-0.5">最近活动</h3>
           </div>
-          <button onClick={() => store.loadSessions()} aria-label="刷新会话列表" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
+          <button onClick={() => loadSessions()} aria-label="刷新会话列表" className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand">
             刷新
           </button>
         </div>
         <div className="grid gap-2 max-h-[300px] overflow-y-auto">
-          {store.sessions.length === 0 && (
+          {sessions.length === 0 && (
             <div className="text-xs text-[var(--text-muted)] text-center py-4 border border-dashed border-[var(--line-strong)] rounded-[14px]">
               暂无会话，请先创建。
             </div>
           )}
-          {store.sessions.map((s) => {
-            const isActive = store.currentSessionId === s.id
-            const dotColor = s.status === 'active' || s.status === 'running' ? '#5a9e7c'
-              : s.status === 'pending' || s.status === 'created' ? '#d4a05a'
-              : s.status === 'completed' || s.status === 'closed' ? '#7a6e60'
-              : '#c44a3a'
+          {sessions.map((session) => {
+            const isActive = currentSessionId === session.id
+            const dotColor = session.status === 'active' || session.status === 'running'
+              ? '#5a9e7c'
+              : session.status === 'pending' || session.status === 'created'
+                ? '#d4a05a'
+                : session.status === 'completed' || session.status === 'closed'
+                  ? '#7a6e60'
+                  : '#c44a3a'
+
             return (
               <button
-                key={s.id}
-                onClick={() => store.setCurrentSession(s.id)}
-                aria-label={`选择会话: ${s.title}`}
+                key={session.id}
+                onClick={() => setCurrentSession(session.id)}
+                aria-label={`选择会话: ${session.title}`}
                 aria-current={isActive ? 'true' : undefined}
                 className={`w-full text-left p-3 rounded-[14px] border text-sm transition-all ${
                   isActive
@@ -115,14 +128,14 @@ export default function LeftSidebar() {
                     : 'border-[var(--line)] bg-black/30 hover:bg-black/50 hover:border-[var(--line-strong)]'
                 }`}
               >
-                <div className="font-semibold text-sm">{s.title}</div>
+                <div className="font-semibold text-sm">{session.title}</div>
                 <div className="mt-1.5 text-xs text-[var(--text-muted)] flex items-center gap-1.5">
                   <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} aria-hidden="true"></span>
-                  <span>{s.status}</span>
+                  <span>{session.status}</span>
                   <span aria-hidden="true">·</span>
-                  <span>{s.binding?.transport || 'unbound'}</span>
+                  <span>{session.binding?.transport || 'unbound'}</span>
                   <span aria-hidden="true">·</span>
-                  <span>{s.eventCount || 0} 事件</span>
+                  <span>{session.eventCount || 0} 事件</span>
                 </div>
               </button>
             )
@@ -130,13 +143,15 @@ export default function LeftSidebar() {
         </div>
       </div>
 
-      {/* Confirm Dialogs */}
       <ConfirmDialog
         open={confirmLogout}
         title="退出登录"
         message="确定要退出当前账号吗？"
         confirmLabel="退出"
-        onConfirm={() => { setConfirmLogout(false); store.logout() }}
+        onConfirm={() => {
+          setConfirmLogout(false)
+          logout()
+        }}
         onCancel={() => setConfirmLogout(false)}
         danger
       />
@@ -145,7 +160,10 @@ export default function LeftSidebar() {
         title="关闭会话"
         message="确定要关闭当前会话吗？此操作不可撤销。"
         confirmLabel="关闭"
-        onConfirm={() => { setConfirmClose(false); store.closeSession() }}
+        onConfirm={() => {
+          setConfirmClose(false)
+          closeSession()
+        }}
         onCancel={() => setConfirmClose(false)}
         danger
       />

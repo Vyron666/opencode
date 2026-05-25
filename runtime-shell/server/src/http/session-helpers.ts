@@ -3,7 +3,7 @@ import type { Context } from "hono"
 import type { Annotations, ContentBlock, Role } from "@agentclientprotocol/sdk"
 import { store } from "../store"
 import { jsonError, requestId } from "./response"
-import type { BusinessSession, SessionEvent, User, Workspace } from "../types"
+import type { BusinessSession, SessionEvent, User, Workspace, WorkspaceAccessResult } from "../types"
 import { listPendingPermissions, listPendingQuestions, openRealRuntime } from "../acp-runtime-manager"
 import type { inputPartSchema, annotationsSchema } from "./schemas"
 import type { z } from "zod"
@@ -145,16 +145,19 @@ export async function requireWorkspacePath(workspacePath: string) {
 export async function ensureWorkspaceForUser(input: {
   user: User
   projectId: string
-  workspacePath: string
-}) {
-  await requireWorkspacePath(input.workspacePath)
-  return store.ensureWorkspace({
-    tenantId: input.user.tenantId,
-    organizationId: input.user.organizationId,
-    projectId: input.projectId,
-    rootPath: input.workspacePath,
-    createdBy: input.user.id,
-  })
+  workspaceId: string
+}): Promise<WorkspaceAccessResult> {
+  const workspace = store.getWorkspace(input.workspaceId)
+  if (!workspace) return { ok: false, reason: "workspace_not_found" }
+  if (workspace.tenantId !== input.user.tenantId || workspace.organizationId !== input.user.organizationId) {
+    return { ok: false, reason: "forbidden" }
+  }
+  if (workspace.projectId !== input.projectId) {
+    return { ok: false, reason: "forbidden" }
+  }
+  const info = await stat(workspace.rootPath).catch(() => null)
+  if (!info?.isDirectory()) return { ok: false, reason: "invalid_path" }
+  return { ok: true, workspace }
 }
 
 export async function openSessionWithFallback(session: BusinessSession, workspace?: Workspace) {

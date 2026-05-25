@@ -37,11 +37,21 @@ export function registerSessionCoreRoutes(app: Hono) {
     }
     const worker = store.listWorkers()[0]
     if (!worker) return c.json(jsonError("worker not found", 503, reqId), 503)
-    const workspace = await ensureWorkspaceForUser({
+    const workspaceResult = await ensureWorkspaceForUser({
       user,
       projectId: body.data.projectId,
-      workspacePath: body.data.workspacePath,
+      workspaceId: body.data.workspaceId,
     })
+    if (!workspaceResult.ok) {
+      if (workspaceResult.reason === "workspace_not_found") {
+        return c.json(jsonError("workspace not found", 404, reqId), 404)
+      }
+      if (workspaceResult.reason === "forbidden") {
+        return c.json(jsonError("forbidden", 403, reqId), 403)
+      }
+      return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
+    }
+    const workspace = workspaceResult.workspace
     const session = await store.createSession({
       title: body.data.title,
       projectId: body.data.projectId,

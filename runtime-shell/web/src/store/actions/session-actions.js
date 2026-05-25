@@ -19,7 +19,7 @@ export function createSessionActions(input) {
 
     loadSessions: async () => {
       const data = await input.api.sessionList()
-      input.set({ sessions: data.items })
+      input.set({ sessions: data.items, workspaces: data.workspaces })
       return data.items
     },
 
@@ -48,11 +48,12 @@ export function createSessionActions(input) {
         seenEventIds,
         conversationState,
         conversationBlocks: finalizeConversationBlocks(conversationState, isRunning),
+        conversationVersion: conversationState.latestVersion,
         isSubmitting: false,
         isRunning,
         isCancelling: false,
-        pendingPermissions: session?.pendingPermissions || [],
-        pendingQuestions: session?.pendingQuestions || [],
+        pendingPermissions: session?.pendingPermissions ?? [],
+        pendingQuestions: session?.pendingQuestions ?? [],
         respondingPermissionIds: new Set(),
         respondingQuestionIds: new Set(),
         capabilities: buildCapabilitiesFromSession(session),
@@ -60,8 +61,8 @@ export function createSessionActions(input) {
       return data
     },
 
-    createSession: async (title, projectId, workspacePath) => {
-      const session = await input.api.createSession({ title, projectId, workspacePath })
+    createSession: async (title, projectId, workspaceId) => {
+      const session = await input.api.createSession({ title, projectId, workspaceId })
       await input.get().loadSessions()
       input.set({ currentSessionId: session.id })
       await input.get().loadSessionDetail()

@@ -88,6 +88,7 @@ export class RuntimeShellClient implements Client {
       message: params.message,
       mode: "form",
       requestedSchema: params.requestedSchema as Record<string, unknown>,
+      meta: (params._meta ?? undefined) as Record<string, unknown> | undefined,
       createdAt,
     }
 
@@ -96,6 +97,7 @@ export class RuntimeShellClient implements Client {
       requestId,
       message: params.message,
       requestedSchema: params.requestedSchema,
+      meta: params._meta ?? null,
     }, createdAt))
 
     const resolution = await this.hooks.waitForQuestion(requestId)

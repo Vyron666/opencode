@@ -216,7 +216,7 @@ function PlanBlock({ block }) {
 }
 
 function PermissionInlineBlock({ block }) {
-  const store = useStore()
+  const respondPermission = useStore((state) => state.respondPermission)
   const respondingPermissionIds = useStore((state) => state.respondingPermissionIds)
   const requestId = block.data?.requestId || block.data?.id
   const submitting = requestId ? respondingPermissionIds.has(requestId) : false
@@ -238,7 +238,7 @@ function PermissionInlineBlock({ block }) {
           {(block.data?.options || []).map((option) => (
             <button
               key={option.optionId || option.id}
-              onClick={() => store.respondPermission(requestId, true, option.optionId || option.id)}
+              onClick={() => respondPermission(requestId, true, option.optionId || option.id)}
               disabled={submitting}
               className="text-xs px-4 py-1.5 rounded-[8px] bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -247,7 +247,7 @@ function PermissionInlineBlock({ block }) {
           ))}
           {(!block.data?.options || block.data.options.length === 0) && (
             <button
-              onClick={() => store.respondPermission(requestId, true)}
+              onClick={() => respondPermission(requestId, true)}
               disabled={submitting}
               className="text-xs px-4 py-1.5 rounded-[8px] bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -255,7 +255,7 @@ function PermissionInlineBlock({ block }) {
             </button>
           )}
           <button
-            onClick={() => store.respondPermission(requestId, false)}
+            onClick={() => respondPermission(requestId, false)}
             disabled={submitting}
             className="text-xs px-4 py-1.5 rounded-[8px] bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
