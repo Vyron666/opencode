@@ -119,15 +119,15 @@ export default function LoginScreen() {
             <code className="font-mono text-xs px-2 py-0.5 rounded-full bg-black/40 text-brand-text">change-me</code>
           </div>
 
-          {error && (
+          {error ? (
             <div className="rounded-[14px] px-3.5 py-2.5 bg-danger/10 border border-danger/20 text-danger text-xs">
               {error}
             </div>
+          ) : (
+            <div className="rounded-[14px] px-3.5 py-2.5 border border-dashed border-[var(--line-strong)] bg-black/30 text-[var(--text-muted)] text-xs text-center">
+              当前尚未登录。
+            </div>
           )}
-
-          <div className="rounded-[14px] px-3.5 py-2.5 border border-dashed border-[var(--line-strong)] bg-black/30 text-[var(--text-muted)] text-xs text-center">
-            当前尚未登录。
-          </div>
         </div>
       </div>
     </div>

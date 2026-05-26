@@ -1,6 +1,5 @@
 const RUN_STOP_EVENT_TYPES = [
   'turn_completed',
-  'usage_update',
   'session_failed',
   'worker_disconnected',
   'permission_requested',

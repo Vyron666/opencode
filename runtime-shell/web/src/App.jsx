@@ -9,20 +9,24 @@ export default function App() {
   const isAuthenticated = useStore((state) => state.isAuthenticated)
   const checkAuth = useStore((state) => state.checkAuth)
   const loadSessions = useStore((state) => state.loadSessions)
-  const disconnectSSE = useStore((state) => state.disconnectSSE)
+  const setFlash = useStore((state) => state.setFlash)
 
   useEffect(() => {
     // 中文/English: dedupe the initial auth bootstrap so React StrictMode
     // does not fire duplicate 401 checks in development.
-    authBootstrapPromise ??= checkAuth().then((ok) => {
-      if (ok) return loadSessions()
-      return null
-    }).finally(() => {
-      authBootstrapPromise = null
-    })
-
-    return () => disconnectSSE()
-  }, [checkAuth, loadSessions, disconnectSSE])
+    authBootstrapPromise ??= checkAuth()
+      .then((ok) => {
+        if (ok) return loadSessions()
+        return null
+      })
+      .catch((error) => {
+        setFlash(error instanceof Error ? error.message : String(error))
+        return null
+      })
+      .finally(() => {
+        authBootstrapPromise = null
+      })
+  }, [checkAuth, loadSessions, setFlash])
 
   return (
     <div className="h-dvh w-full overflow-hidden">

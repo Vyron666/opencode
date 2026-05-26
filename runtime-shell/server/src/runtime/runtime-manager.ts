@@ -105,9 +105,9 @@ export async function cancelRuntimePrompt(sessionId: string) {
   const runtime = getRuntime(sessionId)
   if (!runtime) return false
   ////////////// runtime-shell customization start //////////////
-  // 中文/English: return to the frontend immediately after the cancel request is dispatched.
-  // The turn still ends only when upstream abort actually resolves and emits stop events.
-  void runtime.client.cancel()
+  // 中文/English: wait until ACP accepts the cancel request so transport errors
+  // surface immediately. The turn still ends only on real upstream stop events.
+  await runtime.client.cancel()
   ////////////// runtime-shell customization end //////////////
   return true
 }

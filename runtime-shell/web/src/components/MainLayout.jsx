@@ -18,15 +18,6 @@ export default function MainLayout() {
     disconnectSSE()
   }, [currentSessionId, activateSession, disconnectSSE])
 
-  useEffect(
-    () => () => {
-      // 中文/English: only close the stream on the real component unmount.
-      // Avoid per-render cleanup races with session activation in StrictMode.
-      disconnectSSE()
-    },
-    [disconnectSSE],
-  )
-
   return (
     <div className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
       grid-cols-[260px_minmax(400px,1fr)_320px]

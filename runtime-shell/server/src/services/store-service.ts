@@ -21,14 +21,18 @@ const log = createLogger("store")
 
 export class StoreService {
   private state = defaultState()
-  private writeQueue = Promise.resolve()
+  private writeTask = Promise.resolve()
+  private dirtyWriteVersion = 0
+  private flushedWriteVersion = 0
 
   async load() {
     this.state = await loadStateFromDisk(log)
   }
 
   async save() {
-    await this.enqueueWrite(() => saveStateToDisk(this.state))
+    const targetVersion = ++this.dirtyWriteVersion
+    this.writeTask = this.writeTask.then(() => this.flushWrites(targetVersion))
+    await this.writeTask
   }
 
   listTenants() {
@@ -186,12 +190,13 @@ export class StoreService {
     return auditLog
   }
 
-  private enqueueWrite<T>(task: () => Promise<T>) {
-    const next = this.writeQueue.then(task, task)
-    this.writeQueue = next.then(
-      () => undefined,
-      () => undefined,
-    )
-    return next
+  private async flushWrites(targetVersion: number) {
+    while (this.flushedWriteVersion < targetVersion) {
+      const nextVersion = this.dirtyWriteVersion
+      // 中文/English: coalesce burst writes into the newest snapshot so streaming
+      // chunks do not force one full state-file rewrite per event.
+      await saveStateToDisk(this.state)
+      this.flushedWriteVersion = nextVersion
+    }
   }
 }
