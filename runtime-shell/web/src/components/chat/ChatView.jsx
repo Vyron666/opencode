@@ -136,7 +136,7 @@ const ConversationSection = memo(function ConversationSection({ currentSessionId
       <div
         ref={timelineRef}
         onScroll={handleScroll}
-        className="relative h-full overflow-y-auto px-4 py-4"
+        className="relative h-full overflow-y-auto overflow-x-hidden px-4 py-4"
         style={{ background: 'linear-gradient(180deg, rgba(20,16,13,0.3), rgba(20,16,13,0.55))' }}
       >
         {showDebug ? <DebugConversationTimeline /> : <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} />}
@@ -284,7 +284,7 @@ function ConversationTimeline({ blocks, currentSessionId }) {
   if (blocks.length === 0) return <EmptyConversation currentSessionId={currentSessionId} />
 
   return (
-    <div className="grid content-start gap-4 pb-4">
+    <div className="grid min-w-0 content-start gap-4 pb-4">
       {blocks.map((block) => (
         <ConversationBlockRow key={block.key} block={block} />
       ))}
@@ -302,7 +302,7 @@ function DebugConversationTimeline() {
 
   // 中文/English: keep expensive raw-event replay inside debug mode only.
   return (
-    <div className="grid content-start gap-4 pb-4">
+    <div className="grid min-w-0 content-start gap-4 pb-4">
       {blocks.map((block) => (
         <ConversationBlockRow key={block.key} block={block} />
       ))}
@@ -311,7 +311,11 @@ function DebugConversationTimeline() {
 }
 
 const ConversationBlockRow = memo(function ConversationBlockRow({ block }) {
-  return <ChatBlockItem block={block} />
+  return (
+    <div className="min-w-0">
+      <ChatBlockItem block={block} />
+    </div>
+  )
 })
 
 function EmptyConversation({ currentSessionId }) {

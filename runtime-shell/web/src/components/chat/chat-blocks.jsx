@@ -34,14 +34,14 @@ export function ChatBlockItem({ block }) {
 
 function UserMessageBlock({ block }) {
   return (
-    <div className="flex gap-3 items-start justify-end">
-      <div className="grid gap-2 max-w-[88%] justify-items-end">
+    <div className="flex min-w-0 gap-3 items-start justify-end">
+      <div className="grid min-w-0 gap-2 max-w-[88%] justify-items-end">
         <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] justify-end">
           <span className="font-bold text-xs text-accent">You</span>
           <span>刚刚</span>
         </div>
         <div
-          className="rounded-[20px] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
+          className="min-w-0 max-w-full rounded-[20px] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
           style={{
             background: 'linear-gradient(135deg, #d4a05a, #c1873e)',
             color: '#14100d',
@@ -116,7 +116,7 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
   }, [block.streaming])
 
   return (
-    <div className="flex gap-3 items-start">
+    <div className="flex min-w-0 gap-3 items-start">
       <div
         className="w-[34px] h-[34px] rounded-[14px] grid place-items-center shrink-0 text-xs font-bold"
         style={{ background: 'linear-gradient(135deg, rgba(212,160,90,0.25), rgba(212,160,90,0.1))', color: '#f0d6a4' }}
@@ -129,7 +129,7 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
           {block.streaming && <span className="text-[10px] opacity-60">流式输出中...</span>}
         </div>
         <div
-          className="rounded-[20px] px-4 py-3 text-sm leading-relaxed break-words markdown-body"
+          className="min-w-0 max-w-full rounded-[20px] px-4 py-3 text-sm leading-relaxed break-words markdown-body"
           style={{
             background: '#231e19',
             borderTopLeftRadius: '6px',
@@ -138,7 +138,7 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
           }}
         >
           {block.streaming ? (
-            <pre ref={textRef} className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" />
+            <pre ref={textRef} className="max-w-full overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" />
           ) : (
             <MarkdownContent content={block.message} />
           )}
@@ -152,24 +152,24 @@ function ThinkingBlock({ block }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className="flex gap-3 items-start">
+    <div className="flex min-w-0 gap-3 items-start">
       <div className="w-[34px] h-[34px] rounded-[14px] grid place-items-center shrink-0 text-xs font-bold bg-brand/10 text-brand-text">
         想
       </div>
-      <div className="grid gap-1.5 max-w-[88%] w-full">
+      <div className="grid min-w-0 gap-1.5 max-w-[88%] w-full">
         <button
           onClick={() => setExpanded(!expanded)}
-          className={`flex items-center gap-2.5 w-full px-3.5 py-2 rounded-[14px] border transition-colors text-left ${
+          className={`flex min-w-0 items-center gap-2.5 w-full px-3.5 py-2 rounded-[14px] border transition-colors text-left ${
             expanded ? 'border-brand bg-brand/10' : 'border-[var(--line)] bg-black/30 hover:border-[var(--line-strong)]'
           }`}
         >
           <span className="text-[10px] font-bold text-brand tracking-widest uppercase">Thinking</span>
-          <span className="text-xs text-[var(--text-dim)] truncate flex-1">{block.message.slice(0, 80)}</span>
+          <span className="min-w-0 text-xs text-[var(--text-dim)] truncate flex-1">{block.message.slice(0, 80)}</span>
           <span className="text-xs text-[var(--text-dim)] font-bold">{expanded ? '收起' : '展开'}</span>
         </button>
         {expanded && (
-          <div className="animate-fade-in px-3.5 pt-2">
-            <div className="border-t border-[var(--line)] pt-3 text-xs text-[var(--text-dim)] leading-relaxed whitespace-pre-wrap break-words">
+          <div className="min-w-0 animate-fade-in px-3.5 pt-2">
+            <div className="min-w-0 border-t border-[var(--line)] pt-3 text-xs text-[var(--text-dim)] leading-relaxed whitespace-pre-wrap break-words">
               {block.message}
             </div>
           </div>
@@ -187,17 +187,17 @@ function ToolBlock({ block }) {
   const isOpen = openByDefault || expanded
 
   return (
-    <div className="flex gap-3 items-start">
+    <div className="flex min-w-0 gap-3 items-start">
       <div
-        className="rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] grid gap-2 max-w-[640px] w-full"
+        className="min-w-0 rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] grid gap-2 max-w-[640px] w-full"
         style={{ background: block.status === 'failed' ? 'rgba(196,74,58,0.08)' : 'rgba(20,16,13,0.35)' }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full" style={{ background: statusColor }} />
           <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: statusColor }}>
             {block.status}
           </span>
-          {block.kind && <span className="text-[10px] text-[var(--text-muted)] uppercase">{block.kind}</span>}
+          {block.kind && <span className="min-w-0 text-[10px] text-[var(--text-muted)] uppercase truncate">{block.kind}</span>}
           {hasDetails && (
             <button
               type="button"
@@ -210,7 +210,7 @@ function ToolBlock({ block }) {
           )}
         </div>
 
-        <div className="text-xs font-semibold text-[var(--text-dim)]">{block.title}</div>
+        <div className="min-w-0 text-xs font-semibold text-[var(--text-dim)] break-words">{block.title}</div>
 
         {isOpen && (
           <>
@@ -240,8 +240,8 @@ function TodoBlock({ block }) {
   const showPlaceholder = todos.length === 0
 
   return (
-    <div className="flex gap-3 items-start">
-      <div className="rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-2 max-w-[560px] w-full">
+    <div className="flex min-w-0 gap-3 items-start">
+      <div className="min-w-0 rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-2 max-w-[560px] w-full">
         <div className="flex items-center gap-2">
           <div className="text-[10px] font-bold text-brand tracking-widest uppercase">Todo</div>
           <span className="text-[10px] text-[var(--text-muted)] uppercase">{block.status}</span>
@@ -267,9 +267,9 @@ function TodoBlock({ block }) {
 
 function ToolData({ label, value }) {
   return (
-    <div className="grid gap-1">
+    <div className="grid min-w-0 gap-1">
       <span className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">{label}</span>
-      <pre className="text-[11px] text-[var(--text-muted)] whitespace-pre-wrap break-words mt-1 bg-black/30 rounded-[10px] p-2 font-mono overflow-x-auto">
+      <pre className="max-w-full text-[11px] text-[var(--text-muted)] whitespace-pre-wrap break-words mt-1 bg-black/30 rounded-[10px] p-2 font-mono overflow-x-auto">
         {formatData(value)}
       </pre>
     </div>
@@ -282,8 +282,8 @@ function PlanBlock({ block }) {
   const preview = block.message || entries.map((item) => `- ${item.text}`).join('\n')
 
   return (
-    <div className="flex gap-3 items-start">
-      <div className="rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-1 max-w-[560px] w-full">
+    <div className="flex min-w-0 gap-3 items-start">
+      <div className="min-w-0 rounded-[14px] px-3.5 py-2.5 border border-[var(--line)] bg-black/30 grid gap-1 max-w-[560px] w-full">
         <div className="flex items-center gap-2">
           <div className="text-[10px] font-bold text-brand tracking-widest uppercase">Plan</div>
           <button
@@ -324,12 +324,12 @@ function PermissionInlineBlock({ block }) {
 
   return (
     <div className="flex justify-center px-4">
-      <div className="rounded-[16px] px-4 py-3 border border-brand/20 bg-brand/5 w-full max-w-[540px] grid gap-2 text-center">
+      <div className="min-w-0 rounded-[16px] px-4 py-3 border border-brand/20 bg-brand/5 w-full max-w-[540px] grid gap-2 text-center">
         <div className="text-[10px] font-bold text-brand tracking-widest uppercase">权限请求</div>
         <div className="text-xs font-semibold text-[var(--text)]">{block.data?.toolName || '权限审批'}</div>
         <div className="text-[11px] text-[var(--text-muted)]">当前会话正在等待你处理这个权限请求，处理完成后会继续运行。</div>
         {block.data?.rawInput && (
-          <pre className="text-xs text-[var(--text-dim)] bg-black/30 rounded-[10px] p-2 whitespace-pre-wrap break-words overflow-x-auto">
+          <pre className="max-w-full text-xs text-[var(--text-dim)] bg-black/30 rounded-[10px] p-2 whitespace-pre-wrap break-words overflow-x-auto">
             {formatData(block.data.rawInput)}
           </pre>
         )}
@@ -394,7 +394,7 @@ function MarkdownContent({ content }) {
         a: ({ node, ...props }) => <a {...props} className="text-brand underline underline-offset-2" target="_blank" rel="noreferrer" />,
         code: ({ inline, className, children, ...props }) =>
           inline ? (
-            <code {...props} className={`rounded bg-black/40 px-1 py-0.5 text-[0.9em] ${className || ''}`.trim()}>
+            <code {...props} className={`rounded bg-black/40 px-1 py-0.5 text-[0.9em] break-all ${className || ''}`.trim()}>
               {children}
             </code>
           ) : (
@@ -402,8 +402,13 @@ function MarkdownContent({ content }) {
               {children}
             </code>
           ),
-        pre: ({ node, ...props }) => <pre {...props} className="overflow-x-auto rounded-[12px] bg-black/45 p-3 my-3" />,
-        table: ({ node, ...props }) => <table {...props} className="w-full border-collapse text-left text-xs my-3" />,
+        pre: ({ node, ...props }) => <pre {...props} className="max-w-full overflow-x-auto rounded-[12px] bg-black/45 p-3 my-3" />,
+        table: ({ node, ...props }) => (
+          <div className="my-3 max-w-full overflow-x-auto">
+            {/* 中文/English: keep wide tables scrollable inside the message card instead of widening the whole timeline. */}
+            <table {...props} className="min-w-full border-collapse text-left text-xs" />
+          </div>
+        ),
         th: ({ node, ...props }) => <th {...props} className="border border-[var(--line)] px-2 py-1 bg-black/30" />,
         td: ({ node, ...props }) => <td {...props} className="border border-[var(--line)] px-2 py-1 align-top" />,
         ul: ({ node, ...props }) => <ul {...props} className="list-disc pl-5 my-2 space-y-1" />,

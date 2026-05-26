@@ -66,6 +66,14 @@
 
   .markdown-body {
     color: inherit;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .markdown-body > * {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .markdown-body h1,
@@ -90,5 +98,11 @@
   .markdown-body img {
     max-width: 100%;
     border-radius: 12px;
+  }
+
+  .markdown-body pre,
+  .markdown-body code,
+  .markdown-body table {
+    max-width: 100%;
   }
 }
