@@ -89,8 +89,8 @@ export default function LoginScreen() {
                 style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a69888' d='M6 7.8L2.4 4.2h7.2z'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', paddingRight: '32px' }}
               >
                 <option value="admin">admin</option>
-                <option value="operator">operator</option>
                 <option value="developer">developer</option>
+                <option value="developer-secondary">developer-secondary</option>
               </select>
             </label>
 

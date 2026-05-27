@@ -10,6 +10,7 @@ type WorkspaceRow = {
   project_id: string
   name: string
   root_path: string
+  status: "active" | "disabled" | "deleted"
   created_by: string
   created_at: string
   updated_at: string
@@ -23,6 +24,7 @@ function toWorkspace(row: WorkspaceRow): Workspace {
     projectId: row.project_id,
     name: row.name,
     rootPath: row.root_path,
+    status: row.status,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -40,6 +42,7 @@ export async function listAllWorkspaces() {
         project_id,
         name,
         root_path,
+        status,
         created_by,
         created_at,
         updated_at
@@ -62,6 +65,7 @@ export async function findWorkspace(workspaceId: string) {
         project_id,
         name,
         root_path,
+        status,
         created_by,
         created_at,
         updated_at
@@ -87,6 +91,7 @@ export async function findWorkspaceByPath(rootPath: string) {
         project_id,
         name,
         root_path,
+        status,
         created_by,
         created_at,
         updated_at
@@ -112,6 +117,7 @@ export async function listWorkspacesForUser(user: User) {
         project_id,
         name,
         root_path,
+        status,
         created_by,
         created_at,
         updated_at
@@ -145,6 +151,7 @@ export async function ensureWorkspace(input: {
     projectId: input.projectId,
     name: input.name || path.basename(input.rootPath) || input.projectId,
     rootPath: input.rootPath,
+    status: "active",
     createdBy: input.createdBy,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -159,12 +166,13 @@ export async function ensureWorkspace(input: {
         workspace_code,
         name,
         root_path,
+        status,
         created_at,
         created_by,
         updated_at,
         updated_by,
         deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       workspace.id,
@@ -174,6 +182,7 @@ export async function ensureWorkspace(input: {
       workspace.id,
       workspace.name,
       workspace.rootPath,
+      workspace.status,
       workspace.createdAt,
       workspace.createdBy,
       workspace.updatedAt,

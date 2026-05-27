@@ -40,5 +40,5 @@ docker compose up --build
 ## 默认账号
 
 - `admin / change-me`
-- `operator / change-me`
 - `developer / change-me`
+- `developer-secondary / change-me`

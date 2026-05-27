@@ -17,10 +17,12 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
   await seedWorkspaces(state)
   await seedSessions(state)
   await seedAuthSessions(state)
+  await seedSessionShareBindings(state)
   log.info("database bootstrap completed", {
     workspaceCount: state.workspaces.length,
     sessionCount: state.sessions.length,
     authSessionCount: state.authSessions.length,
+    sessionShareBindingCount: state.sessionShareBindings.length,
   })
 
   async function seedWorkspaces(input: PersistedState) {
@@ -39,12 +41,13 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
             workspace_code,
             name,
             root_path,
+            status,
             created_at,
             created_by,
             updated_at,
             updated_by,
             deleted_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           workspace.id,
@@ -54,6 +57,7 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
           workspace.id,
           workspace.name,
           workspace.rootPath,
+          workspace.status,
           workspace.createdAt,
           workspace.createdBy,
           workspace.updatedAt,
@@ -127,13 +131,14 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
             organization_id,
             user_id,
             token_hash,
+            status,
             expires_at,
             created_at,
             created_by,
             updated_at,
             updated_by,
             deleted_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           authSession.id,
@@ -141,11 +146,56 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
           authSession.organizationId,
           authSession.userId,
           authSession.tokenHash,
+          authSession.status,
           authSession.expiresAt,
           authSession.createdAt,
           authSession.userId,
           authSession.updatedAt,
           authSession.userId,
+          null,
+        ],
+      )
+    }
+  }
+
+  async function seedSessionShareBindings(input: PersistedState) {
+    const existing = await db.queryRows<ExistingRow>("SELECT id FROM session_share_binding")
+    const existingIds = new Set(existing.map((item) => item.id))
+    for (const binding of input.sessionShareBindings) {
+      if (existingIds.has(binding.id)) continue
+      await db.execute(
+        `
+          INSERT INTO session_share_binding (
+            id,
+            tenant_id,
+            organization_id,
+            project_id,
+            workspace_id,
+            business_session_id,
+            owner_user_id,
+            target_user_id,
+            status,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          binding.id,
+          binding.tenantId,
+          binding.organizationId,
+          binding.projectId,
+          binding.workspaceId,
+          binding.businessSessionId,
+          binding.ownerUserId,
+          binding.targetUserId,
+          binding.status,
+          binding.createdAt,
+          binding.createdBy,
+          binding.updatedAt,
+          binding.updatedBy,
           null,
         ],
       )

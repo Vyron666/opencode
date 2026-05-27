@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "operator" | "developer" | "viewer"
+export type UserRole = "admin" | "developer"
 
 export type Tenant = {
   id: string
@@ -36,6 +36,8 @@ export type User = {
   passwordHash: string
   displayName: string
   role: UserRole
+  projectIds: string[]
+  workspaceIds: string[]
 }
 
 export type Role = {
@@ -65,6 +67,7 @@ export type AuthSession = {
   tenantId: string
   organizationId: string
   tokenHash: string
+  status: "active" | "expired" | "revoked"
   createdAt: string
   updatedAt: string
   expiresAt: string
@@ -77,9 +80,26 @@ export type Workspace = {
   projectId: string
   name: string
   rootPath: string
+  status: "active" | "disabled" | "deleted"
   createdBy: string
   createdAt: string
   updatedAt: string
+}
+
+export type SessionShareBinding = {
+  id: string
+  tenantId: string
+  organizationId: string
+  projectId: string
+  workspaceId: string
+  businessSessionId: string
+  ownerUserId: string
+  targetUserId: string
+  status: "active" | "revoked"
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
 }
 
 export type WorkspaceAccessResult =
@@ -89,7 +109,7 @@ export type WorkspaceAccessResult =
     }
   | {
       ok: false
-      reason: "workspace_not_found" | "forbidden" | "invalid_path"
+      reason: "workspace_not_found" | "forbidden" | "workspace_disabled" | "invalid_path"
     }
 
 export type AuditAction =
@@ -97,10 +117,13 @@ export type AuditAction =
   | "auth.logout"
   | "workspace.register"
   | "session.create"
+  | "session.share"
+  | "session.unshare"
   | "session.open"
   | "session.close"
   | "session.prompt"
   | "session.cancel"
+  | "custom_model.save"
   | "provider.save"
 
 export type AuditLog = {
@@ -111,7 +134,13 @@ export type AuditLog = {
   businessSessionId?: string
   requestId?: string
   action: AuditAction
-  resourceType: "auth_session" | "workspace" | "business_session" | "provider_config"
+  resourceType:
+    | "auth_session"
+    | "workspace"
+    | "business_session"
+    | "provider_config"
+    | "custom_model"
+    | "session_share_binding"
   resourceId?: string
   detail: Record<string, unknown>
   createdAt: string
@@ -248,6 +277,7 @@ export type PersistedState = {
   permissions: Permission[]
   authSessions: AuthSession[]
   workspaces: Workspace[]
+  sessionShareBindings: SessionShareBinding[]
   workers: WorkerNode[]
   sessions: BusinessSession[]
   events: SessionEvent[]

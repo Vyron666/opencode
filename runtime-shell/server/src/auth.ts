@@ -28,9 +28,14 @@ export async function createSession(user: User) {
 
 export async function getSession(token?: string | null) {
   if (!token) return
-  const authSession = await authService.findAuthSession(hashToken(token))
+  const tokenHash = hashToken(token)
+  const authSession = await authService.findAuthSession(tokenHash)
   if (!authSession) return
-  if (new Date(authSession.expiresAt).getTime() <= Date.now()) return
+  if (authSession.status !== "active") return
+  if (new Date(authSession.expiresAt).getTime() <= Date.now()) {
+    await authService.expireAuthSession(tokenHash)
+    return
+  }
   return userService.getUser(authSession.userId)
 }
 

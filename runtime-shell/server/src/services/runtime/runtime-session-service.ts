@@ -10,10 +10,11 @@ import {
 import type { inputPartSchema } from "../../http/schemas"
 import { createLogger } from "../../log"
 import type { BusinessSession, User } from "../../types"
-import { findBusinessSessionForUser } from "../session/session-access-service"
+import { requireSessionAction } from "../session/session-access-service"
 import { createSessionEvent } from "../session/session-event-service"
 import { setSessionStatus } from "../session/session-lifecycle-service"
 import { sessionSummary } from "../session/session-summary-service"
+import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { auditService, sessionService } from "../store/store-singleton"
 import { withLocaleGuidance } from "./runtime-input-service"
 import type { z } from "zod"
@@ -24,9 +25,18 @@ export async function loadSessionRuntimeForUser(input: {
   user: User
   businessSessionId: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "load",
+  })
   if (!result.ok) return result
-  await loadRealRuntime(result.session)
+  const workspaceResult = await requireRuntimeSessionWorkspace({
+    user: input.user,
+    session: result.session,
+  })
+  if (!workspaceResult.ok) return workspaceResult
+  await loadRealRuntime(workspaceResult.session)
   const loaded = await sessionService.getSession(result.session.id)
   if (!loaded) return { ok: false as const, reason: "session_not_found" }
   return { ok: true as const, session: sessionSummary(loaded) }
@@ -36,9 +46,18 @@ export async function resumeSessionRuntimeForUser(input: {
   user: User
   businessSessionId: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "resume",
+  })
   if (!result.ok) return result
-  await resumeRealRuntime(result.session)
+  const workspaceResult = await requireRuntimeSessionWorkspace({
+    user: input.user,
+    session: result.session,
+  })
+  if (!workspaceResult.ok) return workspaceResult
+  await resumeRealRuntime(workspaceResult.session)
   const resumed = await sessionService.getSession(result.session.id)
   if (!resumed) return { ok: false as const, reason: "session_not_found" }
   return { ok: true as const, session: sessionSummary(resumed) }
@@ -49,7 +68,11 @@ export async function forkSessionRuntimeForUser(input: {
   businessSessionId: string
   title: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "fork",
+  })
   if (!result.ok) return result
   const forkedSession = await sessionService.forkSession({
     source: result.session,
@@ -68,9 +91,18 @@ export async function submitPromptForUser(input: {
   businessSessionId: string
   parts: z.infer<typeof inputPartSchema>[]
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "prompt",
+  })
   if (!result.ok) return result
-  const runtime = getRuntime(result.session.id) ?? (await openRealRuntime(result.session))
+  const workspaceResult = await requireRuntimeSessionWorkspace({
+    user: input.user,
+    session: result.session,
+  })
+  if (!workspaceResult.ok) return workspaceResult
+  const runtime = getRuntime(result.session.id) ?? (await openRealRuntime(workspaceResult.session))
   if (!runtime || runtime.transport !== "real") {
     return { ok: false as const, reason: "runtime_not_active" }
   }
@@ -167,7 +199,11 @@ export async function cancelPromptForUser(input: {
   requestId: string
   businessSessionId: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "cancel",
+  })
   if (!result.ok) return result
   const success = await cancelRuntimePrompt(result.session.id)
   if (!success) return { ok: false as const, reason: "runtime_not_active" }
@@ -193,7 +229,11 @@ export async function updateSessionModeForUser(input: {
   businessSessionId: string
   modeId: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "mode_update",
+  })
   if (!result.ok) return result
   const runtime = getRuntime(result.session.id)
   if (!runtime || runtime.transport !== "real") {
@@ -216,7 +256,11 @@ export async function updateSessionModelForUser(input: {
   businessSessionId: string
   modelId: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "model_update",
+  })
   if (!result.ok) return result
   const runtime = getRuntime(result.session.id)
   if (!runtime || runtime.transport !== "real") {
@@ -240,7 +284,11 @@ export async function updateSessionConfigForUser(input: {
   configId: string
   value: string | boolean
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "config_update",
+  })
   if (!result.ok) return result
   const runtime = getRuntime(result.session.id)
   if (!runtime || runtime.transport !== "real") {

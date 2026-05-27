@@ -15,6 +15,11 @@ export const sessionIdSchema = z.object({
   businessSessionId: z.string().min(1),
 })
 
+export const sessionShareSchema = z.object({
+  businessSessionId: z.string().min(1),
+  targetUserId: z.string().min(1),
+})
+
 export const forkSessionSchema = z.object({
   businessSessionId: z.string().min(1),
   title: z.string().min(1),

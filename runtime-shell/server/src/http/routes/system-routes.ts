@@ -1,6 +1,6 @@
 import type { Hono } from "hono"
 import { getHealthOverview, getWorkerOverviewForUser } from "../../services/system/system-service"
-import { jsonOk, requestId } from "../response"
+import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
 export function registerSystemRoutes(app: Hono) {
@@ -13,6 +13,10 @@ export function registerSystemRoutes(app: Hono) {
     const reqId = requestId(c)
     const user = await requireUser(c)
     if (!user) return unauthorized(c)
-    return c.json(jsonOk(await getWorkerOverviewForUser(user), reqId))
+    const result = await getWorkerOverviewForUser(user)
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({ items: result.items, opencode: result.opencode }, reqId))
   })
 }

@@ -12,6 +12,7 @@ import { StoreAuditService } from "./store/store-audit-service"
 import { StoreAuthService } from "./store/store-auth-service"
 import { StoreMetadataService } from "./store/store-metadata-service"
 import { StoreSessionService } from "./store/store-session-service"
+import { StoreSessionShareService } from "./store/store-session-share-service"
 import { StoreStateService } from "./store/store-state-service"
 import { StoreUserService } from "./store/store-user-service"
 import { StoreWorkerService } from "./store/store-worker-service"
@@ -34,6 +35,7 @@ export class StoreService {
     () => this.stateService.save(),
     log,
   )
+  readonly sessionShareService = new StoreSessionShareService()
   readonly auditService = new StoreAuditService(() => this.stateService.readState(), () => this.stateService.save())
 
   async load() {
@@ -83,6 +85,10 @@ export class StoreService {
 
   async deleteAuthSession(tokenHash: string) {
     return this.authService.deleteAuthSession(tokenHash)
+  }
+
+  async expireAuthSession(tokenHash: string) {
+    return this.authService.expireAuthSession(tokenHash)
   }
 
   async listWorkspaces() {
@@ -162,6 +168,33 @@ export class StoreService {
     return this.sessionService.appendEvent(event)
   }
 
+  async listSessionSharesForTargetUser(userId: string) {
+    return this.sessionShareService.listSharesForTargetUser(userId)
+  }
+
+  async findSessionShareForTarget(input: {
+    businessSessionId: string
+    targetUserId: string
+  }) {
+    return this.sessionShareService.findShareForSessionTarget(input)
+  }
+
+  async createSessionShare(input: {
+    session: BusinessSession
+    ownerUserId: string
+    targetUserId: string
+  }) {
+    return this.sessionShareService.createShareBinding(input)
+  }
+
+  async revokeSessionShare(input: {
+    businessSessionId: string
+    targetUserId: string
+    updatedBy: string
+  }) {
+    return this.sessionShareService.revokeShareBinding(input)
+  }
+
   listAuditLogs() {
     return this.auditService.listAuditLogs()
   }
@@ -173,7 +206,13 @@ export class StoreService {
     businessSessionId?: string
     requestId?: string
     action: AuditAction
-    resourceType: "auth_session" | "workspace" | "business_session" | "provider_config"
+    resourceType:
+      | "auth_session"
+      | "workspace"
+      | "business_session"
+      | "provider_config"
+      | "custom_model"
+      | "session_share_binding"
     resourceId?: string
     detail: Record<string, unknown>
   }) {

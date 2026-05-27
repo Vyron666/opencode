@@ -10,4 +10,5 @@ export const authService = storeService.authService
 export const workspaceService = storeService.workspaceService
 export const workerService = storeService.workerService
 export const sessionService = storeService.sessionService
+export const sessionShareService = storeService.sessionShareService
 export const auditService = storeService.auditService

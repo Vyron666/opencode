@@ -8,6 +8,7 @@ type AuthSessionRow = {
   tenant_id: string
   organization_id: string
   token_hash: string
+  status: "active" | "expired" | "revoked"
   created_at: string
   updated_at: string
   expires_at: string
@@ -20,6 +21,7 @@ function toAuthSession(row: AuthSessionRow): AuthSession {
     tenantId: row.tenant_id,
     organizationId: row.organization_id,
     tokenHash: row.token_hash,
+    status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     expiresAt: row.expires_at,
@@ -36,6 +38,7 @@ export async function listSessions() {
         tenant_id,
         organization_id,
         token_hash,
+        status,
         created_at,
         updated_at,
         expires_at
@@ -57,6 +60,7 @@ export async function findSession(tokenHash: string) {
         tenant_id,
         organization_id,
         token_hash,
+        status,
         created_at,
         updated_at,
         expires_at
@@ -84,6 +88,7 @@ export async function createSession(input: {
     tenantId: input.user.tenantId,
     organizationId: input.user.organizationId,
     tokenHash: input.tokenHash,
+    status: "active",
     createdAt: timestamp,
     updatedAt: timestamp,
     expiresAt: input.expiresAt,
@@ -96,13 +101,14 @@ export async function createSession(input: {
         organization_id,
         user_id,
         token_hash,
+        status,
         expires_at,
         created_at,
         created_by,
         updated_at,
         updated_by,
         deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       authSession.id,
@@ -110,6 +116,7 @@ export async function createSession(input: {
       authSession.organizationId,
       authSession.userId,
       authSession.tokenHash,
+      authSession.status,
       authSession.expiresAt,
       authSession.createdAt,
       authSession.userId,
@@ -125,6 +132,30 @@ export async function removeSession(tokenHash: string) {
   const db = getRuntimeDatabaseClient()
   const existing = await findSession(tokenHash)
   if (!existing) return false
-  await db.execute("DELETE FROM auth_session WHERE token_hash = ?", [tokenHash])
+  await db.execute(
+    `
+      UPDATE auth_session
+      SET status = ?, updated_at = ?, updated_by = ?
+      WHERE token_hash = ?
+        AND deleted_at IS NULL
+    `,
+    ["revoked", now(), existing.userId, tokenHash],
+  )
+  return true
+}
+
+export async function expireSession(tokenHash: string) {
+  const db = getRuntimeDatabaseClient()
+  const existing = await findSession(tokenHash)
+  if (!existing) return false
+  await db.execute(
+    `
+      UPDATE auth_session
+      SET status = ?, updated_at = ?, updated_by = ?
+      WHERE token_hash = ?
+        AND deleted_at IS NULL
+    `,
+    ["expired", now(), existing.userId, tokenHash],
+  )
   return true
 }

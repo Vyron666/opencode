@@ -38,6 +38,15 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_found") {
+        return c.json(jsonError("workspace not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_disabled") {
+        return c.json(jsonError("workspace is disabled", 409, reqId), 409)
+      }
+      if (result.reason === "invalid_path") {
+        return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
+      }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
 
@@ -60,6 +69,15 @@ export function registerAcpSessionRoutes(app: Hono) {
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_found") {
+        return c.json(jsonError("workspace not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_disabled") {
+        return c.json(jsonError("workspace is disabled", 409, reqId), 409)
+      }
+      if (result.reason === "invalid_path") {
+        return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
@@ -109,6 +127,15 @@ export function registerAcpSessionRoutes(app: Hono) {
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_found") {
+        return c.json(jsonError("workspace not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_disabled") {
+        return c.json(jsonError("workspace is disabled", 409, reqId), 409)
+      }
+      if (result.reason === "invalid_path") {
+        return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
       }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)

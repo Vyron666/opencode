@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS auth_session (
   organization_id VARCHAR(64) NOT NULL,
   user_id VARCHAR(64) NOT NULL,
   token_hash VARCHAR(255) NOT NULL UNIQUE,
+  status VARCHAR(32) NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   created_by VARCHAR(64),
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS workspace_binding (
   workspace_code VARCHAR(128) NOT NULL,
   name VARCHAR(255) NOT NULL,
   root_path TEXT NOT NULL,
+  status VARCHAR(32) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   created_by VARCHAR(64) NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
@@ -120,6 +122,24 @@ CREATE TABLE IF NOT EXISTS business_session (
   deleted_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS session_share_binding (
+  id VARCHAR(64) PRIMARY KEY,
+  tenant_id VARCHAR(64) NOT NULL,
+  organization_id VARCHAR(64) NOT NULL,
+  project_id VARCHAR(64) NOT NULL,
+  workspace_id VARCHAR(64) NOT NULL,
+  business_session_id VARCHAR(64) NOT NULL,
+  owner_user_id VARCHAR(64) NOT NULL,
+  target_user_id VARCHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  created_by VARCHAR(64) NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  updated_by VARCHAR(64),
+  deleted_at TIMESTAMPTZ,
+  UNIQUE (business_session_id, target_user_id)
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL,
@@ -145,4 +165,6 @@ CREATE INDEX IF NOT EXISTS idx_workspace_binding_scope ON workspace_binding (ten
 CREATE INDEX IF NOT EXISTS idx_worker_node_status ON worker_node (status);
 CREATE INDEX IF NOT EXISTS idx_business_session_scope ON business_session (tenant_id, organization_id, project_id);
 CREATE INDEX IF NOT EXISTS idx_business_session_worker_node_id ON business_session (worker_node_id);
+CREATE INDEX IF NOT EXISTS idx_session_share_binding_target_user_id ON session_share_binding (target_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_session_share_binding_workspace_id ON session_share_binding (workspace_id, target_user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_scope ON audit_log (tenant_id, organization_id, created_at);

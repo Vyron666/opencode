@@ -13,5 +13,7 @@ export function sanitizeUser(user: User) {
     role: user.role,
     tenantId: user.tenantId,
     organizationId: user.organizationId,
+    projectIds: user.projectIds,
+    workspaceIds: user.workspaceIds,
   }
 }

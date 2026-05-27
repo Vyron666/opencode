@@ -21,4 +21,8 @@ export class StoreAuthService {
   async deleteAuthSession(tokenHash: string) {
     return AuthRepo.removeSession(tokenHash)
   }
+
+  async expireAuthSession(tokenHash: string) {
+    return AuthRepo.expireSession(tokenHash)
+  }
 }

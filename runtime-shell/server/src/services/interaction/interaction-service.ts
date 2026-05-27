@@ -6,12 +6,9 @@ import {
   subscribeRuntimeEvents,
 } from "../../acp-runtime-manager"
 import type { PendingPermission, PendingQuestion, SessionEvent, User } from "../../types"
-import { findBusinessSessionForUser } from "../session/session-access-service"
+import { buildAccessContext } from "../access/access-context-service"
+import { requireSessionAction } from "../session/session-access-service"
 import { sessionService } from "../store/store-singleton"
-
-async function visibleSessionIds(user: User) {
-  return new Set((await sessionService.listUserSessions(user)).map((session) => session.id))
-}
 
 function writeSseEvent(controller: ReadableStreamDefaultController<Uint8Array>, encoder: TextEncoder, event: SessionEvent) {
   controller.enqueue(encoder.encode(`id: ${event.eventId}\n`))
@@ -27,7 +24,11 @@ export async function listPendingPermissionsForUser(input: {
   businessSessionId?: string
 }) {
   if (input.businessSessionId) {
-    const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+    const result = await requireSessionAction({
+      user: input.user,
+      sessionId: input.businessSessionId,
+      action: "respond_permission",
+    })
     if (!result.ok) return result
     return {
       ok: true as const,
@@ -35,10 +36,10 @@ export async function listPendingPermissionsForUser(input: {
     }
   }
 
-  const sessionIds = await visibleSessionIds(input.user)
+  const context = await buildAccessContext(input.user)
   return {
     ok: true as const,
-    items: listPendingPermissions().filter((item) => sessionIds.has(item.businessSessionId)),
+    items: listPendingPermissions().filter((item) => context.sessionIds.has(item.businessSessionId)),
   }
 }
 
@@ -47,7 +48,11 @@ export async function listPendingQuestionsForUser(input: {
   businessSessionId?: string
 }) {
   if (input.businessSessionId) {
-    const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+    const result = await requireSessionAction({
+      user: input.user,
+      sessionId: input.businessSessionId,
+      action: "respond_question",
+    })
     if (!result.ok) return result
     return {
       ok: true as const,
@@ -55,10 +60,10 @@ export async function listPendingQuestionsForUser(input: {
     }
   }
 
-  const sessionIds = await visibleSessionIds(input.user)
+  const context = await buildAccessContext(input.user)
   return {
     ok: true as const,
-    items: listPendingQuestions().filter((item) => sessionIds.has(item.businessSessionId)),
+    items: listPendingQuestions().filter((item) => context.sessionIds.has(item.businessSessionId)),
   }
 }
 
@@ -77,7 +82,11 @@ export async function respondPermissionForUser(input: {
   approved: boolean
   optionId?: string
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "respond_permission",
+  })
   if (!result.ok) return result
   const permission = findPermissionForSession(result.session.id, input.requestId)
   if (!permission) return { ok: false as const, reason: "permission_request_not_found" }
@@ -101,7 +110,11 @@ export async function respondQuestionForUser(input: {
   action: "accept" | "decline" | "cancel"
   content?: Record<string, unknown>
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "respond_question",
+  })
   if (!result.ok) return result
   const question = findQuestionForSession(result.session.id, input.requestId)
   if (!question) return { ok: false as const, reason: "question_request_not_found" }
@@ -124,7 +137,11 @@ export async function createEventStreamForUser(input: {
   afterEventId?: string
   abortSignal: AbortSignal
 }) {
-  const result = await findBusinessSessionForUser(input.businessSessionId, input.user)
+  const result = await requireSessionAction({
+    user: input.user,
+    sessionId: input.businessSessionId,
+    action: "read",
+  })
   if (!result.ok) return result
 
   const encoder = new TextEncoder()

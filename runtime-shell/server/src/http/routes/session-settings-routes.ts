@@ -14,7 +14,11 @@ export function registerSessionSettingsRoutes(app: Hono) {
     const reqId = requestId(c)
     const user = await requireUser(c)
     if (!user) return unauthorized(c)
-    return c.json(jsonOk(await listCustomModelsForUser(user), reqId))
+    const result = await listCustomModelsForUser(user)
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({ items: result.items }, reqId))
   })
 
   app.post("/api/custom-models", async (c) => {
@@ -26,22 +30,26 @@ export function registerSessionSettingsRoutes(app: Hono) {
       return c.json(jsonError("models array is required", 400, reqId), 400)
     }
 
-    return c.json(
-      jsonOk(
-        await saveCustomModelsForUser({
-          user,
-          models: body.models,
-        }),
-        reqId,
-      ),
-    )
+    const result = await saveCustomModelsForUser({
+      user,
+      requestId: reqId,
+      models: body.models,
+    })
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({ success: result.success, count: result.count }, reqId))
   })
 
   app.get("/api/provider-config", async (c) => {
     const reqId = requestId(c)
     const user = await requireUser(c)
     if (!user) return unauthorized(c)
-    return c.json(jsonOk(await listProviderConfigsForUser(user), reqId))
+    const result = await listProviderConfigsForUser(user)
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({ items: result.items }, reqId))
   })
 
   app.post("/api/provider-config/save", async (c) => {
@@ -53,13 +61,21 @@ export function registerSessionSettingsRoutes(app: Hono) {
       return c.json(jsonError("invalid provider config payload", 400, reqId, body.error.flatten()), 400)
     }
 
+    const result = await saveProviderConfigForUser({
+      user,
+      requestId: reqId,
+      config: body.data,
+    })
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
     return c.json(
       jsonOk(
-        await saveProviderConfigForUser({
-          user,
-          requestId: reqId,
-          config: body.data,
-        }),
+        {
+          success: result.success,
+          providerId: result.providerId,
+          reloadedSessionCount: result.reloadedSessionCount,
+        },
         reqId,
       ),
     )

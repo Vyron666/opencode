@@ -1,4 +1,4 @@
-# runtime-shell 企业化改造方案（P1 / P2 / P3）
+﻿# runtime-shell 企业化改造方案（P1 / P2 / P3）
 
 本文档定义 `runtime-shell` 在 `P1 / P2 / P3` 三个阶段的企业化改造方案，用于承接当前 `P0` 已完成的数据库底座、基础分层与初步运行能力。
 
@@ -54,7 +54,7 @@
 需要达到的结果：
 
 1. 认证会话完全持久化，脱离进程内状态依赖。
-2. 引入 RBAC 与数据范围模型。
+2. 引入最小角色模型、资源动作授权与数据范围模型。
 3. 所有业务接口统一执行“认证 + 授权 + 数据范围 + 边界校验”。
 4. 会话、事件、工作区、配置查询默认按租户与组织边界过滤。
 5. 工作区只能使用登记过的 `workspace_binding`，不能接受任意路径。
@@ -77,13 +77,13 @@
 1. `services/auth/`
    - 负责认证会话恢复、用户身份上下文构建、鉴权入口编排。
 2. `services/access/`
-   - 负责 RBAC 判定、资源动作校验、范围授权判定。
+   - 负责角色判定、资源动作校验、范围授权判定与分享授权判定。
 3. `services/workspace/`
    - 负责工作区绑定校验、路径合法性与边界校验。
 4. `repos/auth-repo.ts`
    - 负责认证会话 CRUD。
 5. `repos/access-repo.ts`
-   - 负责角色、权限、授权范围、成员关系查询。
+   - 负责角色、权限、授权范围、成员关系与分享关系查询。
 6. `repos/workspace-binding-repo.ts`
    - 负责工作区绑定查询与注册信息读取。
 
@@ -143,6 +143,12 @@
 7. `workspace_binding`
 8. `auth_session`
 
+补充说明（落地口径）：
+
+1. 所有表建议统一包含 `created_at / created_by / updated_at / updated_by`（如仓库已有统一字段口径则按现有实现对齐）。
+2. 所有“归属边界”字段建议显式化：至少 `tenant_id`，需要组织/项目隔离时带 `organization_id / project_id`。
+3. 设计优先满足“服务端可校验、可审计、可回溯”，避免把边界隐含在路径或进程内状态里。
+
 ### 3.4.2 关键字段建议
 
 #### `role`
@@ -156,6 +162,12 @@
 7. `created_at`
 8. `updated_at`
 
+建议约束与索引（最小可用）：
+
+1. 唯一约束：`(tenant_id, organization_id, code)` 唯一，避免同组织下角色 code 冲突。
+2. 索引：`(tenant_id, organization_id)` 用于列表与过滤。
+3. 字段约束：`code` 仅允许 `[a-z0-9_:-]`（小写）以便稳定用于程序侧权限映射（中文/English：stable machine-readable identifier）。
+
 #### `permission`
 
 1. `id`
@@ -163,6 +175,11 @@
 3. `action`
 4. `scope_level`
 5. `description`
+
+建议约束与索引（最小可用）：
+
+1. 唯一约束：`(resource_type, action, scope_level)` 唯一。
+2. 索引：`(resource_type, action)` 用于授权判定查找。
 
 #### `user_role_binding`
 
@@ -174,6 +191,12 @@
 6. `role_id`
 7. `scope_type`
 8. `scope_id`
+
+建议约束与索引（最小可用）：
+
+1. 唯一约束：`(tenant_id, organization_id, project_id, user_id, role_id, scope_type, scope_id)` 唯一，用 DB 防重复绑定（幂等基础）。
+2. 索引：`(tenant_id, user_id)` 用于加载用户角色。
+3. 索引：`(tenant_id, organization_id, project_id)` 用于组织/项目成员管理查询。
 
 #### `workspace_binding`
 
@@ -188,18 +211,104 @@
 9. `created_by`
 10. `updated_by`
 
+建议约束与索引（最小可用）：
+
+1. 唯一约束：`(tenant_id, organization_id, project_id, workspace_code)` 唯一。
+2. 索引：`(tenant_id, organization_id, project_id, status)` 用于列表与启用过滤。
+3. 字段约束：`root_path` 只作为“绑定信息”存储，任何执行入口不接受客户端直传路径（中文/English：path is data, never auth）。
+
+#### `auth_session`
+
+建议字段（在现有基础上补齐落地口径）：
+
+1. `id`
+2. `tenant_id`
+3. `user_id`
+4. `token_hash`（只存 hash，不存明文；中文/English：store hash only）
+5. `status`（`active / revoked / expired`）
+6. `expires_at`
+7. `last_seen_at`（可选，用于运维排障与会话回收）
+8. `request_id`（可选，便于追踪来源登录请求）
+9. `created_at / created_by / updated_at / updated_by`
+
+建议约束与索引（最小可用）：
+
+1. 索引：`(tenant_id, user_id, status)` 用于 `auth/me`、登出与查询。
+2. 索引：`(expires_at)` 用于过期清理。
+
+#### `session_share_binding`
+
+建议字段（`P1-D` 最小新增）：
+
+1. `id`
+2. `tenant_id`
+3. `organization_id`
+4. `project_id`
+5. `workspace_id`
+6. `business_session_id`
+7. `owner_user_id`
+8. `target_user_id`
+9. `status`
+10. `created_at / created_by / updated_at / updated_by`
+
+建议约束与索引（最小可用）：
+
+1. 唯一约束：`(business_session_id, target_user_id)` 唯一，避免重复分享。
+2. 索引：`(target_user_id, status)` 用于加载“我被分享了哪些会话”。
+3. 索引：`(workspace_id, target_user_id)` 用于把分享出来的 `workspace` 访问权与 `session` 访问权保持一致。
+
 ### 3.4.3 权限模型
 
-建议采用“角色 + 权限 + 范围”的三段式模型：
+`P1-D` 第一版建议采用“最小角色 + 动作授权 + 范围 + 分享绑定”的模型，而不是一次性落完整复杂 RBAC。
 
-1. 角色决定可执行哪些动作。
+1. 角色决定用户属于 `admin` 还是 `developer`。
 2. 权限决定动作对应的资源类型。
 3. 范围决定动作在哪个租户、组织、项目、工作区、会话边界内有效。
+4. 分享绑定决定某个用户是否被额外授予“指定 `session` + 其所属 `workspace`”的联合访问权。
+
+角色冻结口径：
+
+1. `admin`
+   - 拥有全部接口权限。
+   - 唯一允许管理角色、权限与分享关系。
+   - 唯一允许访问 `system/workers`。
+2. `developer`
+   - 拥有自己范围内的会话运行权限。
+   - 可以分享自己拥有的 `session`。
+   - 不具备平台级配置管理权限，不可访问 `system/workers`。
+
+中文/English：sharing a session implicitly shares its bound workspace. Session and workspace are not split for share authorization.
+
+分享权限矩阵（`P1-D` 第一版冻结）：
+
+1. 被分享用户对 `session` 允许的动作：
+   - `read/detail/events`
+   - `open/load/resume`
+   - `prompt/input`
+   - `cancel`
+   - `permission.respond`
+   - `question.respond`
+2. 被分享用户对 `session` 禁止的动作：
+   - `close`
+   - `delete`
+   - `share.create`
+   - `share.delete`
+   - `provider/model/mode/config update`
+   - `fork`
+3. 被分享用户对 `workspace` 允许的动作：
+   - 仅允许该被分享 `session` 在该 `workspace` 上继续运行
+4. 被分享用户对 `workspace` 禁止的动作：
+   - `session.create`
+   - 独立打开或使用该 `workspace`
+   - `workspace_binding` 管理
+   - `enable/disable/delete`
+   - 再次分享
 
 资源类型建议先覆盖：
 
 1. `business_session`
 2. `workspace`
+3. `session_share_binding`
 3. `provider_config`
 4. `custom_model`
 5. `worker_node`
@@ -216,6 +325,12 @@
 7. `prompt`
 8. `cancel`
 9. `manage`
+
+补充：范围口径（scope）如何落地成“可校验的规则”：
+
+1. `scope_level` 决定“授权记录”属于租户/组织/项目/工作区哪一级。
+2. `scope_type + scope_id` 决定在该级别下的具体对象（例如 `workspace` + 某个 `workspace_id`）。
+3. Service 层授权判定建议按“动作允许 + 范围命中”两步做：先判断 action，再判断 scope（拒绝原因必须可解释）。
 
 ### 3.4.4 P1 枚举冻结口径
 
@@ -288,18 +403,22 @@
 ### 3.5.2 会话访问
 
 1. 根据 `businessSessionId` 查询会话元数据。
-2. 校验当前用户是否属于同租户、同组织、同项目。
-3. 校验当前用户是否具备对应动作权限。
-4. 校验会话绑定的工作区是否仍在当前用户可见范围内。
-5. 通过后才允许读取会话详情、事件流、运行时控制接口。
+2. 先判定当前用户是否为 `admin`。
+3. 再判定当前用户是否为 `session owner`。
+4. 再判定当前用户是否命中该 `session` 的分享绑定。
+5. 若命中分享绑定，则默认同时授予该 `session` 所属 `workspace` 的访问权。
+6. 若以上都不命中，再执行普通租户 / 组织 / 项目 / 工作区范围校验。
+7. 校验当前用户是否具备对应动作权限。
+8. 通过后才允许读取会话详情、事件流、运行时控制接口。
 
 ### 3.5.3 工作区访问
 
 1. 前端只能传 `workspaceId`。
 2. 服务端按 `workspace_binding` 查询工作区。
-3. 校验 `tenant_id + organization_id + project_id`。
-4. 校验当前用户在该范围内是否有使用工作区的权限。
-5. 校验 `root_path` 是否存在且仍为合法目录。
+3. 若访问来自 `session share binding`，则该绑定自动构成该工作区的访问依据。
+4. 若不存在分享绑定，再校验 `tenant_id + organization_id + project_id`。
+5. 校验当前用户在该范围内是否有使用工作区的权限。
+6. 校验 `root_path` 是否存在且仍为合法目录。
 
 ## 3.6 API 改造范围
 
@@ -314,12 +433,69 @@
 5. provider save / custom model save
 6. worker overview / health
 
+`P1-D` 第一版角色口径：
+
+1. `admin`
+   - 可访问全部接口分类。
+2. `developer`
+   - 可访问认证接口、自身可见范围内的会话读写接口、交互接口。
+   - 不可访问 `system/workers`。
+   - 不可访问平台级 provider / custom model 管理接口，除非后续文档明确放开。
+
 统一要求：
 
 1. 鉴权失败返回 `401`。
 2. 授权失败返回 `403`。
 3. 资源不存在返回 `404`。
 4. 边界冲突返回 `409`。
+
+### 3.6.1.1 统一请求头与响应结构（建议补齐）
+
+为便于排障与审计，建议所有 HTTP 请求至少包含以下请求头（如仓库已有规范则按现有实现对齐）：
+
+1. `x-request-id`：请求唯一标识（或由服务端生成并回传）
+2. `x-client-version`：客户端版本（便于灰度与兼容排障）
+3. `x-timezone` / `x-locale`：时区与语言（可选）
+
+统一响应结构（成功/失败都遵守）：
+
+```jsonc
+{
+  "code": "OK", // 中文/English：machine-readable code
+  "message": "success",
+  "data": {},
+  "requestId": "req_xxx"
+}
+```
+
+字段级错误建议（仅在参数校验失败时返回，避免“失败但不可解释”）：
+
+```jsonc
+{
+  "code": "VALIDATION_ERROR",
+  "message": "invalid params",
+  "data": null,
+  "requestId": "req_xxx",
+  "details": [
+    { "field": "workspaceId", "reason": "required" }
+  ]
+}
+```
+
+### 3.6.1.2 写接口统一使用 POST + 动作后缀（落地口径）
+
+为避免歧义，建议在 `runtime-shell` 的对外 HTTP 口径中，将所有“有副作用”的动作统一收敛为 `POST` 并用动作后缀表达，例如：
+
+1. `POST /api/session/create`
+2. `POST /api/session/open`
+3. `POST /api/session/close`
+4. `POST /api/session/prompt`
+5. `POST /api/session/cancel`
+6. `POST /api/workspace-binding/create`
+7. `POST /api/workspace-binding/enable`
+8. `POST /api/workspace-binding/disable`
+
+中文/English：GET is read-only. All writes are POST with verb-like suffix.
 
 ### 3.6.2 Service 层
 
@@ -340,6 +516,7 @@ Repo 层只提供以下能力：
 3. 查资源边界
 4. 查工作区绑定
 5. 查认证会话
+6. 查 `session share binding`
 
 Repo 层不承担“允许还是拒绝”的业务判定。
 
@@ -394,6 +571,7 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 
 1. 服务重启后登录态仍可恢复。
 2. 手工删除或吊销 `auth_session` 后请求立即失效。
+3. 同一 `token` 重放不会导致“创建多个会话”或“状态不一致”（幂等/一致性口径需明确）。
 
 ### `P1-B`：工作区绑定强校验
 
@@ -413,6 +591,7 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 
 1. 任意伪造路径都无法进入执行链路。
 2. 禁用的工作区无法创建或打开会话。
+3. `workspace_binding` 不存在时返回 `404`；存在但无权限返回 `403`（避免信息泄露可按具体口径调整，但必须在文档中固定）。
 
 ### `P1-C`：会话 / 事件读取边界过滤
 
@@ -439,19 +618,24 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 
 1. 越权读取会话详情返回 `403` 或 `404`。
 2. SSE 事件流只能收到当前用户有权限看到的会话事件。
+3. `session list` 默认只返回当前范围内会话（tenant/org/project/workspace），且过滤条件可审计（记录 requestId + scope）。
 
 ### `P1-D`：RBAC 写接口接入
 
 目标：
 
-1. 所有关键写接口都经过动作级授权。
+1. 所有接口都具备稳定角色口径，所有关键写接口都经过动作级授权。
+2. `session` 分享能力进入正式授权链。
 
 任务：
 
-1. 为 `session.create/open/close/prompt/cancel`
-2. 为 `provider.save`
-3. 为 `custom_model.save`
-4. 为 `worker.manage`
+1. 收敛角色模型，只保留 `admin`、`developer`。
+2. 为全部接口冻结角色访问矩阵。
+3. 为 `session.create/open/close/prompt/cancel/load/resume/fork`
+4. 为 `provider.save`
+5. 为 `custom_model.save`
+6. 为 `worker.manage`
+7. 为 `session.share/create` 与 `session.share/delete`
 
 补齐资源类型与动作映射。
 
@@ -459,11 +643,19 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 
 1. 所有写接口统一先鉴权，再授权，再执行业务。
 2. 所有拒绝结果都要落审计。
+3. `developer` 只能分享自己拥有的 `session`。
+4. 分享 `session` 时默认同时授予对应 `workspace` 访问权，不允许拆分授权。
+5. `system/workers` 只允许 `admin` 访问。
+6. 被分享用户获得的是“指定 `session` 的协作权限 + 该 `session` 所属 `workspace` 的附属使用权”。
+7. 被分享用户不得因为一次分享而获得该 `workspace` 上的独立建会话权或管理权。
 
 验收：
 
 1. 未授权用户无法执行对应写操作。
 2. 审计日志可追踪“谁在什么范围内被哪条规则拒绝”。
+3. 每个拒绝必须包含 `deny_reason` 且与授权判定链路步骤一一对应（例如：未登录 / 无角色 / 无动作权限 / scope 不命中 / 资源不在边界）。
+4. 被分享用户可以访问被分享 `session`，并默认可以访问其所属 `workspace`。
+5. 被分享用户未获得其它无关 `session` 或 `workspace` 的访问权。
 
 ## 3.9 风险
 
@@ -713,6 +905,76 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 3. 会话关闭时显式释放绑定
 4. prompt / cancel / close 时校验运行状态机
 
+### 4.8.1 P2 接口设计细化（示例）
+
+补充说明：以下示例用于把“调度/绑定/恢复”从概念落到可实现的协议口径；字段名可按仓库现有 DTO 规范调整，但语义建议保持一致。
+
+#### `POST /api/worker/register`
+
+请求：
+
+```jsonc
+{
+  "tenantId": "t_xxx",
+  "organizationId": "o_xxx",
+  "nodeCode": "worker-001",
+  "endpoint": "http://10.0.0.1:1234",
+  "version": "1.2.3",
+  "capacityTotal": 10
+}
+```
+
+校验要点：
+
+1. 必须鉴权 + 授权（资源：`worker_node`，动作：`manage`）。
+2. `nodeCode` 在同一范围内唯一（避免重复注册）。
+
+响应：
+
+```jsonc
+{
+  "code": "OK",
+  "message": "success",
+  "data": { "workerNodeId": "w_xxx", "status": "ready" },
+  "requestId": "req_xxx"
+}
+```
+
+#### `POST /api/worker/heartbeat`
+
+请求：
+
+```jsonc
+{
+  "workerNodeId": "w_xxx",
+  "capacityUsed": 3,
+  "status": "ready"
+}
+```
+
+校验要点：
+
+1. 心跳允许使用“Worker 自身身份”或“平台鉴权”两种模式其一（需要在实现阶段固定一种口径，避免双轨）。
+2. 心跳只能更新自身记录，不允许跨 `tenant_id / organization_id` 更新其它 Worker。
+
+#### `POST /api/session/rebind`
+
+用途：对 `orphaned` 或 `lost` 绑定的会话触发重新绑定（可由平台定时任务或人工触发）。
+
+请求：
+
+```jsonc
+{
+  "sessionId": "s_xxx",
+  "reason": "worker_offline"
+}
+```
+
+校验要点：
+
+1. 必须鉴权 + 授权（资源：`business_session`，动作：`update` 或单独定义 `rebind`）。
+2. 会话必须处于允许 rebind 的状态（例如 `orphaned`），不允许对 `active` 强制迁移（除非后续明确支持）。
+
 ## 4.9 运维与审计要求
 
 `P2` 完成后，至少需要可追踪以下数据：
@@ -875,6 +1137,15 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 2. 覆盖优先级按自下而上覆盖。
 3. 文档、代码、测试、审计输出必须使用同一套层级名词。
 
+### 5.4.4 配置项命名与约束（建议补齐）
+
+为避免配置项扩张后不可治理，建议在 `P3` 固定以下口径：
+
+1. `namespace`：按领域划分，例如 `provider` / `model` / `mcp` / `skill` / `runtime`。
+2. `config_key`：小写 `snake_case` 或 `dot.case`，禁止临时拼写（中文/English：stable, searchable keys）。
+3. `value_json`：必须可被 schema 校验（实现阶段可用仓库既有 schema 方案对齐）。
+4. 敏感字段（例如 apiKey/token）禁止明文回显；审计只记录“是否变更/影响范围”，不记录明文内容。
+
 ### 5.4.3 关键字段建议
 
 #### `config_item`
@@ -992,6 +1263,59 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 1. 写接口返回变更摘要与影响范围摘要。
 2. 高风险写接口必须返回是否进入审批流。
 3. 任何配置变更必须带 `requestId` 并落审计。
+
+### 5.7.1 P3 接口设计细化（示例）
+
+#### `POST /api/config/provider/save`
+
+用途：保存 provider 配置（写接口统一使用 `POST`，动作后缀为 `save` 或拆分为 `create/update/enable/disable`，实现阶段需固定一种口径，避免双轨）。
+
+请求：
+
+```jsonc
+{
+  "scopeLevel": "project",
+  "scopeId": "p_xxx",
+  "providerKey": "openai",
+  "action": "update",
+  "payload": {
+    "baseUrl": "https://api.example.com",
+    "apiKey": "***"
+  },
+  "idempotencyKey": "idem_xxx"
+}
+```
+
+校验要点：
+
+1. 必须鉴权 + 授权（资源：`provider_config`，动作：`update`）。
+2. `scopeLevel/scopeId` 必须与当前用户数据范围匹配（越界直接拒绝）。
+3. `payload` 必须通过 schema 校验；敏感字段禁止回显。
+
+响应（如果进入审批流）：
+
+```jsonc
+{
+  "code": "OK",
+  "message": "approval required",
+  "data": {
+    "requiresApproval": true,
+    "approvalRequestId": "apr_xxx",
+    "impactSummary": { "affectedSessions": 12, "affectedWorkspaces": 3 }
+  },
+  "requestId": "req_xxx"
+}
+```
+
+#### `GET /api/config/impact/preview`
+
+用途：在“未真正生效”前预览影响范围，避免误伤线上会话。
+
+返回建议至少包含：
+
+1. 影响范围（tenant/org/project/workspace/session 维度）
+2. 会话数量与关键会话 ID 列表（可分页）
+3. 是否建议立即重载（布尔）与原因说明（字符串）
 
 ## 5.8 Service 与 Repo 改造重点
 

@@ -19,7 +19,13 @@ export class StoreAuditService {
     businessSessionId?: string
     requestId?: string
     action: AuditAction
-    resourceType: "auth_session" | "workspace" | "business_session" | "provider_config"
+    resourceType:
+      | "auth_session"
+      | "workspace"
+      | "business_session"
+      | "provider_config"
+      | "custom_model"
+      | "session_share_binding"
     resourceId?: string
     detail: Record<string, unknown>
   }) {

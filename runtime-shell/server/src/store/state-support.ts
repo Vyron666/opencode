@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto"
-import path from "node:path"
 import { Config } from "../config"
 import type {
   Organization,
@@ -15,7 +14,10 @@ import type {
 
 export const DEFAULT_TENANT_ID = "tenant_default"
 export const DEFAULT_ORGANIZATION_ID = "org_default"
+export const DEFAULT_PROJECT_ID = "default"
+export const SECONDARY_PROJECT_ID = "project_secondary"
 export const DEFAULT_WORKSPACE_ID = "workspace_default"
+export const SECONDARY_WORKSPACE_ID = "workspace_secondary"
 
 export const now = () => new Date().toISOString()
 
@@ -25,11 +27,6 @@ export function nextId(prefix: string) {
 
 function hashPassword(password: string) {
   return createHash("sha256").update(password).digest("hex")
-}
-
-function readLegacyPassword(input: User) {
-  const legacy = (input as Record<string, unknown>).password
-  return typeof legacy === "string" ? legacy : undefined
 }
 
 export const defaultState = (): PersistedState => {
@@ -43,6 +40,7 @@ export const defaultState = (): PersistedState => {
     permissions: buildDefaultPermissions(),
     authSessions: [],
     workspaces: buildDefaultWorkspaces(timestamp),
+    sessionShareBindings: [],
     workers: buildDefaultWorkers(timestamp),
     sessions: [],
     events: [],
@@ -52,58 +50,21 @@ export const defaultState = (): PersistedState => {
 
 export function normalizeState(input: PersistedState): PersistedState {
   const defaults = defaultState()
-  const tenants = Array.isArray(input.tenants) && input.tenants.length ? input.tenants : defaults.tenants
-  const organizations =
-    Array.isArray(input.organizations) && input.organizations.length ? input.organizations : defaults.organizations
-  const projects = Array.isArray(input.projects) && input.projects.length ? input.projects : defaults.projects
-  const users = Array.isArray(input.users) && input.users.length ? input.users : defaults.users
-  const roles = Array.isArray(input.roles) ? input.roles : defaults.roles
-  const permissions = Array.isArray(input.permissions) ? input.permissions : defaults.permissions
-  const authSessions = Array.isArray(input.authSessions) ? input.authSessions : defaults.authSessions
-  const workspaces = Array.isArray(input.workspaces) && input.workspaces.length ? input.workspaces : defaults.workspaces
-  const workers = Array.isArray(input.workers) && input.workers.length ? input.workers : defaults.workers
-  const sessions = Array.isArray(input.sessions) ? input.sessions : defaults.sessions
-  const events = Array.isArray(input.events) ? input.events : defaults.events
-  const auditLogs = Array.isArray(input.auditLogs) ? input.auditLogs : defaults.auditLogs
-
   return {
-    tenants,
-    organizations,
-    projects,
-    users: users.map((item) => {
-      const fallbackPassword = item.username === Config.adminUsername ? Config.adminPassword : "change-me"
-      return {
-        ...item,
-        tenantId: item.tenantId || DEFAULT_TENANT_ID,
-        organizationId: item.organizationId || DEFAULT_ORGANIZATION_ID,
-        passwordHash: item.passwordHash || hashPassword(readLegacyPassword(item) || fallbackPassword),
-      }
-    }),
-    roles,
-    permissions,
-    authSessions,
-    workspaces: workspaces.map((item) => ({
-      ...item,
-      tenantId: item.tenantId || DEFAULT_TENANT_ID,
-      organizationId: item.organizationId || DEFAULT_ORGANIZATION_ID,
-      projectId: item.projectId || "default",
-      name: item.name || path.basename(item.rootPath || "") || "Workspace",
-    })),
-    workers: workers.map((item) => ({
-      ...item,
-      workerCode: item.workerCode || item.id,
-      capacity: item.capacity ?? 1,
-    })),
-    sessions: sessions.map((item) => ({
-      ...item,
-      tenantId: item.tenantId || DEFAULT_TENANT_ID,
-      organizationId: item.organizationId || DEFAULT_ORGANIZATION_ID,
-      workspaceId: item.workspaceId || DEFAULT_WORKSPACE_ID,
-      lastEventAt: item.lastEventAt || item.updatedAt,
-      capabilityState: item.capabilityState || {},
-    })),
-    events,
-    auditLogs,
+    tenants: Array.isArray(input.tenants) && input.tenants.length ? input.tenants : defaults.tenants,
+    organizations:
+      Array.isArray(input.organizations) && input.organizations.length ? input.organizations : defaults.organizations,
+    projects: Array.isArray(input.projects) && input.projects.length ? input.projects : defaults.projects,
+    users: Array.isArray(input.users) && input.users.length ? input.users : defaults.users,
+    roles: Array.isArray(input.roles) ? input.roles : defaults.roles,
+    permissions: Array.isArray(input.permissions) ? input.permissions : defaults.permissions,
+    authSessions: Array.isArray(input.authSessions) ? input.authSessions : defaults.authSessions,
+    workspaces: Array.isArray(input.workspaces) && input.workspaces.length ? input.workspaces : defaults.workspaces,
+    sessionShareBindings: Array.isArray(input.sessionShareBindings) ? input.sessionShareBindings : defaults.sessionShareBindings,
+    workers: Array.isArray(input.workers) && input.workers.length ? input.workers : defaults.workers,
+    sessions: Array.isArray(input.sessions) ? input.sessions : defaults.sessions,
+    events: Array.isArray(input.events) ? input.events : defaults.events,
+    auditLogs: Array.isArray(input.auditLogs) ? input.auditLogs : defaults.auditLogs,
   }
 }
 
@@ -135,12 +96,22 @@ function buildDefaultOrganizations(timestamp: string): Organization[] {
 function buildDefaultProjects(timestamp: string): Project[] {
   return [
     {
-      id: "project_default",
+      id: DEFAULT_PROJECT_ID,
       tenantId: DEFAULT_TENANT_ID,
       organizationId: DEFAULT_ORGANIZATION_ID,
       code: "default",
       name: "Default Project",
       defaultWorkspacePath: "/workspace/workspaces",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: SECONDARY_PROJECT_ID,
+      tenantId: DEFAULT_TENANT_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      code: "secondary",
+      name: "Secondary Project",
+      defaultWorkspacePath: "/workspace/workspaces/secondary",
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -157,15 +128,8 @@ function buildDefaultUsers(): User[] {
       passwordHash: hashPassword(Config.adminPassword),
       displayName: "Runtime Shell Admin",
       role: "admin",
-    },
-    {
-      id: "user_operator",
-      tenantId: DEFAULT_TENANT_ID,
-      organizationId: DEFAULT_ORGANIZATION_ID,
-      username: "operator",
-      passwordHash: hashPassword("change-me"),
-      displayName: "Runtime Operator",
-      role: "operator",
+      projectIds: [DEFAULT_PROJECT_ID, SECONDARY_PROJECT_ID],
+      workspaceIds: [DEFAULT_WORKSPACE_ID, SECONDARY_WORKSPACE_ID],
     },
     {
       id: "user_developer",
@@ -175,6 +139,19 @@ function buildDefaultUsers(): User[] {
       passwordHash: hashPassword("change-me"),
       displayName: "Runtime Developer",
       role: "developer",
+      projectIds: [SECONDARY_PROJECT_ID],
+      workspaceIds: [SECONDARY_WORKSPACE_ID],
+    },
+    {
+      id: "user_developer_secondary",
+      tenantId: DEFAULT_TENANT_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      username: "developer-secondary",
+      passwordHash: hashPassword("change-me"),
+      displayName: "Runtime Developer Secondary",
+      role: "developer",
+      projectIds: [DEFAULT_PROJECT_ID],
+      workspaceIds: [DEFAULT_WORKSPACE_ID],
     },
   ]
 }
@@ -193,9 +170,22 @@ function buildDefaultWorkspaces(timestamp: string): Workspace[] {
       id: DEFAULT_WORKSPACE_ID,
       tenantId: DEFAULT_TENANT_ID,
       organizationId: DEFAULT_ORGANIZATION_ID,
-      projectId: "default",
+      projectId: DEFAULT_PROJECT_ID,
       name: "Default Workspace Root",
       rootPath: "/workspace/workspaces",
+      status: "active",
+      createdBy: "user_admin",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: SECONDARY_WORKSPACE_ID,
+      tenantId: DEFAULT_TENANT_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      projectId: SECONDARY_PROJECT_ID,
+      name: "Secondary Workspace Root",
+      rootPath: "/workspace/workspaces/secondary",
+      status: "active",
       createdBy: "user_admin",
       createdAt: timestamp,
       updatedAt: timestamp,

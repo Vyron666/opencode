@@ -1,6 +1,9 @@
-import { stat } from "node:fs/promises"
-import { sessionService, workspaceService } from "../store/store-singleton"
-import type { BusinessSession, User, WorkspaceAccessResult } from "../../types"
+import { buildAccessContext } from "../access/access-context-service"
+import { authorizeSessionAction, type SessionAction } from "../access/authorization-service"
+import { sessionService } from "../store/store-singleton"
+import type { BusinessSession, User } from "../../types"
+
+export { ensureWorkspaceForUser } from "../workspace/workspace-access-service"
 
 export type BusinessSessionAccessResult =
   | {
@@ -15,26 +18,28 @@ export type BusinessSessionAccessResult =
 export async function findBusinessSessionForUser(sessionId: string, user?: User): Promise<BusinessSessionAccessResult> {
   const session = await sessionService.getSession(sessionId)
   if (!session) return { ok: false, reason: "session_not_found" }
-  if (user && (session.tenantId !== user.tenantId || session.organizationId !== user.organizationId)) {
+  if (!user) return { ok: true, session }
+  const context = await buildAccessContext(user)
+  // 中文/English: P1-C reads must resolve session visibility from one shared
+  // access context instead of each caller hand-writing its own boundary logic.
+  if (!context.sessionIds.has(session.id)) {
     return { ok: false, reason: "forbidden" }
   }
   return { ok: true, session }
 }
 
-export async function ensureWorkspaceForUser(input: {
+export async function requireSessionAction(input: {
   user: User
-  projectId: string
-  workspaceId: string
-}): Promise<WorkspaceAccessResult> {
-  const workspace = await workspaceService.getWorkspace(input.workspaceId)
-  if (!workspace) return { ok: false, reason: "workspace_not_found" }
-  if (workspace.tenantId !== input.user.tenantId || workspace.organizationId !== input.user.organizationId) {
-    return { ok: false, reason: "forbidden" }
-  }
-  if (workspace.projectId !== input.projectId) {
-    return { ok: false, reason: "forbidden" }
-  }
-  const info = await stat(workspace.rootPath).catch(() => null)
-  if (!info?.isDirectory()) return { ok: false, reason: "invalid_path" }
-  return { ok: true, workspace }
+  sessionId: string
+  action: SessionAction
+}): Promise<BusinessSessionAccessResult> {
+  const sessionResult = await findBusinessSessionForUser(input.sessionId, input.user)
+  if (!sessionResult.ok) return sessionResult
+  const authorization = await authorizeSessionAction({
+    user: input.user,
+    session: sessionResult.session,
+    action: input.action,
+  })
+  if (!authorization.ok) return { ok: false, reason: "forbidden" }
+  return sessionResult
 }
