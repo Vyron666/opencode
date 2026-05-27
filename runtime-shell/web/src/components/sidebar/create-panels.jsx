@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../../store'
-import { Field, inputClassName } from './sidebar-support'
+import { Field, inputClassName, Select, useViewerContext } from './sidebar-support'
 
 const DEFAULT_TITLE = 'Runtime Shell 会话'
 
@@ -39,25 +39,19 @@ export function CreateSessionPanel() {
         <input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClassName} />
       </Field>
       <Field label="工作区">
-        <select
+        <Select
           value={workspaceId}
-          onChange={(event) => setWorkspaceId(event.target.value)}
-          className={inputClassName}
-          disabled={!hasWorkspaces}
-        >
-          <option value="" disabled>
-            {hasWorkspaces ? '请选择工作区' : '暂无可用工作区'}
-          </option>
-          {workspaces.map((workspace) => (
-            <option key={workspace.id} value={workspace.id}>
-              {workspace.name} ({workspace.projectId})
-            </option>
-          ))}
-        </select>
+          onChange={setWorkspaceId}
+          options={workspaces.map((workspace) => ({
+            id: workspace.id,
+            label: `${workspace.name} / ${workspace.projectName || workspace.projectId}`,
+          }))}
+          emptyLabel="暂无可用工作区"
+        />
       </Field>
-      <Field label="项目 ID">
+      <Field label="所属项目">
         <input
-          value={selectedWorkspace?.projectId || ''}
+          value={selectedWorkspace?.projectName || selectedWorkspace?.projectId || ''}
           className={inputClassName}
           readOnly
           disabled={!selectedWorkspace}
@@ -65,13 +59,13 @@ export function CreateSessionPanel() {
       </Field>
       {!hasWorkspaces && (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          当前账号下还没有可用工作区，暂时无法创建会话。请先让服务端登记工作区，再回来创建会话。
+          当前账号下还没有可用工作区，暂时无法创建会话。请先在服务端登记工作区，再回来创建会话。
         </p>
       )}
       {selectedWorkspace && (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          当前将使用工作区 <span className="font-semibold text-[var(--text)]">{selectedWorkspace.name}</span>，项目 ID 为{' '}
-          <span className="font-semibold text-[var(--text)]">{selectedWorkspace.projectId}</span>。
+          当前将使用工作区 <span className="font-semibold text-[var(--text)]">{selectedWorkspace.name}</span>，所属项目为{' '}
+          <span className="font-semibold text-[var(--text)]">{selectedWorkspace.projectName || selectedWorkspace.projectId}</span>。
         </p>
       )}
       <button
@@ -88,6 +82,7 @@ export function CreateSessionPanel() {
 export function ForkSessionPanel() {
   const forkSession = useStore((state) => state.forkSession)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
+  const { canManageSession, isSharedSession } = useViewerContext()
   const [title, setTitle] = useState('Forked Session')
 
   return (
@@ -102,7 +97,16 @@ export function ForkSessionPanel() {
       <Field label="分支标题">
         <input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClassName} />
       </Field>
-      <button type="submit" disabled={Boolean(pendingSessionAction)} className="rounded-[10px] py-2 px-4 text-xs font-semibold bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+      {isSharedSession && (
+        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+          共享会话只允许继续协作，不允许从当前会话创建分支。
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={Boolean(pendingSessionAction) || !canManageSession}
+        className="rounded-[10px] py-2 px-4 text-xs font-semibold bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
         {pendingSessionAction === 'fork' ? '创建分支中...' : '从当前会话创建分支'}
       </button>
     </form>

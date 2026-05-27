@@ -25,8 +25,36 @@ export function createSessionActions(input) {
 
     loadSessions: async () => {
       const data = await input.api.sessionList()
-      input.set({ sessions: data.items, workspaces: data.workspaces })
-      return data.items
+      const currentSessionId = input.get().currentSessionId
+      const nextSessions = Array.isArray(data.items) ? data.items : []
+      const nextWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : []
+      const hasCurrentSession = currentSessionId
+        ? nextSessions.some((session) => session.id === currentSessionId)
+        : false
+
+      if (!currentSessionId || hasCurrentSession) {
+        input.set({ sessions: nextSessions, workspaces: nextWorkspaces })
+        return nextSessions
+      }
+
+      // 中文/English: if the current session is no longer visible after refresh,
+      // clear client-side runtime state so the UI does not keep operating on a stale session.
+      input.get().disconnectSSE()
+      input.set((state) =>
+        input.resetConversationState({
+          sessions: nextSessions,
+          workspaces: nextWorkspaces,
+          currentSessionId: '',
+          sessionSelectionVersion: state.sessionSelectionVersion + 1,
+        }),
+      )
+      return nextSessions
+    },
+
+    loadWorkerOverview: async () => {
+      const data = await input.api.workerList()
+      input.set({ workers: data.items || [], workerOverview: data.opencode || null })
+      return data
     },
 
     loadSessionDetail: async () => {
@@ -37,7 +65,23 @@ export function createSessionActions(input) {
         return
       }
 
-      const data = await input.api.sessionDetail(currentSessionId)
+      const data = await input.api.sessionDetail(currentSessionId).catch((error) => {
+        if (error?.status !== 403 && error?.status !== 404) throw error
+        if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) throw error
+
+        // 中文/English: when the current session becomes forbidden or disappears,
+        // clear the stale selection immediately so the UI returns to a safe idle state.
+        input.get().disconnectSSE()
+        input.set((state) =>
+          input.resetConversationState({
+            sessions: state.sessions.filter((session) => session.id !== currentSessionId),
+            workspaces: state.workspaces,
+            currentSessionId: '',
+            sessionSelectionVersion: state.sessionSelectionVersion + 1,
+          }),
+        )
+        throw error
+      })
       if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
       const session = data.session || null
       const eventBuffer = Array.isArray(data.events) ? data.events : []
@@ -291,6 +335,36 @@ export function createSessionActions(input) {
       )
       if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
       input.set({ pendingSettingsAction: '' })
+    },
+
+    shareSession: async (targetUserId) => {
+      const currentSessionId = input.get().currentSessionId
+      if (!currentSessionId || !targetUserId) return
+      input.set({ pendingShareAction: 'share' })
+      await input.api.shareSession(currentSessionId, targetUserId).then(
+        () => undefined,
+        createRequestFailureHandler(input, { pendingShareAction: '' }, '分享会话失败'),
+      )
+      await input.get().loadSessionDetail().then(
+        (value) => value,
+        createRequestFailureHandler(input, { pendingShareAction: '' }, '刷新会话详情失败'),
+      )
+      input.set({ pendingShareAction: '' })
+    },
+
+    unshareSession: async (targetUserId) => {
+      const currentSessionId = input.get().currentSessionId
+      if (!currentSessionId || !targetUserId) return
+      input.set({ pendingShareAction: 'unshare' })
+      await input.api.unshareSession(currentSessionId, targetUserId).then(
+        () => undefined,
+        createRequestFailureHandler(input, { pendingShareAction: '' }, '取消分享失败'),
+      )
+      await input.get().loadSessionDetail().then(
+        (value) => value,
+        createRequestFailureHandler(input, { pendingShareAction: '' }, '刷新会话详情失败'),
+      )
+      input.set({ pendingShareAction: '' })
     },
   }
 }

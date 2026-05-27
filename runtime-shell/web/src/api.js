@@ -10,7 +10,7 @@ async function request(url, options = {}) {
   const envelope = requireApiEnvelope(body, response.status)
 
   if (!response.ok || envelope.code !== 0) {
-    throw new Error(envelope.message || `request failed with status ${response.status}`)
+    throw createApiError(response.status, envelope)
   }
 
   return envelope.data
@@ -35,6 +35,18 @@ export const api = {
     request('/api/session/create', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  shareSession: (businessSessionId, targetUserId) =>
+    request('/api/session/share/create', {
+      method: 'POST',
+      body: JSON.stringify({ businessSessionId, targetUserId }),
+    }),
+
+  unshareSession: (businessSessionId, targetUserId) =>
+    request('/api/session/share/delete', {
+      method: 'POST',
+      body: JSON.stringify({ businessSessionId, targetUserId }),
     }),
 
   closeSession: (businessSessionId) =>
@@ -138,7 +150,7 @@ export function createEventSource(sessionId, onEvent, onError, afterEventId) {
   const search = new URLSearchParams({ businessSessionId: sessionId })
 
   if (afterEventId) {
-    // 中文/English: 传入最后一个已持久化事件 ID，重连时只续接增量事件。
+    // 中文/English: pass the last persisted event id so reconnect only requests incremental events.
     search.set('afterEventId', afterEventId)
   }
 
@@ -182,4 +194,22 @@ function requireApiEnvelope(body, status) {
     throw new Error(`invalid response envelope with status ${status}`)
   }
   return body
+}
+
+function createApiError(status, envelope) {
+  const error = new Error(readStatusMessage(status, envelope.message))
+  error.name = 'ApiError'
+  error.status = status
+  error.code = envelope.code
+  error.requestId = envelope.requestId
+  error.details = envelope.details
+  return error
+}
+
+function readStatusMessage(status, message) {
+  if (status === 401) return '登录状态已失效，请重新登录'
+  if (status === 403) return message || '当前账号没有执行该操作的权限'
+  if (status === 404) return message || '请求的资源不存在或已不可见'
+  if (status === 409) return message || '当前状态不允许执行该操作'
+  return message || `request failed with status ${status}`
 }

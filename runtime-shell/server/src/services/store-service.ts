@@ -172,6 +172,10 @@ export class StoreService {
     return this.sessionShareService.listSharesForTargetUser(userId)
   }
 
+  async listSessionSharesForSession(businessSessionId: string) {
+    return this.sessionShareService.listSharesForSession(businessSessionId)
+  }
+
   async findSessionShareForTarget(input: {
     businessSessionId: string
     targetUserId: string

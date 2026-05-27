@@ -5,6 +5,8 @@ export function createBaseState(createConversationState, defaultCapabilities) {
     isAuthenticated: false,
     sessions: [],
     workspaces: [],
+    workers: [],
+    workerOverview: null,
     currentSessionId: '',
     sessionDetail: null,
     eventBuffer: [],
@@ -29,6 +31,7 @@ export function createBaseState(createConversationState, defaultCapabilities) {
     sessionSelectionVersion: 0,
     pendingSessionAction: '',
     pendingSettingsAction: '',
+    pendingShareAction: '',
   }
 }
 
@@ -52,6 +55,7 @@ export function resetConversationState(createConversationState, defaultCapabilit
     capabilities: defaultCapabilities,
     pendingSessionAction: '',
     pendingSettingsAction: '',
+    pendingShareAction: '',
     ...patch,
   }
 }

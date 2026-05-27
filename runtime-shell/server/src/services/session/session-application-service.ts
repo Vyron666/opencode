@@ -74,10 +74,24 @@ export async function getSessionDetailForUser(input: {
     action: "read",
   })
   if (!result.ok) return result
+  const shares = await sessionShareService.listSharesForSession(result.session.id)
   return {
     ok: true as const,
     session: sessionSummary(result.session),
     events: sessionService.listEvents(result.session.id),
+    shares: shares
+      .map((binding) => {
+        const targetUser = userService.getUser(binding.targetUserId)
+        if (!targetUser) return null
+        return {
+          id: binding.id,
+          targetUserId: binding.targetUserId,
+          targetDisplayName: targetUser.displayName || targetUser.username,
+          targetRole: targetUser.role,
+          status: binding.status,
+        }
+      })
+      .filter((item) => item !== null),
   }
 }
 

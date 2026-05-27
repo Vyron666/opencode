@@ -1,23 +1,32 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { CreateSessionPanel, ForkSessionPanel } from './create-panels'
 import { EventStreamPanel, PlanPanel } from './event-panels'
 import { MetricsPanel, PermissionPanel, QuestionPanel, SessionDetailPanel } from './inspect-panels'
-import { ConfigSettingPanel, CustomModelsPanel, ModeSettingPanel, ModelSettingPanel, ProviderConfigPanel } from './settings-panels'
+import {
+  ConfigSettingPanel,
+  CustomModelsPanel,
+  ModeSettingPanel,
+  ModelSettingPanel,
+  ProviderConfigPanel,
+  SessionSharePanel,
+  WorkerOverviewPanel,
+} from './settings-panels'
 import { TABS } from './sidebar-support'
 
 export default function RightSidebar() {
   const [activeTab, setActiveTab] = useState('create')
   const [collapsed, setCollapsed] = useState(false)
+  const visibleTabs = TABS
+
+  useEffect(() => {
+    if (visibleTabs.some((tab) => tab.id === activeTab)) return
+    setActiveTab(visibleTabs[0]?.id || 'create')
+  }, [activeTab, visibleTabs])
 
   if (collapsed) {
     return (
-      <aside
-        className="hidden xl:flex flex-col items-center gap-2 py-3 cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
-        onClick={() => setCollapsed(false)}
-      >
-        <span className="text-[10px] text-brand font-semibold tracking-wider uppercase rotate-90 origin-center whitespace-nowrap mt-8">
-          展开面板
-        </span>
+      <aside className="hidden xl:flex flex-col items-center gap-2 py-3 cursor-pointer opacity-60 hover:opacity-100 transition-opacity" onClick={() => setCollapsed(false)}>
+        <span className="text-[10px] text-brand font-semibold tracking-wider uppercase rotate-90 origin-center whitespace-nowrap mt-8">展开面板</span>
       </aside>
     )
   }
@@ -34,25 +43,23 @@ export default function RightSidebar() {
         </button>
 
         <div className="flex rounded-[10px] border border-[var(--line)] overflow-hidden mb-3">
-          {TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-2 px-1.5 text-xs font-semibold text-center transition-colors ${
-                activeTab === tab.id
-                  ? 'text-brand-text bg-brand/10'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-dim)] hover:bg-black/20'
-              } ${tab.id !== TABS[TABS.length - 1].id ? 'border-r border-[var(--line)]' : ''}`}
+                activeTab === tab.id ? 'text-brand-text bg-brand/10' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)] hover:bg-black/20'
+              } ${tab.id !== visibleTabs[visibleTabs.length - 1].id ? 'border-r border-[var(--line)]' : ''}`}
             >
               {tab.label}
             </button>
           ))}
         </div>
 
-        {activeTab === 'create' && <CreateTabContent />}
-        {activeTab === 'settings' && <SettingsTabContent />}
-        {activeTab === 'inspect' && <InspectTabContent />}
-        {activeTab === 'events' && <EventsTabContent />}
+        {activeTab === 'create' ? <CreateTabContent /> : null}
+        {activeTab === 'settings' ? <SettingsTabContent /> : null}
+        {activeTab === 'inspect' ? <InspectTabContent /> : null}
+        {activeTab === 'events' ? <EventsTabContent /> : null}
       </div>
     </aside>
   )
@@ -63,6 +70,7 @@ const CreateTabContent = memo(function CreateTabContent() {
     <div className="grid gap-3 animate-fade-in">
       <CreateSessionPanel />
       <ForkSessionPanel />
+      <SessionSharePanel />
     </div>
   )
 })
@@ -70,6 +78,7 @@ const CreateTabContent = memo(function CreateTabContent() {
 const SettingsTabContent = memo(function SettingsTabContent() {
   return (
     <div className="grid gap-3 animate-fade-in">
+      <WorkerOverviewPanel />
       <ModeSettingPanel />
       <ModelSettingPanel />
       <ConfigSettingPanel />

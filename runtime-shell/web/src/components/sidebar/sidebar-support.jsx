@@ -75,6 +75,41 @@ export function useSessionCapabilities() {
   }, [capabilities, sessionDetail])
 }
 
+export function useViewerContext() {
+  const user = useStore((state) => state.user)
+  const sessionDetail = useStore((state) => state.sessionDetail)
+  const users = useStore((state) => state.users)
+
+  return useMemo(() => {
+    const session = sessionDetail?.session || null
+    const shares = Array.isArray(sessionDetail?.shares) ? sessionDetail.shares : []
+    const isAdmin = user?.role === 'admin'
+    const isOwner = Boolean(user && session && session.createdBy === user.id)
+    const isSharedSession = Boolean(user && session && !isAdmin && !isOwner)
+    const owner = users.find((item) => item.id === session?.createdBy) || null
+    return {
+      user,
+      session,
+      shares,
+      owner,
+      isAdmin,
+      isOwner,
+      isSharedSession,
+      hasOutgoingShares: Boolean((isAdmin || isOwner) && shares.length > 0),
+      canManageSession: Boolean(isAdmin || isOwner),
+      canManageRuntimeSettings: Boolean(isAdmin || isOwner),
+      canManagePlatformSettings: Boolean(isAdmin),
+      canShareSession: Boolean(isAdmin || isOwner),
+    }
+  }, [sessionDetail, user, users])
+}
+
+export function roleLabel(role) {
+  if (role === 'admin') return '管理员'
+  if (role === 'developer') return '开发者'
+  return role || '-'
+}
+
 export function stringifyConfigValue(value) {
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (value == null) return ''

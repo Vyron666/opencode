@@ -83,6 +83,7 @@ export function registerSessionCoreRoutes(app: Hono) {
         {
           session: result.session,
           events: result.events,
+          shares: result.shares,
         },
         reqId,
       ),

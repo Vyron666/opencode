@@ -5,11 +5,13 @@ import { readErrorMessage } from '../../store/actions/interaction-action-support
 import {
   Field,
   inputClassName,
+  roleLabel,
   secondaryButtonClassName,
   Select,
   selectClassName,
   stringifyConfigValue,
   useSessionCapabilities,
+  useViewerContext,
 } from './sidebar-support'
 
 export function ModeSettingPanel() {
@@ -17,7 +19,10 @@ export function ModeSettingPanel() {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
+  const { canManageRuntimeSettings, isSharedSession } = useViewerContext()
   const [selected, setSelected] = useState('')
+
+  if (!currentSessionId) return null
 
   useEffect(() => {
     setSelected(capabilities.modeId || capabilities.modes?.[0]?.id || '')
@@ -36,7 +41,12 @@ export function ModeSettingPanel() {
       <Field label="模式">
         <Select value={selected} onChange={setSelected} options={capabilities.modes} emptyLabel="当前会话没有模式选项" />
       </Field>
-      <button type="submit" disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction)} className={secondaryButtonClassName}>
+      {isSharedSession ? <div className="text-[11px] text-[var(--text-muted)]">共享会话不允许切换模式。</div> : null}
+      <button
+        type="submit"
+        disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction) || !canManageRuntimeSettings}
+        className={secondaryButtonClassName}
+      >
         {pendingSettingsAction === 'mode' ? '切换中...' : '切换模式'}
       </button>
     </form>
@@ -48,7 +58,10 @@ export function ModelSettingPanel() {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
+  const { canManageRuntimeSettings, isSharedSession } = useViewerContext()
   const [selected, setSelected] = useState('')
+
+  if (!currentSessionId) return null
 
   useEffect(() => {
     setSelected(capabilities.modelId || capabilities.models?.[0]?.id || '')
@@ -66,7 +79,12 @@ export function ModelSettingPanel() {
       <Field label="模型">
         <Select value={selected} onChange={setSelected} options={capabilities.models} emptyLabel="当前会话没有模型选项" />
       </Field>
-      <button type="submit" disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction)} className={secondaryButtonClassName}>
+      {isSharedSession ? <div className="text-[11px] text-[var(--text-muted)]">共享会话不允许切换模型。</div> : null}
+      <button
+        type="submit"
+        disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction) || !canManageRuntimeSettings}
+        className={secondaryButtonClassName}
+      >
         {pendingSettingsAction === 'model' ? '切换中...' : '切换模型'}
       </button>
     </form>
@@ -78,11 +96,14 @@ export function ConfigSettingPanel() {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
+  const { canManageRuntimeSettings, isSharedSession } = useViewerContext()
   const configOptions = capabilities.configOptions || []
   const userConfigOptions = useMemo(() => configOptions.filter((item) => item.id !== 'mode' && item.id !== 'model'), [configOptions])
   const [configId, setConfigId] = useState('')
   const [value, setValue] = useState('')
   const selectedConfig = useMemo(() => userConfigOptions.find((item) => item.id === configId), [configId, userConfigOptions])
+
+  if (!currentSessionId) return null
 
   useEffect(() => {
     const fallbackId = userConfigOptions[0]?.id || ''
@@ -123,8 +144,13 @@ export function ConfigSettingPanel() {
           <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="例如 high / true / code" className={inputClassName} />
         )}
       </Field>
-      {selectedConfig?.description && <div className="text-[11px] text-[var(--text-muted)] -mt-1">{selectedConfig.description}</div>}
-      <button type="submit" disabled={!configId || !currentSessionId || Boolean(pendingSettingsAction)} className={secondaryButtonClassName}>
+      {selectedConfig?.description ? <div className="text-[11px] text-[var(--text-muted)] -mt-1">{selectedConfig.description}</div> : null}
+      {isSharedSession ? <div className="text-[11px] text-[var(--text-muted)]">共享会话不允许更新运行时配置。</div> : null}
+      <button
+        type="submit"
+        disabled={!configId || !currentSessionId || Boolean(pendingSettingsAction) || !canManageRuntimeSettings}
+        className={secondaryButtonClassName}
+      >
         {pendingSettingsAction === 'config' ? '更新中...' : '更新配置'}
       </button>
     </form>
@@ -133,6 +159,7 @@ export function ConfigSettingPanel() {
 
 export function CustomModelsPanel() {
   const setFlash = useStore((state) => state.setFlash)
+  const { canManagePlatformSettings } = useViewerContext()
   const [expanded, setExpanded] = useState(false)
   const [customModels, setCustomModels] = useState([])
   const [modelId, setModelId] = useState('')
@@ -145,6 +172,8 @@ export function CustomModelsPanel() {
     })
   }, [expanded])
 
+  if (!canManagePlatformSettings) return null
+
   return (
     <div className="grid gap-2.5">
       <div className="flex items-center justify-between">
@@ -154,7 +183,7 @@ export function CustomModelsPanel() {
         </button>
       </div>
 
-      {expanded && (
+      {expanded ? (
         <div className="grid gap-2.5 animate-fade-in">
           <form
             onSubmit={(event) => {
@@ -178,8 +207,11 @@ export function CustomModelsPanel() {
               <div key={`${model.modelId}-${index}`} className="flex items-center gap-2 text-xs text-[var(--text-dim)]">
                 <span>{model.name}</span>
                 <span className="text-[var(--text-muted)]">{model.modelId}</span>
-                <button onClick={() => setCustomModels((current) => current.filter((_, currentIndex) => currentIndex !== index))} className="ml-auto text-[var(--text-muted)] hover:text-danger transition-colors">
-                  删
+                <button
+                  onClick={() => setCustomModels((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                  className="ml-auto text-[var(--text-muted)] hover:text-danger transition-colors"
+                >
+                  删除
                 </button>
               </div>
             ))}
@@ -197,7 +229,7 @@ export function CustomModelsPanel() {
             保存到文件
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -209,6 +241,7 @@ export function ProviderConfigPanel() {
   const disconnectSSE = useStore((state) => state.disconnectSSE)
   const updateCapability = useStore((state) => state.updateCapability)
   const setFlash = useStore((state) => state.setFlash)
+  const { canManagePlatformSettings } = useViewerContext()
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
   const sessionSelectionVersion = useStore((state) => state.sessionSelectionVersion)
@@ -240,6 +273,8 @@ export function ProviderConfigPanel() {
     })
   }, [expanded])
 
+  if (!canManagePlatformSettings) return null
+
   return (
     <div className="grid gap-2.5 pb-3 border-b border-[var(--line)]">
       <div className="flex items-center justify-between">
@@ -249,7 +284,7 @@ export function ProviderConfigPanel() {
         </button>
       </div>
 
-      {expanded && (
+      {expanded ? (
         <form
           onSubmit={async (event) => {
             event.preventDefault()
@@ -362,11 +397,164 @@ export function ProviderConfigPanel() {
             </button>
           </div>
 
-          <button type="submit" disabled={Boolean(pendingSettingsAction) || Boolean(pendingSessionAction)} className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed">
+          <button
+            type="submit"
+            disabled={Boolean(pendingSettingsAction) || Boolean(pendingSessionAction)}
+            className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             {pendingSettingsAction === 'provider' ? '保存中...' : '保存 Provider 配置'}
           </button>
         </form>
-      )}
+      ) : null}
+    </div>
+  )
+}
+
+export function SessionSharePanel() {
+  const users = useStore((state) => state.users)
+  const pendingShareAction = useStore((state) => state.pendingShareAction)
+  const shareSession = useStore((state) => state.shareSession)
+  const unshareSession = useStore((state) => state.unshareSession)
+  const { canShareSession, owner, session, shares, user, isSharedSession, hasOutgoingShares } = useViewerContext()
+  const [targetUserId, setTargetUserId] = useState('')
+
+  const availableTargets = useMemo(() => {
+    const sharedUserIds = new Set((shares || []).map((item) => item.targetUserId))
+    return users.filter((candidate) => candidate.id !== user?.id && !sharedUserIds.has(candidate.id))
+  }, [shares, user?.id, users])
+
+  useEffect(() => {
+    if (!availableTargets.length) {
+      setTargetUserId('')
+      return
+    }
+    if (availableTargets.some((candidate) => candidate.id === targetUserId)) return
+    setTargetUserId(availableTargets[0]?.id || '')
+  }, [availableTargets, targetUserId])
+
+  if (!session) return null
+
+  return (
+    <div className="grid gap-2.5 pb-3 border-b border-[var(--line)]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Share</span>
+          <h3 className="text-sm font-bold mt-0.5">会话共享</h3>
+        </div>
+        {isSharedSession ? <span className="text-[11px] text-[var(--text-muted)]">协作中</span> : null}
+      </div>
+
+      {isSharedSession ? (
+        <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+          当前会话由 {owner?.displayName || owner?.username || '他人'} 共享给你。你可以继续协作，但不能再次分享或取消分享。
+        </div>
+      ) : null}
+
+      {canShareSession ? (
+        <>
+          <div className="grid gap-2">
+            <span className="text-xs font-medium text-[var(--text-dim)]">已共享成员</span>
+            {shares?.length ? (
+              shares.map((share) => (
+                <div key={share.id} className="flex items-center gap-2 rounded-[12px] border border-[var(--line)] bg-black/20 p-2.5 text-xs text-[var(--text-dim)]">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-[var(--text)]">{share.targetDisplayName}</div>
+                    <div className="text-[var(--text-muted)]">{roleLabel(share.targetRole)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void unshareSession(share.targetUserId)}
+                    disabled={Boolean(pendingShareAction)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-[8px] bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {pendingShareAction === 'unshare' ? '取消中...' : '取消共享'}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-xs text-[var(--text-muted)] p-3 text-center border border-dashed border-[var(--line-strong)] rounded-[14px]">
+                当前还未共享给其他成员
+              </div>
+            )}
+          </div>
+
+          <Field label="新增共享对象">
+            <Select
+              value={targetUserId}
+              onChange={setTargetUserId}
+              options={availableTargets.map((candidate) => ({
+                id: candidate.id,
+                label: `${candidate.displayName} (${roleLabel(candidate.role)})`,
+              }))}
+              emptyLabel="暂无可选用户"
+            />
+          </Field>
+
+          <button
+            type="button"
+            onClick={() => void shareSession(targetUserId)}
+            disabled={!targetUserId || Boolean(pendingShareAction) || availableTargets.length === 0}
+            className={secondaryButtonClassName}
+          >
+            {pendingShareAction === 'share' ? '分享中...' : '分享当前会话'}
+          </button>
+
+          <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            分享会话时会默认连带授予该会话所属 workspace 的附属使用权，但不会授予新建其它会话的权限。
+          </div>
+        </>
+      ) : null}
+
+      {!isSharedSession && hasOutgoingShares ? (
+        <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+          当前会话已共享给其他成员，他们可以继续协作，但不能关闭、Fork 或修改运行时设置。
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function WorkerOverviewPanel() {
+  const workers = useStore((state) => state.workers)
+  const workerOverview = useStore((state) => state.workerOverview)
+  const loadWorkerOverview = useStore((state) => state.loadWorkerOverview)
+  const { canManagePlatformSettings } = useViewerContext()
+
+  useEffect(() => {
+    if (!canManagePlatformSettings) return
+    void loadWorkerOverview().catch(() => undefined)
+  }, [canManagePlatformSettings, loadWorkerOverview])
+
+  if (!canManagePlatformSettings) return null
+
+  return (
+    <div className="grid gap-2.5 pb-3 border-b border-[var(--line)]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">System</span>
+          <h3 className="text-sm font-bold mt-0.5">Worker 运行视图</h3>
+        </div>
+        <button type="button" onClick={() => void loadWorkerOverview()} className={secondaryButtonClassName}>
+          刷新
+        </button>
+      </div>
+      <div className="grid gap-2">
+        {workers.length === 0 ? (
+          <div className="text-xs text-[var(--text-muted)] p-3 text-center border border-dashed border-[var(--line-strong)] rounded-[14px]">
+            暂无 Worker 数据
+          </div>
+        ) : (
+          workers.map((worker) => (
+            <div key={worker.id} className="rounded-[12px] border border-[var(--line)] bg-black/20 p-3 grid gap-1 text-xs text-[var(--text-dim)]">
+              <div className="font-semibold text-[var(--text)]">{worker.name}</div>
+              <div>状态：{worker.status}</div>
+              <div>容量：{worker.activeSessionCount}/{worker.capacity}</div>
+              <div>地址：{worker.baseUrl}</div>
+            </div>
+          ))
+        )}
+      </div>
+      {workerOverview ? <div className="text-[11px] text-[var(--text-muted)]">opencode 健康：{workerOverview.healthy ? 'healthy' : 'unhealthy'}</div> : null}
     </div>
   )
 }

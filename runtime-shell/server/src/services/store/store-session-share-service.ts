@@ -6,6 +6,10 @@ export class StoreSessionShareService {
     return SessionShareRepo.listSharesForTargetUser(userId)
   }
 
+  async listSharesForSession(businessSessionId: string) {
+    return SessionShareRepo.listSharesForSession(businessSessionId)
+  }
+
   async findShareForSessionTarget(input: {
     businessSessionId: string
     targetUserId: string

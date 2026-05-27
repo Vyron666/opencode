@@ -65,6 +65,35 @@ export async function listSharesForTargetUser(userId: string) {
   return rows.map(toSessionShareBinding)
 }
 
+export async function listSharesForSession(businessSessionId: string) {
+  const db = getRuntimeDatabaseClient()
+  const rows = await db.queryRows<SessionShareBindingRow>(
+    `
+      SELECT
+        id,
+        tenant_id,
+        organization_id,
+        project_id,
+        workspace_id,
+        business_session_id,
+        owner_user_id,
+        target_user_id,
+        status,
+        created_at,
+        created_by,
+        updated_at,
+        updated_by
+      FROM session_share_binding
+      WHERE business_session_id = ?
+        AND status = ?
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC
+    `,
+    [businessSessionId, "active"],
+  )
+  return rows.map(toSessionShareBinding)
+}
+
 export async function findShareForSessionTarget(input: {
   businessSessionId: string
   targetUserId: string
