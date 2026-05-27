@@ -2,6 +2,9 @@
 
 `runtime-shell` 是仓库外置的 ACP 运行壳，用来通过 `opencode` 提供多用户会话工作台。
 
+默认情况下，`runtime-shell` 拉起的 ACP 子进程会启用 `OPENCODE_ACP_NEXT=1`，优先走 `acp-next` 入口。
+如果需要临时回退，可以在运行环境里显式设置 `OPENCODE_ACP_NEXT=0`。
+
 ## 功能
 
 - 本地多用户登录

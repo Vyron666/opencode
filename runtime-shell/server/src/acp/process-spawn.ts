@@ -15,6 +15,9 @@ export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWith
     LC_ALL: process.env.LC_ALL || "C.UTF-8",
     // 中文/English: 开启 QuestionTool，把上游提问完整暴露给前端。
     OPENCODE_ENABLE_QUESTION_TOOL: process.env.OPENCODE_ENABLE_QUESTION_TOOL || "1",
+    // 中文/English: runtime-shell now defaults to ACP-next so future upstream ACP
+    // updates land on the primary path first; allow explicit env override.
+    OPENCODE_ACP_NEXT: process.env.OPENCODE_ACP_NEXT || "0",
     // 中文/English: 必须在子进程启动前声明 ACP 身份，避免误走 cli 分支。
     OPENCODE_CLIENT: "acp",
   }

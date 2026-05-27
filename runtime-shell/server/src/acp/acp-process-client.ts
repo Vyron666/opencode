@@ -35,6 +35,7 @@ export class AcpProcessClient {
   private initialized?: InitializeResponse
   private sessionId = ""
   private waitForPendingEvents: () => Promise<void>
+  private activePromptCount = 0
   private onPermissionRequestedHandler?: (permission: PendingPermission) => void
   private pendingPermissions = new Map<string, PendingResolver<PermissionResolution>>()
   private onQuestionRequestedHandler?: (question: PendingQuestion) => void
@@ -146,16 +147,21 @@ export class AcpProcessClient {
 
   async prompt(parts: ContentBlock[]): Promise<PromptResponse> {
     log.info("sending prompt", { sessionId: this.sessionId, partCount: parts.length })
-    const result = await this.connection.prompt({
-      sessionId: this.sessionId,
-      prompt: parts,
-    } satisfies PromptRequest)
-    ////////////// runtime-shell customization start //////////////
-    // 中文/English: this log only means ACP `prompt()` returned.
-    // The real frontend-visible turn end still depends on later `turn_completed` publishing.
-    log.info("prompt returned", { sessionId: this.sessionId, stopReason: result.stopReason })
-    ////////////// runtime-shell customization end //////////////
-    return result
+    this.activePromptCount += 1
+    try {
+      const result = await this.connection.prompt({
+        sessionId: this.sessionId,
+        prompt: parts,
+      } satisfies PromptRequest)
+      ////////////// runtime-shell customization start //////////////
+      // 中文/English: this log only means ACP `prompt()` returned.
+      // The real frontend-visible turn end still depends on later `turn_completed` publishing.
+      log.info("prompt returned", { sessionId: this.sessionId, stopReason: result.stopReason })
+      ////////////// runtime-shell customization end //////////////
+      return result
+    } finally {
+      this.activePromptCount = Math.max(0, this.activePromptCount - 1)
+    }
   }
 
   async flushPendingEvents() {
@@ -166,6 +172,10 @@ export class AcpProcessClient {
     if (!this.sessionId) return
     // 中文/English: only cancel the current turn input, not the whole ACP session.
     await this.connection.cancel({ sessionId: this.sessionId })
+  }
+
+  hasActivePrompt() {
+    return this.activePromptCount > 0
   }
 
   async setSessionMode(modeId: string): Promise<SetSessionModeResponse> {

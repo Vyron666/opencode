@@ -1,0 +1,3 @@
+ALTER TABLE business_session
+  ADD COLUMN IF NOT EXISTS binding_json LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS capability_state_json LONGTEXT NOT NULL DEFAULT ('{}');

@@ -1,62 +1,72 @@
+import { createLogger } from "../log"
+import { ensureDatabaseBootstrap } from "../db/bootstrap"
 import type {
   AuditAction,
   BusinessSession,
-  PersistedState,
   SessionEvent,
   User,
   WorkerNode,
   Workspace,
 } from "../types"
-import { createLogger } from "../log"
-import { loadStateFromDisk, saveStateToDisk } from "../store/persistence-support"
-import { defaultState } from "../store/state-support"
-import * as AuditRepo from "../repos/audit-repo"
-import * as AuthRepo from "../repos/auth-repo"
-import * as SessionRepo from "../repos/session-repo"
-import * as UserRepo from "../repos/user-repo"
-import * as WorkerRepo from "../repos/worker-repo"
-import * as WorkspaceRepo from "../repos/workspace-repo"
+import { StoreAuditService } from "./store/store-audit-service"
+import { StoreAuthService } from "./store/store-auth-service"
+import { StoreMetadataService } from "./store/store-metadata-service"
+import { StoreSessionService } from "./store/store-session-service"
+import { StoreStateService } from "./store/store-state-service"
+import { StoreUserService } from "./store/store-user-service"
+import { StoreWorkerService } from "./store/store-worker-service"
+import { StoreWorkspaceService } from "./store/store-workspace-service"
 
 const log = createLogger("store")
 
 export class StoreService {
-  private state = defaultState()
-  private writeTask = Promise.resolve()
-  private dirtyWriteVersion = 0
-  private flushedWriteVersion = 0
+  readonly stateService = new StoreStateService(log)
+  readonly metadataService = new StoreMetadataService(() => this.stateService.readState())
+  readonly userService = new StoreUserService(() => this.stateService.readState())
+  readonly authService = new StoreAuthService()
+  readonly workspaceService = new StoreWorkspaceService()
+  readonly workerService = new StoreWorkerService(
+    () => this.stateService.readState(),
+    () => this.stateService.save(),
+  )
+  readonly sessionService = new StoreSessionService(
+    () => this.stateService.readState(),
+    () => this.stateService.save(),
+    log,
+  )
+  readonly auditService = new StoreAuditService(() => this.stateService.readState(), () => this.stateService.save())
 
   async load() {
-    this.state = await loadStateFromDisk(log)
+    await this.stateService.load()
+    await ensureDatabaseBootstrap(this.stateService.readState())
   }
 
   async save() {
-    const targetVersion = ++this.dirtyWriteVersion
-    this.writeTask = this.writeTask.then(() => this.flushWrites(targetVersion))
-    await this.writeTask
+    await this.stateService.save()
   }
 
   listTenants() {
-    return this.state.tenants
+    return this.metadataService.listTenants()
   }
 
   listOrganizations() {
-    return this.state.organizations
+    return this.metadataService.listOrganizations()
   }
 
   listUsers() {
-    return UserRepo.listAllUsers(this.state)
+    return this.userService.listUsers()
   }
 
   findUser(username: string, password?: string) {
-    return UserRepo.findUserByCredentials(this.state, username, password)
+    return this.userService.findUser(username, password)
   }
 
   getUser(userId: string) {
-    return UserRepo.findUserById(this.state, userId)
+    return this.userService.getUser(userId)
   }
 
-  listAuthSessions() {
-    return AuthRepo.listSessions(this.state)
+  async listAuthSessions() {
+    return this.authService.listAuthSessions()
   }
 
   async createAuthSession(input: {
@@ -64,36 +74,31 @@ export class StoreService {
     tokenHash: string
     expiresAt: string
   }) {
-    const authSession = AuthRepo.createSession(this.state, input)
-    await this.save()
-    return authSession
+    return this.authService.createAuthSession(input)
   }
 
-  findAuthSession(tokenHash: string) {
-    return AuthRepo.findSession(this.state, tokenHash)
+  async findAuthSession(tokenHash: string) {
+    return this.authService.findAuthSession(tokenHash)
   }
 
   async deleteAuthSession(tokenHash: string) {
-    const deleted = AuthRepo.removeSession(this.state, tokenHash)
-    if (!deleted) return false
-    await this.save()
-    return true
+    return this.authService.deleteAuthSession(tokenHash)
   }
 
-  listWorkspaces() {
-    return WorkspaceRepo.listAllWorkspaces(this.state)
+  async listWorkspaces() {
+    return this.workspaceService.listWorkspaces()
   }
 
-  getWorkspace(workspaceId: string) {
-    return WorkspaceRepo.findWorkspace(this.state, workspaceId)
+  async getWorkspace(workspaceId: string) {
+    return this.workspaceService.getWorkspace(workspaceId)
   }
 
-  findWorkspaceByRootPath(rootPath: string) {
-    return WorkspaceRepo.findWorkspaceByPath(this.state, rootPath)
+  async findWorkspaceByRootPath(rootPath: string) {
+    return this.workspaceService.findWorkspaceByRootPath(rootPath)
   }
 
-  listUserWorkspaces(user: User) {
-    return WorkspaceRepo.listWorkspacesForUser(this.state, user)
+  async listUserWorkspaces(user: User) {
+    return this.workspaceService.listUserWorkspaces(user)
   }
 
   async ensureWorkspace(input: {
@@ -104,31 +109,27 @@ export class StoreService {
     createdBy: string
     name?: string
   }) {
-    const workspace = WorkspaceRepo.ensureWorkspace(this.state, input)
-    await this.save()
-    return workspace
+    return this.workspaceService.ensureWorkspace(input)
   }
 
   listWorkers() {
-    return WorkerRepo.listAllWorkers(this.state)
+    return this.workerService.listWorkers()
   }
 
   async touchWorker(workerId: string, patch?: Partial<WorkerNode>) {
-    const worker = WorkerRepo.touchWorker(this.state, workerId, patch)
-    if (!worker) return
-    await this.save()
+    return this.workerService.touchWorker(workerId, patch)
   }
 
-  listSessions() {
-    return SessionRepo.listAllSessions(this.state)
+  async listSessions() {
+    return this.sessionService.listSessions()
   }
 
-  listUserSessions(user: User) {
-    return SessionRepo.listSessionsForUser(this.state, user)
+  async listUserSessions(user: User) {
+    return this.sessionService.listUserSessions(user)
   }
 
-  getSession(sessionId: string) {
-    return SessionRepo.findSession(this.state, sessionId)
+  async getSession(sessionId: string) {
+    return this.sessionService.getSession(sessionId)
   }
 
   async createSession(input: {
@@ -138,40 +139,31 @@ export class StoreService {
     user: User
     workerId: string
   }) {
-    const session = SessionRepo.createSession(this.state, input)
-    log.info("session created", { sessionId: session.id, title: input.title, workspace: input.workspace.rootPath })
-    await this.save()
-    return session
+    return this.sessionService.createSession(input)
   }
 
   async forkSession(input: { source: BusinessSession; title: string; user: User }) {
-    const session = SessionRepo.forkSession(this.state, input)
-    await this.save()
-    return session
+    return this.sessionService.forkSession(input)
   }
 
   async updateSession(sessionId: string, patch: Partial<BusinessSession>) {
-    const session = SessionRepo.patchSession(this.state, sessionId, patch)
-    if (!session) return
-    await this.save()
-    return session
+    return this.sessionService.updateSession(sessionId, patch)
   }
 
-  stageSessionEvent(event: SessionEvent, sessionPatch?: Partial<BusinessSession>) {
-    return SessionRepo.stageEvent(this.state, event, sessionPatch)
+  async stageSessionEvent(event: SessionEvent, sessionPatch?: Partial<BusinessSession>) {
+    return this.sessionService.stageSessionEvent(event, sessionPatch)
   }
 
   listEvents(sessionId: string, afterEventId?: string) {
-    return SessionRepo.listSessionEvents(this.state, sessionId, afterEventId)
+    return this.sessionService.listEvents(sessionId, afterEventId)
   }
 
   async appendEvent(event: SessionEvent) {
-    SessionRepo.stageEvent(this.state, event)
-    await this.save()
+    return this.sessionService.appendEvent(event)
   }
 
   listAuditLogs() {
-    return AuditRepo.listAllAuditLogs(this.state)
+    return this.auditService.listAuditLogs()
   }
 
   async appendAuditLog(input: {
@@ -185,18 +177,6 @@ export class StoreService {
     resourceId?: string
     detail: Record<string, unknown>
   }) {
-    const auditLog = AuditRepo.appendAuditLog(this.state, input)
-    await this.save()
-    return auditLog
-  }
-
-  private async flushWrites(targetVersion: number) {
-    while (this.flushedWriteVersion < targetVersion) {
-      const nextVersion = this.dirtyWriteVersion
-      // 中文/English: coalesce burst writes into the newest snapshot so streaming
-      // chunks do not force one full state-file rewrite per event.
-      await saveStateToDisk(this.state)
-      this.flushedWriteVersion = nextVersion
-    }
+    return this.auditService.appendAuditLog(input)
   }
 }

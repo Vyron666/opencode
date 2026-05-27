@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type {
   AuthSession,
   AuditLog,
@@ -9,6 +10,10 @@ import type {
   Workspace,
 } from "../types"
 
+function hashPassword(password: string) {
+  return createHash("sha256").update(password).digest("hex")
+}
+
 export function listUsers(state: PersistedState) {
   return state.users
 }
@@ -16,7 +21,7 @@ export function listUsers(state: PersistedState) {
 export function findUser(state: PersistedState, username: string, password?: string) {
   const user = state.users.find((item) => item.username === username)
   if (!user) return
-  if (password !== undefined && user.password !== password) return
+  if (password !== undefined && user.passwordHash !== hashPassword(password)) return
   return user
 }
 

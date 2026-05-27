@@ -15,7 +15,6 @@ COPY package.json bun.lock bunfig.toml turbo.json ./
 COPY .github/TEAM_MEMBERS ./.github/TEAM_MEMBERS
 COPY packages ./packages
 COPY patches ./patches
-COPY .opencode ./.opencode
 
 RUN --mount=type=cache,target=/root/.bun/install/cache \
   bun install --frozen-lockfile --backend copyfile --linker hoisted --cache-dir /root/.bun/install/cache
@@ -58,4 +57,5 @@ ENV OPENCODE_ACP_SPAWN_CWD=/workspace
 
 EXPOSE 3000
 
-CMD ["bun", "server/src/index.ts"]
+# 中文/English: always migrate before boot so DB-backed session bootstrap never races schema rollout.
+CMD ["sh", "-lc", "bun server/src/db/migrate.ts && bun server/src/index.ts"]

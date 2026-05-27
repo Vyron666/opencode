@@ -1,24 +1,12 @@
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { Config } from "../config"
-import { getSession } from "../auth"
+import { getUserBySessionToken } from "../services/auth/auth-user-service"
 import { jsonError, requestId } from "./response"
-import type { User } from "../types"
 
-export function requireUser(c: Context) {
+export async function requireUser(c: Context) {
   const token = getCookie(c, Config.sessionCookie)
-  return getSession(token)
-}
-
-export function sanitizeUser(user: User) {
-  return {
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-    role: user.role,
-    tenantId: user.tenantId,
-    organizationId: user.organizationId,
-  }
+  return await getUserBySessionToken(token)
 }
 
 export function unauthorized(c: Context) {

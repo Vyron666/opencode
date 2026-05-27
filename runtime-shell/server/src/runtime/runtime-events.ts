@@ -1,5 +1,5 @@
 import { getCustomModels } from "../config"
-import { store } from "../store"
+import { sessionService, stateService } from "../services/store/store-singleton"
 import type { BusinessSession, SessionEvent, SessionEventType } from "../types"
 import { deriveCapabilityPatch, mergeConfigOptionsWithCustomModels } from "./runtime-capabilities"
 import { publishToSubscribers } from "./runtime-registry"
@@ -23,7 +23,7 @@ export function createEvent(
 
 export async function persistAndFanout(event: SessionEvent) {
   publishToSubscribers(event)
-  const session = store.getSession(event.businessSessionId)
+  const session = await sessionService.getSession(event.businessSessionId)
   const capabilityPatch = deriveCapabilityPatch(event)
   let sessionPatch: Partial<BusinessSession> | undefined
   if (session) {
@@ -44,8 +44,8 @@ export async function persistAndFanout(event: SessionEvent) {
         : {}),
     }
   }
-  store.stageSessionEvent(event, sessionPatch)
-  await store.save()
+  await sessionService.stageSessionEvent(event, sessionPatch)
+  await stateService.save()
 }
 
 export function nextId(prefix: string) {

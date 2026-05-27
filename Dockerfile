@@ -17,9 +17,12 @@ COPY package.json bun.lock bunfig.toml turbo.json ./
 COPY .github/TEAM_MEMBERS ./.github/TEAM_MEMBERS
 COPY packages ./packages
 COPY patches ./patches
-COPY .opencode ./.opencode
 
 # 中文/English: install the workspace as-is and run opencode from source to avoid fragile single-binary packaging in Docker.
+# /////// runtime-shell customization start ///////
+# 中文/English: runtime-shell relies on the compose runtime volume mount for `.opencode`.
+# Do not copy `.opencode` during image build, otherwise local builds can fail when `.dockerignore` excludes it.
+# /////// runtime-shell customization end ///////
 RUN --mount=type=cache,target=/root/.bun/install/cache \
   bun install --frozen-lockfile --backend copyfile --linker hoisted --cache-dir /root/.bun/install/cache
 

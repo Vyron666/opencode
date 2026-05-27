@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { Config } from "./config"
-import { store } from "./store"
+import { authService, userService } from "./services/store/store-singleton"
 import type { User } from "./types"
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -18,7 +18,7 @@ export function signSessionToken(user: User) {
 
 export async function createSession(user: User) {
   const token = signSessionToken(user)
-  await store.createAuthSession({
+  await authService.createAuthSession({
     user,
     tokenHash: hashToken(token),
     expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
@@ -26,15 +26,15 @@ export async function createSession(user: User) {
   return token
 }
 
-export function getSession(token?: string | null) {
+export async function getSession(token?: string | null) {
   if (!token) return
-  const authSession = store.findAuthSession(hashToken(token))
+  const authSession = await authService.findAuthSession(hashToken(token))
   if (!authSession) return
   if (new Date(authSession.expiresAt).getTime() <= Date.now()) return
-  return store.getUser(authSession.userId)
+  return userService.getUser(authSession.userId)
 }
 
 export async function clearSession(token?: string | null) {
   if (!token) return false
-  return store.deleteAuthSession(hashToken(token))
+  return authService.deleteAuthSession(hashToken(token))
 }

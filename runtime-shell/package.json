@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "bun --watch server/src/index.ts",
     "start": "bun server/src/index.ts",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "db:migrate": "bun server/src/db/migrate.ts",
+    "e2e:smoke": "bun scripts/e2e-smoke.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
     "hono": "^4.10.7",
     "jsonc-parser": "^3.3.1",
+    "mysql2": "^3.14.4",
+    "postgres": "^3.4.7",
     "zod": "^4.1.8"
   },
   "devDependencies": {

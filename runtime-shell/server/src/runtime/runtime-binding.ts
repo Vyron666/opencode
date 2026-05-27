@@ -1,9 +1,9 @@
-﻿import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
+import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
 import { AcpProcessClient } from "../acp-process-client"
 import { getCustomModels } from "../config"
 import { createLogger } from "../log"
-import { store } from "../store"
 import type { BusinessSession } from "../types"
+import { activateSessionRuntime, resetSessionRuntime } from "../services/session/session-lifecycle-service"
 import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
 import { createEvent, persistAndFanout, nextId } from "./runtime-events"
 import {
@@ -36,14 +36,14 @@ export async function bindRuntime(
     })
   }
 
-  const updated = await store.updateSession(session.id, {
+  const updated = await activateSessionRuntime({
+    sessionId: session.id,
     binding: {
       acpSessionId: response.sessionId,
       runtimeKey: nextId("runtime"),
       openedAt: new Date().toISOString(),
       transport: "real",
     },
-    status: "active",
     capabilityState: {
       ...session.capabilityState,
       ...(await normalizeBootstrap(session, response)),
@@ -61,8 +61,10 @@ export async function bindRuntime(
     clearPendingPermissionsBySession(session.id)
     clearPendingQuestionsBySession(session.id)
     if (consumeClosingSession(session.id)) return
-    void store
-      .updateSession(session.id, { status: "failed" })
+    void Promise.resolve()
+      // 中文/English: unexpected worker exit marks the session failed and clears
+      // the runtime binding so later reopen starts from a clean runtime boundary.
+      .then(() => resetSessionRuntime(session.id, "failed"))
       .then(() =>
         persistAndFanout(
           createEvent(
@@ -82,7 +84,9 @@ export async function bindRuntime(
   client.onPermissionRequested((permission) => {
     addPendingPermission(permission, {
       resolve: ({ approved, optionId }) => {
-        const ok = approved && optionId ? client.resolvePermission(permission.requestId, optionId) : client.rejectPermission(permission.requestId)
+        const ok = approved && optionId
+          ? client.resolvePermission(permission.requestId, optionId)
+          : client.rejectPermission(permission.requestId)
         if (!ok) return
         deletePendingPermission(permission.requestId)
       },

@@ -31,7 +31,10 @@ describe("opencode acp-next (subprocess)", () => {
         expect(initialized.agentCapabilities?.mcpCapabilities?.http).toBe(true)
         expect(initialized.agentCapabilities?.mcpCapabilities?.sse).toBe(true)
         expect(initialized.agentCapabilities?.loadSession).toBe(true)
-        expect(initialized.agentCapabilities?.sessionCapabilities).toBeUndefined()
+        expect(initialized.agentCapabilities?.sessionCapabilities?.close).toEqual({})
+        expect(initialized.agentCapabilities?.sessionCapabilities?.fork).toEqual({})
+        expect(initialized.agentCapabilities?.sessionCapabilities?.list).toEqual({})
+        expect(initialized.agentCapabilities?.sessionCapabilities?.resume).toEqual({})
         expect(initialized.agentInfo?.name).toBe("OpenCode")
         expect(initialized.authMethods?.[0]?.id).toBe("opencode-login")
         expect(initialized.authMethods?.[0]?._meta?.["terminal-auth"]).toBeDefined()
@@ -94,7 +97,7 @@ describe("opencode acp-next (subprocess)", () => {
           sessionId: "ses_missing",
           prompt: [{ type: "text", text: "hello" }],
         })
-        expect(errorCode(prompt.error)).toBe(-32601)
+        expect(errorCode(prompt.error)).toBe(-32602)
       }),
     60_000,
   )

@@ -1,4 +1,4 @@
-import { store } from "../store"
+import { sessionService } from "../services/store/store-singleton"
 import type { BusinessSession, SessionEvent } from "../types"
 import { bindRuntime, createClient } from "./runtime-binding"
 import { persistAndFanout } from "./runtime-events"
@@ -13,7 +13,6 @@ import {
   markClosingSession,
   resolvePendingPermission,
   subscribeRuntimeEvents,
-  unmarkClosingSession,
   resolvePendingQuestion as resolvePendingQuestionInternal,
 } from "./runtime-registry"
 import { toElicitationContent } from "./runtime-types"
@@ -104,6 +103,7 @@ export async function forkRealRuntime(source: BusinessSession, target: BusinessS
 export async function cancelRuntimePrompt(sessionId: string) {
   const runtime = getRuntime(sessionId)
   if (!runtime) return false
+  if (!runtime.client.hasActivePrompt()) return false
   ////////////// runtime-shell customization start //////////////
   // 中文/English: wait until ACP accepts the cancel request so transport errors
   // surface immediately. The turn still ends only on real upstream stop events.
@@ -119,7 +119,7 @@ export async function publishRuntimeEvent(event: SessionEvent) {
 export async function closeRuntime(sessionId: string) {
   const runtime = getRuntime(sessionId)
   if (!runtime) return false
-  const session = store.getSession(sessionId)
+  const session = await sessionService.getSession(sessionId)
   deleteRuntime(sessionId)
   clearPendingPermissionsBySession(sessionId)
   clearPendingQuestionsBySession(sessionId)
@@ -138,6 +138,7 @@ export async function closeRuntime(sessionId: string) {
     })
   }
   await runtime.client.close()
-  unmarkClosingSession(sessionId)
+  // 中文/English: keep the closing mark until the real ACP exit callback consumes it.
+  // Clearing it here is racy because `close()` can resolve before the process exit event arrives.
   return true
 }

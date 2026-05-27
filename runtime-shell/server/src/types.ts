@@ -17,14 +17,46 @@ export type Organization = {
   updatedAt: string
 }
 
+export type Project = {
+  id: string
+  tenantId: string
+  organizationId: string
+  code: string
+  name: string
+  defaultWorkspacePath?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type User = {
   id: string
   tenantId: string
   organizationId: string
   username: string
-  password: string
+  passwordHash: string
   displayName: string
   role: UserRole
+}
+
+export type Role = {
+  id: string
+  tenantId: string
+  code: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type Permission = {
+  id: string
+  tenantId: string
+  code: string
+  name: string
+  resourceType: string
+  action: string
+  scope: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type AuthSession = {
@@ -89,9 +121,11 @@ export type WorkerStatus = "ready" | "offline" | "busy"
 
 export type WorkerNode = {
   id: string
+  workerCode: string
   name: string
   baseUrl: string
   status: WorkerStatus
+  capacity: number
   activeSessionCount: number
   lastHeartbeatAt: string
 }
@@ -166,6 +200,11 @@ export type BusinessSession = {
   capabilityState?: SessionCapabilityState
 }
 
+export type BusinessSessionPatch = Partial<Omit<BusinessSession, "binding">> & {
+  // 中文/English: `null` means explicitly clear the persisted ACP binding during lifecycle reset.
+  binding?: AcpBinding | null
+}
+
 export type SessionEventType =
   | "session_opened"
   | "session_closed"
@@ -203,7 +242,10 @@ export type SessionEvent = {
 export type PersistedState = {
   tenants: Tenant[]
   organizations: Organization[]
+  projects: Project[]
   users: User[]
+  roles: Role[]
+  permissions: Permission[]
   authSessions: AuthSession[]
   workspaces: Workspace[]
   workers: WorkerNode[]
