@@ -13,6 +13,46 @@ export function extractUpstreamError(payload: Record<string, unknown>) {
 }
 
 export function deriveCapabilityPatch(event: SessionEvent) {
+  if (event.eventType === "session_opened") {
+    const modes =
+      event.payload.modes && typeof event.payload.modes === "object"
+        ? (event.payload.modes as Record<string, unknown>)
+        : undefined
+    const models =
+      event.payload.models && typeof event.payload.models === "object"
+        ? (event.payload.models as Record<string, unknown>)
+        : undefined
+    const configOptions = Array.isArray(event.payload.configOptions)
+      ? event.payload.configOptions.map((item) => item as Record<string, unknown>)
+      : undefined
+    const modeOption =
+      Array.isArray(configOptions) &&
+      configOptions.find((item) => typeof item === "object" && item && (item as Record<string, unknown>).id === "mode")
+    const modelOption =
+      Array.isArray(configOptions) &&
+      configOptions.find((item) => typeof item === "object" && item && (item as Record<string, unknown>).id === "model")
+    return {
+      modeId:
+        typeof modes?.currentModeId === "string"
+          ? (modes.currentModeId as string)
+          : typeof (modeOption as Record<string, unknown> | undefined)?.currentValue === "string"
+            ? ((modeOption as Record<string, unknown>).currentValue as string)
+            : undefined,
+      modelId:
+        typeof models?.currentModelId === "string"
+          ? (models.currentModelId as string)
+          : typeof (modelOption as Record<string, unknown> | undefined)?.currentValue === "string"
+            ? ((modelOption as Record<string, unknown>).currentValue as string)
+            : undefined,
+      models,
+      modes,
+      configOptions,
+      sessionInfo: {
+        title: typeof event.payload.title === "string" ? event.payload.title : undefined,
+      },
+    }
+  }
+
   if (event.eventType === "available_commands_update") {
     const commands = Array.isArray(event.payload.commands)
       ? event.payload.commands

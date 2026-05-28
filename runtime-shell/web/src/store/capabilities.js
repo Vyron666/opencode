@@ -75,15 +75,6 @@ export function deriveCapPatch(event) {
   }
 }
 
-export function hasSessionCapabilities(sessionSummary) {
-  const capabilityState = sessionSummary?.capabilityState
-  if (!capabilityState) return false
-  if (Array.isArray(capabilityState.configOptions) && capabilityState.configOptions.length > 0) return true
-  if (Array.isArray(capabilityState.modes?.availableModes) && capabilityState.modes.availableModes.length > 0) return true
-  if (Array.isArray(capabilityState.models?.availableModels) && capabilityState.models.availableModels.length > 0) return true
-  return false
-}
-
 export function parseConfigValue(value) {
   if (value === 'true') return true
   if (value === 'false') return false

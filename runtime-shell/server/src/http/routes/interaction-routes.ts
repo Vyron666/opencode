@@ -23,6 +23,15 @@ export function registerInteractionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
     return c.json(jsonOk({ items: result.items }, reqId))
@@ -39,6 +48,15 @@ export function registerInteractionRoutes(app: Hono) {
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
@@ -63,6 +81,15 @@ export function registerInteractionRoutes(app: Hono) {
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
       }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
@@ -91,6 +118,15 @@ export function registerInteractionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
@@ -111,12 +147,25 @@ export function registerInteractionRoutes(app: Hono) {
     const result = await createEventStreamForUser({
       user,
       businessSessionId: sessionId,
-      afterEventId: c.req.query("afterEventId") || c.req.header("last-event-id") || c.req.header("Last-Event-ID") || undefined,
+      afterEventId:
+        c.req.query("afterEventId") ||
+        c.req.header("last-event-id") ||
+        c.req.header("Last-Event-ID") ||
+        undefined,
       abortSignal: c.req.raw.signal,
     })
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }

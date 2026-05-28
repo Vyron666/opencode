@@ -15,9 +15,10 @@ export default function LeftSidebar() {
   const loadSessions = useStore((state) => state.loadSessions)
   const setCurrentSession = useStore((state) => state.setCurrentSession)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
-  const { canManageSession, isSharedSession, owner } = useViewerContext()
+  const { canManageSession, canOpenSession, canLoadSession, canResumeSession, isSharedSession, owner } = useViewerContext()
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
+  const hasCurrentSession = Boolean(currentSessionId)
 
   return (
     <aside className="min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden">
@@ -69,7 +70,7 @@ export default function LeftSidebar() {
           <button
             onClick={() => openSession()}
             aria-label="打开当前选中会话"
-            disabled={Boolean(pendingSessionAction)}
+            disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canOpenSession}
             className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow focus-visible:ring-2 focus-visible:ring-brand"
           >
             {pendingSessionAction === 'open' ? '打开中...' : '打开当前会话'}
@@ -78,7 +79,7 @@ export default function LeftSidebar() {
             <button
               onClick={() => loadHistory()}
               aria-label="加载会话历史"
-              disabled={Boolean(pendingSessionAction)}
+              disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canLoadSession}
               className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {pendingSessionAction === 'load' ? '加载中...' : '加载历史'}
@@ -86,7 +87,7 @@ export default function LeftSidebar() {
             <button
               onClick={() => resumeSession()}
               aria-label="恢复会话"
-              disabled={Boolean(pendingSessionAction)}
+              disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canResumeSession}
               className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {pendingSessionAction === 'resume' ? '恢复中...' : '恢复会话'}
@@ -102,7 +103,11 @@ export default function LeftSidebar() {
           </button>
           {isSharedSession ? (
             <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-              当前会话来自共享协作{owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。
+              当前会话来自共享工作区协作{owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。
+            </div>
+          ) : !hasCurrentSession ? (
+            <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+              请先从下方会话列表中选择一个会话，再执行打开、加载历史或恢复操作。
             </div>
           ) : null}
         </div>
@@ -155,14 +160,14 @@ export default function LeftSidebar() {
                 <div className="mt-1.5 text-xs text-[var(--text-muted)] flex items-center gap-1.5">
                   <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} aria-hidden="true"></span>
                   <span>{session.status}</span>
-                  <span aria-hidden="true">·</span>
+                  <span aria-hidden="true">/</span>
                   <span>{session.binding?.transport || 'unbound'}</span>
-                  <span aria-hidden="true">·</span>
+                  <span aria-hidden="true">/</span>
                   <span>{session.eventCount || 0} 事件</span>
-                  {user && session.createdBy !== user.id ? (
+                  {session.visibility === 'workspace_share' ? (
                     <>
-                      <span aria-hidden="true">·</span>
-                      <span>共享</span>
+                      <span aria-hidden="true">/</span>
+                      <span>共享工作区</span>
                     </>
                   ) : null}
                 </div>

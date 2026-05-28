@@ -4,6 +4,7 @@ import { buildConversationBlocks } from './conversation-blocks'
 import { ChatBlockItem } from './chat-blocks'
 import { deriveConversationPhase } from '../../store/runtime-phase'
 import { subscribeAssistantStreamActivity } from '../../store/sse/assistant-stream-channel'
+import { Field, Select, secondaryButtonClassName, useSessionCapabilities, useViewerContext } from '../sidebar/sidebar-support'
 
 export default function ChatView() {
   const currentSessionId = useStore((state) => state.currentSessionId)
@@ -157,21 +158,33 @@ const ConversationSection = memo(function ConversationSection({ currentSessionId
 
 const ComposerSection = memo(function ComposerSection({ currentSessionId, showDebug, setShowDebug }) {
   const sendPrompt = useStore((state) => state.sendPrompt)
+  const updateMode = useStore((state) => state.updateMode)
+  const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const phase = useConversationPhase()
+  const capabilities = useSessionCapabilities()
+  const { canManageRuntimeSettings, isSharedSession } = useViewerContext()
   const [attachments, setAttachments] = useState([])
   const [promptText, setPromptText] = useState('')
+  const [selectedMode, setSelectedMode] = useState('')
   const sendDisabled = !currentSessionId || phase.isBusy
+
+  useEffect(() => {
+    setSelectedMode(capabilities.modeId || capabilities.modes?.[0]?.id || '')
+  }, [capabilities.modeId, capabilities.modes, currentSessionId])
 
   const handleSend = useCallback(
     async (event) => {
       event.preventDefault()
       if (!promptText.trim()) return
+      if (canManageRuntimeSettings && selectedMode && selectedMode !== capabilities.modeId) {
+        await updateMode(selectedMode)
+      }
       const sent = await sendPrompt(promptText, attachments)
       if (!sent) return
       setPromptText('')
       setAttachments([])
     },
-    [attachments, promptText, sendPrompt],
+    [attachments, capabilities.modeId, canManageRuntimeSettings, promptText, selectedMode, sendPrompt, updateMode],
   )
 
   const handleDrop = useCallback((event) => {
@@ -238,6 +251,30 @@ const ComposerSection = memo(function ComposerSection({ currentSessionId, showDe
             if (!sendDisabled) void handleSend(event)
           }}
         />
+
+        {currentSessionId ? (
+          <div className="grid gap-2 rounded-[12px] border border-[var(--line)] bg-black/25 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-brand">Prompt Mode</span>
+              {isSharedSession ? (
+                <span className="text-[11px] text-[var(--text-muted)]">共享工作区会话不允许切换模式</span>
+              ) : null}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <Field label="模式">
+                <Select value={selectedMode} onChange={setSelectedMode} options={capabilities.modes} emptyLabel="当前会话没有可选模式" />
+              </Field>
+              <button
+                type="button"
+                disabled={!selectedMode || !currentSessionId || Boolean(pendingSettingsAction) || !canManageRuntimeSettings}
+                onClick={() => void updateMode(selectedMode)}
+                className={secondaryButtonClassName}
+              >
+                {pendingSettingsAction === 'mode' ? '切换中...' : '切换模式'}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">

@@ -1,19 +1,35 @@
 const BASE = ''
+const REQUEST_TIMEOUT_MS = 15000
 
 async function request(url, options = {}) {
-  const response = await fetch(`${BASE}${url}`, {
-    credentials: 'include',
-    headers: { 'content-type': 'application/json', ...options.headers },
-    ...options,
-  })
-  const body = parseJsonText(await response.text())
-  const envelope = requireApiEnvelope(body, response.status)
+  const controller = new AbortController()
+  const { timeoutMs, ...requestOptions } = options
+  const timer = setTimeout(() => controller.abort(), timeoutMs || REQUEST_TIMEOUT_MS)
 
-  if (!response.ok || envelope.code !== 0) {
-    throw createApiError(response.status, envelope)
+  try {
+    const response = await fetch(`${BASE}${url}`, {
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', ...requestOptions.headers },
+      ...requestOptions,
+      signal: controller.signal,
+    })
+    const body = parseJsonText(await response.text())
+    const envelope = requireApiEnvelope(body, response.status)
+
+    if (!response.ok || envelope.code !== 0) {
+      throw createApiError(response.status, envelope)
+    }
+
+    return envelope.data
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      // 中文/English: surface backend stalls as an actionable UI error instead of leaving the login button spinning forever.
+      throw new Error('请求超时，请检查 Runtime Shell 和 PostgreSQL 是否已经恢复')
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
   }
-
-  return envelope.data
 }
 
 export const api = {
@@ -37,16 +53,22 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  shareSession: (businessSessionId, targetUserId) =>
-    request('/api/session/share/create', {
+  createWorkspace: (data) =>
+    request('/api/workspace/create', {
       method: 'POST',
-      body: JSON.stringify({ businessSessionId, targetUserId }),
+      body: JSON.stringify(data),
     }),
 
-  unshareSession: (businessSessionId, targetUserId) =>
-    request('/api/session/share/delete', {
+  shareWorkspace: (workspaceId, projectId, targetUserId) =>
+    request('/api/workspace/share/create', {
       method: 'POST',
-      body: JSON.stringify({ businessSessionId, targetUserId }),
+      body: JSON.stringify({ workspaceId, projectId, targetUserId }),
+    }),
+
+  unshareWorkspace: (workspaceId, projectId, targetUserId) =>
+    request('/api/workspace/share/delete', {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId, projectId, targetUserId }),
     }),
 
   closeSession: (businessSessionId) =>
@@ -209,7 +231,8 @@ function createApiError(status, envelope) {
 function readStatusMessage(status, message) {
   if (status === 401) return '登录状态已失效，请重新登录'
   if (status === 403) return message || '当前账号没有执行该操作的权限'
-  if (status === 404) return message || '请求的资源不存在或已不可见'
+  if (status === 404) return message || '请求的资源不存在或当前不可见'
   if (status === 409) return message || '当前状态不允许执行该操作'
+  if (status === 503) return message || '服务暂时不可用，请稍后重试'
   return message || `request failed with status ${status}`
 }

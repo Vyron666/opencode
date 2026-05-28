@@ -6,8 +6,7 @@ import {
   listUserSessionOverview,
   openSessionForUser,
 } from "../../services/session/session-application-service"
-import { createSessionShareForUser, deleteSessionShareForUser } from "../../services/session/session-share-application-service"
-import { createSessionSchema, sessionIdSchema, sessionShareSchema } from "../schemas"
+import { createSessionSchema, sessionIdSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
@@ -45,6 +44,9 @@ export function registerSessionCoreRoutes(app: Hono) {
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("workspace is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "workspace_disabled") {
         return c.json(jsonError("workspace is disabled", 409, reqId), 409)
       }
@@ -73,6 +75,15 @@ export function registerSessionCoreRoutes(app: Hono) {
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
@@ -113,65 +124,6 @@ export function registerSessionCoreRoutes(app: Hono) {
     return c.json(jsonOk(result.session, reqId))
   })
 
-  app.post("/api/session/share/create", async (c) => {
-    const reqId = requestId(c)
-    const user = await requireUser(c)
-    if (!user) return unauthorized(c)
-    const body = sessionShareSchema.safeParse(await c.req.json())
-    if (!body.success) {
-      return c.json(jsonError("invalid share payload", 400, reqId, body.error.flatten()), 400)
-    }
-
-    const result = await createSessionShareForUser({
-      user,
-      requestId: reqId,
-      businessSessionId: body.data.businessSessionId,
-      targetUserId: body.data.targetUserId,
-    })
-    if (!result.ok) {
-      if (result.reason === "session_not_found") {
-        return c.json(jsonError("session not found", 404, reqId), 404)
-      }
-      if (result.reason === "target_user_not_found") {
-        return c.json(jsonError("target user not found", 404, reqId), 404)
-      }
-      if (result.reason === "share_target_invalid") {
-        return c.json(jsonError("target user is invalid", 409, reqId), 409)
-      }
-      return c.json(jsonError("forbidden", 403, reqId), 403)
-    }
-
-    return c.json(jsonOk({ binding: result.binding }, reqId))
-  })
-
-  app.post("/api/session/share/delete", async (c) => {
-    const reqId = requestId(c)
-    const user = await requireUser(c)
-    if (!user) return unauthorized(c)
-    const body = sessionShareSchema.safeParse(await c.req.json())
-    if (!body.success) {
-      return c.json(jsonError("invalid unshare payload", 400, reqId, body.error.flatten()), 400)
-    }
-
-    const result = await deleteSessionShareForUser({
-      user,
-      requestId: reqId,
-      businessSessionId: body.data.businessSessionId,
-      targetUserId: body.data.targetUserId,
-    })
-    if (!result.ok) {
-      if (result.reason === "session_not_found") {
-        return c.json(jsonError("session not found", 404, reqId), 404)
-      }
-      if (result.reason === "share_not_found") {
-        return c.json(jsonError("share not found", 404, reqId), 404)
-      }
-      return c.json(jsonError("forbidden", 403, reqId), 403)
-    }
-
-    return c.json(jsonOk({ success: true }, reqId))
-  })
-
   app.post("/api/acp/session/open", async (c) => {
     const reqId = requestId(c)
     const user = await requireUser(c)
@@ -195,6 +147,15 @@ export function registerSessionCoreRoutes(app: Hono) {
       }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
       }
       if (result.reason === "workspace_disabled") {
         return c.json(jsonError("workspace is disabled", 409, reqId), 409)

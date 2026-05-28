@@ -19,9 +19,9 @@ import {
   inputSchema,
   modeSchema,
   modelSchema,
-  sessionRecoverSchema,
   sessionIdSchema,
   sessionRebindSchema,
+  sessionRecoverSchema,
 } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
@@ -53,8 +53,17 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "invalid_path") {
         return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "invalid_session_status") {
-        return c.json(jsonError("session status does not support recovery", 409, reqId), 409)
+        return c.json(jsonError("session does not need manual recovery right now", 409, reqId), 409)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
@@ -81,10 +90,10 @@ export function registerAcpSessionRoutes(app: Hono) {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
       if (result.reason === "worker_not_found") {
-        return c.json(jsonError("worker not found", 503, reqId), 503)
+        return c.json(jsonError("no available worker can restore this session right now", 503, reqId), 503)
       }
       if (result.reason === "invalid_session_status") {
-        return c.json(jsonError("session status does not support rebind", 409, reqId), 409)
+        return c.json(jsonError("session does not support manual rebind right now", 409, reqId), 409)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
@@ -126,6 +135,15 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "invalid_path") {
         return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
 
@@ -158,6 +176,15 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "invalid_path") {
         return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
 
@@ -181,6 +208,15 @@ export function registerAcpSessionRoutes(app: Hono) {
     if (!result.ok) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
@@ -216,10 +252,19 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "invalid_path") {
         return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
-      return c.json(jsonError("session runtime is not active", 409, reqId), 409)
+      return c.json(jsonError("session is not ready for input right now", 409, reqId), 409)
     }
 
     return c.json(jsonOk({ accepted: true }, reqId))
@@ -243,10 +288,19 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
-      return c.json(jsonError("session runtime is not active", 409, reqId), 409)
+      return c.json(jsonError("session does not have an active prompt to cancel", 409, reqId), 409)
     }
 
     return c.json(jsonOk({ success: true }, reqId))
@@ -270,10 +324,19 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
-      return c.json(jsonError("session runtime is not active", 409, reqId), 409)
+      return c.json(jsonError("session runtime settings are not available right now", 409, reqId), 409)
     }
 
     return c.json(jsonOk({ success: true }, reqId))
@@ -297,10 +360,19 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
-      return c.json(jsonError("session runtime is not active", 409, reqId), 409)
+      return c.json(jsonError("session runtime settings are not available right now", 409, reqId), 409)
     }
 
     return c.json(jsonOk({ success: true }, reqId))
@@ -325,10 +397,19 @@ export function registerAcpSessionRoutes(app: Hono) {
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }
+      if (result.reason === "workspace_not_shared") {
+        return c.json(jsonError("workspace is not shared with you", 403, reqId), 403)
+      }
+      if (result.reason === "share_revoked") {
+        return c.json(jsonError("workspace share was revoked", 403, reqId), 403)
+      }
+      if (result.reason === "scope_mismatch") {
+        return c.json(jsonError("session is outside your scope", 403, reqId), 403)
+      }
       if (result.reason === "forbidden") {
         return c.json(jsonError("forbidden", 403, reqId), 403)
       }
-      return c.json(jsonError("session runtime is not active", 409, reqId), 409)
+      return c.json(jsonError("session runtime settings are not available right now", 409, reqId), 409)
     }
 
     return c.json(jsonOk({ success: true }, reqId))

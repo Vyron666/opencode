@@ -12,7 +12,7 @@ export type BusinessSessionAccessResult =
     }
   | {
       ok: false
-      reason: "session_not_found" | "forbidden"
+      reason: "session_not_found" | "forbidden" | "workspace_not_shared" | "share_revoked" | "scope_mismatch"
     }
 
 export async function findBusinessSessionForUser(sessionId: string, user?: User): Promise<BusinessSessionAccessResult> {
@@ -23,7 +23,7 @@ export async function findBusinessSessionForUser(sessionId: string, user?: User)
   // 中文/English: P1-C reads must resolve session visibility from one shared
   // access context instead of each caller hand-writing its own boundary logic.
   if (!context.sessionIds.has(session.id)) {
-    return { ok: false, reason: "forbidden" }
+    return { ok: false, reason: "scope_mismatch" }
   }
   return { ok: true, session }
 }
@@ -40,6 +40,6 @@ export async function requireSessionAction(input: {
     session: sessionResult.session,
     action: input.action,
   })
-  if (!authorization.ok) return { ok: false, reason: "forbidden" }
+  if (!authorization.ok) return { ok: false, reason: authorization.reason }
   return sessionResult
 }

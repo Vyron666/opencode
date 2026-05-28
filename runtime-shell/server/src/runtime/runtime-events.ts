@@ -4,6 +4,8 @@ import type { BusinessSession, SessionEvent, SessionEventType } from "../types"
 import { deriveCapabilityPatch, mergeConfigOptionsWithCustomModels } from "./runtime-capabilities"
 import { publishToSubscribers } from "./runtime-registry"
 
+const pendingSessionEventWrites = new Map<string, Promise<void>>()
+
 export function createEvent(
   session: BusinessSession,
   eventType: SessionEventType,
@@ -23,29 +25,40 @@ export function createEvent(
 
 export async function persistAndFanout(event: SessionEvent) {
   publishToSubscribers(event)
-  const session = await sessionService.getSession(event.businessSessionId)
-  const capabilityPatch = deriveCapabilityPatch(event)
-  let sessionPatch: Partial<BusinessSession> | undefined
-  if (session) {
-    if (event.eventType === "config_option_update" && capabilityPatch?.configOptions) {
-      capabilityPatch.configOptions = await mergeConfigOptionsWithCustomModels(
-        capabilityPatch.configOptions as Array<Record<string, unknown>>,
-      )
+  const previousWrite = pendingSessionEventWrites.get(event.businessSessionId) || Promise.resolve()
+  const nextWrite = previousWrite.then(async () => {
+    const session = await sessionService.getSession(event.businessSessionId)
+    const capabilityPatch = deriveCapabilityPatch(event)
+    let sessionPatch: Partial<BusinessSession> | undefined
+    if (session) {
+      if (event.eventType === "config_option_update" && capabilityPatch?.configOptions) {
+        capabilityPatch.configOptions = await mergeConfigOptionsWithCustomModels(
+          capabilityPatch.configOptions as Array<Record<string, unknown>>,
+        )
+      }
+      sessionPatch = {
+        lastEventAt: event.timestamp,
+        ...(capabilityPatch
+          ? {
+              capabilityState: {
+                ...session.capabilityState,
+                ...capabilityPatch,
+              },
+            }
+          : {}),
+      }
     }
-    sessionPatch = {
-      lastEventAt: event.timestamp,
-      ...(capabilityPatch
-        ? {
-            capabilityState: {
-              ...session.capabilityState,
-              ...capabilityPatch,
-            },
-          }
-        : {}),
+    await sessionService.stageSessionEvent(event, sessionPatch)
+    await stateService.save()
+  })
+  pendingSessionEventWrites.set(event.businessSessionId, nextWrite)
+  try {
+    await nextWrite
+  } finally {
+    if (pendingSessionEventWrites.get(event.businessSessionId) === nextWrite) {
+      pendingSessionEventWrites.delete(event.businessSessionId)
     }
   }
-  await sessionService.stageSessionEvent(event, sessionPatch)
-  await stateService.save()
 }
 
 export function nextId(prefix: string) {

@@ -123,13 +123,12 @@ CREATE TABLE IF NOT EXISTS business_session (
   deleted_at DATETIME(3) NULL
 );
 
-CREATE TABLE IF NOT EXISTS session_share_binding (
+CREATE TABLE IF NOT EXISTS workspace_share_binding (
   id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL,
   organization_id VARCHAR(64) NOT NULL,
   project_id VARCHAR(64) NOT NULL,
   workspace_id VARCHAR(64) NOT NULL,
-  business_session_id VARCHAR(64) NOT NULL,
   owner_user_id VARCHAR(64) NOT NULL,
   target_user_id VARCHAR(64) NOT NULL,
   status VARCHAR(32) NOT NULL,
@@ -138,7 +137,7 @@ CREATE TABLE IF NOT EXISTS session_share_binding (
   updated_at DATETIME(3) NOT NULL,
   updated_by VARCHAR(64),
   deleted_at DATETIME(3) NULL,
-  UNIQUE KEY uk_session_share_binding_session_user (business_session_id, target_user_id)
+  UNIQUE KEY uk_workspace_share_binding_workspace_user (workspace_id, target_user_id)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -166,6 +165,6 @@ CREATE INDEX idx_workspace_binding_scope ON workspace_binding (tenant_id, organi
 CREATE INDEX idx_worker_node_status ON worker_node (status);
 CREATE INDEX idx_business_session_scope ON business_session (tenant_id, organization_id, project_id);
 CREATE INDEX idx_business_session_worker_node_id ON business_session (worker_node_id);
-CREATE INDEX idx_session_share_binding_target_user_id ON session_share_binding (target_user_id, status);
-CREATE INDEX idx_session_share_binding_workspace_id ON session_share_binding (workspace_id, target_user_id);
+CREATE INDEX idx_workspace_share_binding_target_user_id ON workspace_share_binding (target_user_id, status);
+CREATE INDEX idx_workspace_share_binding_workspace_id ON workspace_share_binding (workspace_id, target_user_id);
 CREATE INDEX idx_audit_log_scope ON audit_log (tenant_id, organization_id, created_at);

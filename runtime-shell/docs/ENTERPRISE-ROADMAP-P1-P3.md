@@ -1,4 +1,4 @@
-﻿# runtime-shell 企业化改造方案（P1 / P2 / P3）
+# runtime-shell 企业化改造方案（P1 / P2 / P3）
 
 本文档定义 `runtime-shell` 在 `P1 / P2 / P3` 三个阶段的企业化改造方案，用于承接当前 `P0` 已完成的数据库底座、基础分层与初步运行能力。
 
@@ -142,6 +142,7 @@
 6. `project_member`
 7. `workspace_binding`
 8. `auth_session`
+9. `workspace_share_binding`
 
 补充说明（落地口径）：
 
@@ -236,7 +237,7 @@
 1. 索引：`(tenant_id, user_id, status)` 用于 `auth/me`、登出与查询。
 2. 索引：`(expires_at)` 用于过期清理。
 
-#### `session_share_binding`
+#### `workspace_share_binding`
 
 建议字段（`P1-D` 最小新增）：
 
@@ -245,26 +246,25 @@
 3. `organization_id`
 4. `project_id`
 5. `workspace_id`
-6. `business_session_id`
-7. `owner_user_id`
-8. `target_user_id`
-9. `status`
-10. `created_at / created_by / updated_at / updated_by`
+6. `owner_user_id`
+7. `target_user_id`
+8. `status`
+9. `created_at / created_by / updated_at / updated_by`
 
 建议约束与索引（最小可用）：
 
-1. 唯一约束：`(business_session_id, target_user_id)` 唯一，避免重复分享。
-2. 索引：`(target_user_id, status)` 用于加载“我被分享了哪些会话”。
-3. 索引：`(workspace_id, target_user_id)` 用于把分享出来的 `workspace` 访问权与 `session` 访问权保持一致。
+1. 唯一约束：`(workspace_id, target_user_id)` 唯一，避免重复分享。
+2. 索引：`(target_user_id, status)` 用于加载“我被分享了哪些工作区”。
+3. 索引：`(workspace_id, target_user_id)` 用于把共享工作区访问权与该工作区下会话访问权保持一致。
 
 ### 3.4.3 权限模型
 
-`P1-D` 第一版建议采用“最小角色 + 动作授权 + 范围 + 分享绑定”的模型，而不是一次性落完整复杂 RBAC。
+`P1-D` 第一版建议采用“最小角色 + 动作授权 + 范围 + 工作区共享绑定”的模型，而不是一次性落完整复杂 RBAC。
 
 1. 角色决定用户属于 `admin` 还是 `developer`。
 2. 权限决定动作对应的资源类型。
 3. 范围决定动作在哪个租户、组织、项目、工作区、会话边界内有效。
-4. 分享绑定决定某个用户是否被额外授予“指定 `session` + 其所属 `workspace`”的联合访问权。
+4. 工作区共享绑定决定某个用户是否被额外授予“指定 `workspace` + 其下已有 `session`”的联合访问权。
 
 角色冻结口径：
 
@@ -274,30 +274,31 @@
    - 唯一允许访问 `system/workers`。
 2. `developer`
    - 拥有自己范围内的会话运行权限。
-   - 可以分享自己拥有的 `session`。
+   - 可以分享自己拥有的 `workspace`。
    - 不具备平台级配置管理权限，不可访问 `system/workers`。
 
-中文/English：sharing a session implicitly shares its bound workspace. Session and workspace are not split for share authorization.
+中文/English：sharing a workspace implicitly shares its existing sessions. Workspace and session remain consistent under the same share authorization.
 
-分享权限矩阵（`P1-D` 第一版冻结）：
+共享权限矩阵（`P1-D` 第一版冻结）：
 
-1. 被分享用户对 `session` 允许的动作：
+1. 被共享用户对 `session` 允许的动作：
    - `read/detail/events`
    - `open/load/resume`
    - `prompt/input`
    - `cancel`
    - `permission.respond`
    - `question.respond`
-2. 被分享用户对 `session` 禁止的动作：
+2. 被共享用户对 `session` 禁止的动作：
    - `close`
    - `delete`
    - `share.create`
    - `share.delete`
    - `provider/model/mode/config update`
    - `fork`
-3. 被分享用户对 `workspace` 允许的动作：
-   - 仅允许该被分享 `session` 在该 `workspace` 上继续运行
-4. 被分享用户对 `workspace` 禁止的动作：
+3. 被共享用户对 `workspace` 允许的动作：
+   - 允许查看该工作区下已有 `session`
+   - 允许这些已有 `session` 在该 `workspace` 上继续运行
+4. 被共享用户对 `workspace` 禁止的动作：
    - `session.create`
    - 独立打开或使用该 `workspace`
    - `workspace_binding` 管理
@@ -308,11 +309,11 @@
 
 1. `business_session`
 2. `workspace`
-3. `session_share_binding`
-3. `provider_config`
-4. `custom_model`
-5. `worker_node`
-6. `audit_log`
+3. `workspace_share_binding`
+4. `provider_config`
+5. `custom_model`
+6. `worker_node`
+7. `audit_log`
 
 动作建议先覆盖：
 
@@ -363,6 +364,7 @@
 5. `worker_node`
 6. `audit_log`
 7. `auth_session`
+8. `workspace_share_binding`
 
 #### `action`
 
@@ -405,8 +407,8 @@
 1. 根据 `businessSessionId` 查询会话元数据。
 2. 先判定当前用户是否为 `admin`。
 3. 再判定当前用户是否为 `session owner`。
-4. 再判定当前用户是否命中该 `session` 的分享绑定。
-5. 若命中分享绑定，则默认同时授予该 `session` 所属 `workspace` 的访问权。
+4. 再判定当前用户是否命中该 `session` 所属工作区的共享绑定。
+5. 若命中工作区共享绑定，则默认同时授予该 `workspace` 下已有 `session` 的访问权。
 6. 若以上都不命中，再执行普通租户 / 组织 / 项目 / 工作区范围校验。
 7. 校验当前用户是否具备对应动作权限。
 8. 通过后才允许读取会话详情、事件流、运行时控制接口。
@@ -415,8 +417,8 @@
 
 1. 前端只能传 `workspaceId`。
 2. 服务端按 `workspace_binding` 查询工作区。
-3. 若访问来自 `session share binding`，则该绑定自动构成该工作区的访问依据。
-4. 若不存在分享绑定，再校验 `tenant_id + organization_id + project_id`。
+3. 若访问来自 `workspace share binding`，则该绑定自动构成该工作区的访问依据。
+4. 若不存在共享绑定，再校验 `tenant_id + organization_id + project_id`。
 5. 校验当前用户在该范围内是否有使用工作区的权限。
 6. 校验 `root_path` 是否存在且仍为合法目录。
 
@@ -432,6 +434,7 @@
 4. prompt / cancel / config update
 5. provider save / custom model save
 6. worker overview / health
+7. workspace share create / delete
 
 `P1-D` 第一版角色口径：
 
@@ -461,7 +464,7 @@
 
 ```jsonc
 {
-  "code": "OK", // 中文/English：machine-readable code
+  "code": "OK",
   "message": "success",
   "data": {},
   "requestId": "req_xxx"
@@ -494,6 +497,8 @@
 6. `POST /api/workspace-binding/create`
 7. `POST /api/workspace-binding/enable`
 8. `POST /api/workspace-binding/disable`
+9. `POST /api/workspace/share/create`
+10. `POST /api/workspace/share/delete`
 
 中文/English：GET is read-only. All writes are POST with verb-like suffix.
 
@@ -516,7 +521,7 @@ Repo 层只提供以下能力：
 3. 查资源边界
 4. 查工作区绑定
 5. 查认证会话
-6. 查 `session share binding`
+6. 查 `workspace share binding`
 
 Repo 层不承担“允许还是拒绝”的业务判定。
 
@@ -547,6 +552,7 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 2. 再引入 `workspace_binding` 强校验
 3. 再引入会话与事件读取的数据范围过滤
 4. 最后引入写接口 RBAC
+5. 再补工作区共享治理
 
 ## 3.8.1 P1 可执行任务清单
 
@@ -618,50 +624,37 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 
 1. 越权读取会话详情返回 `403` 或 `404`。
 2. SSE 事件流只能收到当前用户有权限看到的会话事件。
-3. `session list` 默认只返回当前范围内会话（tenant/org/project/workspace），且过滤条件可审计（记录 requestId + scope）。
+3. `session list` 默认只返回当前范围内会话（tenant/org/project/workspace + workspace share）。
 
-### `P1-D`：RBAC 写接口接入
+### `P1-D`：写接口授权与工作区共享接入
 
 目标：
 
-1. 所有接口都具备稳定角色口径，所有关键写接口都经过动作级授权。
-2. `session` 分享能力进入正式授权链。
+1. 所有写接口都能按统一授权链路做允许/拒绝判定。
+2. 工作区共享闭环可用。
 
 任务：
 
-1. 收敛角色模型，只保留 `admin`、`developer`。
-2. 为全部接口冻结角色访问矩阵。
-3. 为 `session.create/open/close/prompt/cancel/load/resume/fork`
-4. 为 `provider.save`
-5. 为 `custom_model.save`
-6. 为 `worker.manage`
-7. 为 `session.share/create` 与 `session.share/delete`
-
-补齐资源类型与动作映射。
-
-实现要求：
-
-1. 所有写接口统一先鉴权，再授权，再执行业务。
-2. 所有拒绝结果都要落审计。
-3. `developer` 只能分享自己拥有的 `session`。
-4. 分享 `session` 时默认同时授予对应 `workspace` 访问权，不允许拆分授权。
-5. `system/workers` 只允许 `admin` 访问。
-6. 被分享用户获得的是“指定 `session` 的协作权限 + 该 `session` 所属 `workspace` 的附属使用权”。
-7. 被分享用户不得因为一次分享而获得该 `workspace` 上的独立建会话权或管理权。
+1. 把会话写接口统一收敛到 service 授权入口。
+2. 固定 `admin / developer` 两种角色第一版口径。
+3. 引入 `workspace_share_binding` 及其 repo/service。
+4. 明确被共享用户对 `session` 与 `workspace` 的动作边界。
+5. 所有拒绝结果返回稳定 `deny_reason`。
 
 验收：
 
-1. 未授权用户无法执行对应写操作。
-2. 审计日志可追踪“谁在什么范围内被哪条规则拒绝”。
-3. 每个拒绝必须包含 `deny_reason` 且与授权判定链路步骤一一对应（例如：未登录 / 无角色 / 无动作权限 / scope 不命中 / 资源不在边界）。
-4. 被分享用户可以访问被分享 `session`，并默认可以访问其所属 `workspace`。
-5. 被分享用户未获得其它无关 `session` 或 `workspace` 的访问权。
+1. 所有越权写操作被明确拒绝。
+2. 每个拒绝必须包含 `deny_reason` 且与授权判定链路步骤一一对应（例如：未登录 / 无角色 / 无动作权限 / scope 不命中 / 资源不在边界）。
+3. 被共享用户可以访问共享工作区下已有 `session`，并默认可以访问其所属 `workspace`。
+4. 被共享用户未获得其它无关 `session` 或 `workspace` 的访问权。
+5. 共享工作区不会让被共享用户获得 `session.create` 能力。
 
 ## 3.9 风险
 
 1. 历史会话可能缺少完整范围字段，需要补数或约束回填。
 2. 如果直接全量启用 RBAC，容易误伤现有管理用户默认能力。
 3. 工作区绑定切严后，历史不合规路径可能无法继续打开。
+4. 如果共享粒度从会话切到工作区，前后端口径必须一次收敛，否则容易出现“能看到但不能解释”的体验问题。
 
 ---
 
@@ -1146,7 +1139,7 @@ Repo 层不承担“允许还是拒绝”的业务判定。
 3. `value_json`：必须可被 schema 校验（实现阶段可用仓库既有 schema 方案对齐）。
 4. 敏感字段（例如 apiKey/token）禁止明文回显；审计只记录“是否变更/影响范围”，不记录明文内容。
 
-### 5.4.3 关键字段建议
+### 5.4.5 关键字段建议
 
 #### `config_item`
 
@@ -1384,7 +1377,7 @@ Repo 不负责：
 1. `P1-A`：认证会话全量持久化
 2. `P1-B`：工作区绑定强校验
 3. `P1-C`：会话 / 事件读取边界过滤
-4. `P1-D`：RBAC 写接口接入
+4. `P1-D`：RBAC 写接口接入与工作区共享
 
 ## 6.2 P2 建议拆分
 

@@ -4,6 +4,7 @@ import { createConversationState } from './components/chat/conversation-blocks'
 import { buildCapabilitiesFromSession, DEFAULT_CAPABILITIES, mergeCapabilities } from './store/capabilities'
 import { createInteractionActions } from './store/actions/interaction-actions'
 import { createSessionActions } from './store/actions/session-actions'
+import { createWorkspaceActions } from './store/actions/workspace-actions'
 import { createSseActions } from './store/sse/sse-runtime'
 import {
   createBaseState,
@@ -51,6 +52,11 @@ export const useStore = create((set, get) => ({
     get,
     set,
     resetConversationState,
+  }),
+  ...createWorkspaceActions({
+    api,
+    get,
+    set,
   }),
   ...createInteractionActions({
     api,

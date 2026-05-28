@@ -12,6 +12,21 @@ export async function requireBusinessSession(c: Context, sessionId: string, user
       response: c.json(jsonError("session not found", 404, reqId), 404),
     }
   }
+  if (result.reason === "workspace_not_shared") {
+    return {
+      response: c.json(jsonError("workspace is not shared with you", 403, reqId), 403),
+    }
+  }
+  if (result.reason === "share_revoked") {
+    return {
+      response: c.json(jsonError("workspace share was revoked", 403, reqId), 403),
+    }
+  }
+  if (result.reason === "scope_mismatch") {
+    return {
+      response: c.json(jsonError("session is outside your scope", 403, reqId), 403),
+    }
+  }
   return {
     response: c.json(jsonError("forbidden", 403, reqId), 403),
   }

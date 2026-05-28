@@ -40,7 +40,7 @@ export const defaultState = (): PersistedState => {
     permissions: buildDefaultPermissions(),
     authSessions: [],
     workspaces: buildDefaultWorkspaces(timestamp),
-    sessionShareBindings: [],
+    workspaceShareBindings: [],
     workers: buildDefaultWorkers(timestamp),
     sessions: [],
     events: [],
@@ -60,12 +60,37 @@ export function normalizeState(input: PersistedState): PersistedState {
     permissions: Array.isArray(input.permissions) ? input.permissions : defaults.permissions,
     authSessions: Array.isArray(input.authSessions) ? input.authSessions : defaults.authSessions,
     workspaces: Array.isArray(input.workspaces) && input.workspaces.length ? input.workspaces : defaults.workspaces,
-    sessionShareBindings: Array.isArray(input.sessionShareBindings) ? input.sessionShareBindings : defaults.sessionShareBindings,
-    workers: Array.isArray(input.workers) && input.workers.length ? input.workers : defaults.workers,
+    workspaceShareBindings:
+      Array.isArray(input.workspaceShareBindings) ? input.workspaceShareBindings : defaults.workspaceShareBindings,
+    workers: normalizeWorkers(input.workers, defaults.workers),
     sessions: Array.isArray(input.sessions) ? input.sessions : defaults.sessions,
     events: Array.isArray(input.events) ? input.events : defaults.events,
     auditLogs: Array.isArray(input.auditLogs) ? input.auditLogs : defaults.auditLogs,
   }
+}
+
+function normalizeWorkers(inputWorkers: PersistedState["workers"], defaultWorkers: PersistedState["workers"]) {
+  if (!Array.isArray(inputWorkers) || inputWorkers.length === 0) return defaultWorkers
+  const defaultsById = new Map(defaultWorkers.map((worker) => [worker.id, worker]))
+  const normalizedDefaults = defaultWorkers.map((defaultWorker) => {
+    const current = inputWorkers.find((worker) => worker.id === defaultWorker.id)
+    if (!current) return defaultWorker
+    return {
+      ...defaultWorker,
+      ...current,
+      tenantId: defaultWorker.tenantId,
+      organizationId: defaultWorker.organizationId,
+      workerCode: defaultWorker.workerCode,
+      name: defaultWorker.name,
+      baseUrl: defaultWorker.baseUrl,
+      status: defaultWorker.status,
+      capacity: defaultWorker.capacity,
+      activeSessionCount: current.activeSessionCount,
+      lastHeartbeatAt: current.lastHeartbeatAt,
+    }
+  })
+  const extraWorkers = inputWorkers.filter((worker) => !defaultsById.has(worker.id))
+  return [...normalizedDefaults, ...extraWorkers]
 }
 
 function buildDefaultTenants(timestamp: string): Tenant[] {
@@ -203,7 +228,9 @@ function buildDefaultWorkers(timestamp: string): WorkerNode[] {
       name: "opencode-worker",
       baseUrl: Config.opencodeBaseUrl,
       status: "ready",
-      capacity: 1,
+      // 中文/English: local development should tolerate a few concurrent sessions,
+      // otherwise one active session makes the whole shell feel "stuck" for other users.
+      capacity: 4,
       activeSessionCount: 0,
       lastHeartbeatAt: timestamp,
       version: "local",

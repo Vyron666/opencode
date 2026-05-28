@@ -1,14 +1,13 @@
 import { memo, useEffect, useState } from 'react'
-import { CreateSessionPanel, ForkSessionPanel } from './create-panels'
+import { CreateSessionPanel, CreateWorkspacePanel, ForkSessionPanel } from './create-panels'
 import { EventStreamPanel, PlanPanel } from './event-panels'
 import { MetricsPanel, PermissionPanel, QuestionPanel, SessionDetailPanel } from './inspect-panels'
+import { WorkspaceSharePanel } from './workspace-share-panel'
 import {
   ConfigSettingPanel,
   CustomModelsPanel,
-  ModeSettingPanel,
   ModelSettingPanel,
   ProviderConfigPanel,
-  SessionSharePanel,
   WorkerOverviewPanel,
 } from './settings-panels'
 import { TABS } from './sidebar-support'
@@ -68,9 +67,10 @@ export default function RightSidebar() {
 const CreateTabContent = memo(function CreateTabContent() {
   return (
     <div className="grid gap-3 animate-fade-in">
+      <CreateWorkspacePanel />
       <CreateSessionPanel />
       <ForkSessionPanel />
-      <SessionSharePanel />
+      <WorkspaceSharePanel />
     </div>
   )
 })
@@ -79,7 +79,6 @@ const SettingsTabContent = memo(function SettingsTabContent() {
   return (
     <div className="grid gap-3 animate-fade-in">
       <WorkerOverviewPanel />
-      <ModeSettingPanel />
       <ModelSettingPanel />
       <ConfigSettingPanel />
       <ProviderConfigPanel />

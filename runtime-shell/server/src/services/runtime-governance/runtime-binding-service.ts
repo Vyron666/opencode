@@ -18,6 +18,10 @@ export async function getActiveRuntimeBinding(sessionId: string) {
   return SessionRuntimeBindingRepo.findActiveBindingBySessionId(sessionId)
 }
 
+export async function getLatestRuntimeBinding(sessionId: string) {
+  return SessionRuntimeBindingRepo.findLatestBindingBySessionId(sessionId)
+}
+
 export async function markRuntimeBindingBound(input: {
   sessionId: string
   acpSessionId: string

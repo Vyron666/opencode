@@ -2,20 +2,27 @@ import { closeRuntime } from "../../acp-runtime-manager"
 import type { User } from "../../types"
 import { buildAccessContext } from "../access/access-context-service"
 import { createRuntimeBinding } from "../runtime-governance/runtime-binding-service"
-import { auditService, sessionService, sessionShareService, userService } from "../store/store-singleton"
+import { auditService, sessionService } from "../store/store-singleton"
 import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { ensureWorkspaceForUser, requireSessionAction } from "./session-access-service"
 import { resetSessionRuntime } from "./session-lifecycle-service"
 import { markSessionActive, markSessionClosing, markSessionOpening } from "./session-status-machine-service"
-import { sessionSummary } from "./session-summary-service"
+import { buildSessionViewForUser } from "./session-summary-service"
+import { listWorkspaceSharesForWorkspace } from "./workspace-share-application-service"
 import { openSessionWithFallback } from "./session-runtime-service"
 import { assignWorkerForNewSession, ensureWorkerForSessionOpen } from "./session-worker-assignment-service"
 
 export async function listUserSessionOverview(user: User) {
   const context = await buildAccessContext(user)
+  const items = await Promise.all(context.sessions.map((session) => buildSessionViewForUser(user, session)))
   return {
-    items: context.sessions.map(sessionSummary),
-    workspaces: context.workspaces,
+    items,
+    workspaces: context.workspaces
+      .filter((workspace) => !context.sharedWorkspaceIds.has(workspace.id) && workspace.status === "active")
+      .map((workspace) => ({
+        ...workspace,
+        canCreateSession: true,
+      })),
   }
 }
 
@@ -69,7 +76,7 @@ export async function createSessionForUser(input: {
 
   return {
     ok: true as const,
-    session: sessionSummary(session),
+    session: await buildSessionViewForUser(input.user, session),
   }
 }
 
@@ -83,24 +90,12 @@ export async function getSessionDetailForUser(input: {
     action: "read",
   })
   if (!result.ok) return result
-  const shares = await sessionShareService.listSharesForSession(result.session.id)
+  const shares = await listWorkspaceSharesForWorkspace(result.session.workspaceId)
   return {
     ok: true as const,
-    session: sessionSummary(result.session),
+    session: await buildSessionViewForUser(input.user, result.session),
     events: sessionService.listEvents(result.session.id),
-    shares: shares
-      .map((binding) => {
-        const targetUser = userService.getUser(binding.targetUserId)
-        if (!targetUser) return null
-        return {
-          id: binding.id,
-          targetUserId: binding.targetUserId,
-          targetDisplayName: targetUser.displayName || targetUser.username,
-          targetRole: targetUser.role,
-          status: binding.status,
-        }
-      })
-      .filter((item) => item !== null),
+    shares,
   }
 }
 
@@ -137,7 +132,7 @@ export async function closeSessionForUser(input: {
 
   return {
     ok: true as const,
-    session: sessionSummary(closed || result.session),
+    session: await buildSessionViewForUser(input.user, closed || result.session),
   }
 }
 
@@ -195,7 +190,7 @@ export async function openSessionForUser(input: {
 
   return {
     ok: true as const,
-    session: sessionSummary(opened),
+    session: await buildSessionViewForUser(input.user, opened),
   }
 }
 

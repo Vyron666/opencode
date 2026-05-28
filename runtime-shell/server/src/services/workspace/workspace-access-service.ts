@@ -17,6 +17,22 @@ export async function ensureWorkspaceForUser(input: {
   })
 }
 
+export async function ensureWorkspaceShareAccessForUser(input: {
+  user: User
+  projectId: string
+  workspaceId: string
+  action: "share_workspace" | "unshare_workspace"
+}): Promise<WorkspaceAccessResult> {
+  const workspace = await workspaceService.getWorkspace(input.workspaceId)
+  if (!workspace) return { ok: false, reason: "workspace_not_found" }
+  return requireWorkspaceWithinScope({
+    workspace,
+    user: input.user,
+    projectId: input.projectId,
+    action: input.action,
+  })
+}
+
 export async function ensureSessionWorkspaceForUser(input: {
   user: User
   session: BusinessSession
@@ -66,7 +82,7 @@ async function requireWorkspaceWithinScope(input: {
   workspace: Workspace
   user: User
   projectId: string
-  action: "use_for_session" | "create_session"
+  action: "use_for_session" | "create_session" | "share_workspace" | "unshare_workspace"
   businessSession?: BusinessSession
 }): Promise<WorkspaceAccessResult> {
   const workspace = input.workspace
@@ -74,7 +90,7 @@ async function requireWorkspaceWithinScope(input: {
   if (workspace.tenantId !== user.tenantId || workspace.organizationId !== user.organizationId) {
     return { ok: false, reason: "forbidden" }
   }
-  if (workspace.projectId !== input.projectId) return { ok: false, reason: "forbidden" }
+  if (workspace.projectId !== input.projectId) return { ok: false, reason: "scope_mismatch" }
   if (workspace.status !== "active") return { ok: false, reason: "workspace_disabled" }
   const authorization = await authorizeWorkspaceAccess({
     user,
@@ -83,7 +99,7 @@ async function requireWorkspaceWithinScope(input: {
     action: input.action,
     businessSession: input.businessSession,
   })
-  if (!authorization.ok) return { ok: false, reason: "forbidden" }
+  if (!authorization.ok) return { ok: false, reason: authorization.reason }
   const info = await Bun.file(workspace.rootPath).stat().catch(() => null)
   if (!info?.isDirectory()) return { ok: false, reason: "invalid_path" }
   return { ok: true, workspace }

@@ -1,5 +1,7 @@
 const baseUrl = process.env.RUNTIME_SHELL_SHARE_BASE_URL || "http://127.0.0.1:3100"
+const ownerUsername = process.env.RUNTIME_SHELL_SHARE_OWNER_USERNAME || "admin"
 const ownerPassword = process.env.RUNTIME_SHELL_SHARE_OWNER_PASSWORD || "change-me"
+const targetUsername = process.env.RUNTIME_SHELL_SHARE_TARGET_USERNAME || "developer"
 const targetPassword = process.env.RUNTIME_SHELL_SHARE_TARGET_PASSWORD || "change-me"
 
 type ApiEnvelope<T> = {
@@ -12,37 +14,51 @@ type ApiEnvelope<T> = {
 type SessionSummary = {
   id: string
   status: string
+  workspaceId: string
+  projectId: string
+  visibility?: string
+  capabilities?: {
+    close?: boolean
+    fork?: boolean
+    shareWorkspace?: boolean
+    updateMode?: boolean
+  }
 }
 
 type WorkspaceSummary = {
   id: string
+  projectId: string
 }
 
 type UserSummary = {
   id: string
   username: string
   projectIds: string[]
-  workspaceIds: string[]
 }
 
 const ownerJar: string[] = []
 const targetJar: string[] = []
 
-const ownerLogin = await login("developer-secondary", ownerPassword, ownerJar)
-const targetLogin = await login("developer", targetPassword, targetJar)
+const ownerLogin = await login(ownerUsername, ownerPassword, ownerJar)
+const targetLogin = await login(targetUsername, targetPassword, targetJar)
 
-const ownerList = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: WorkspaceSummary[] }>>(
-  ownerJar,
-  "/api/session/list",
-)
-assert(ownerList.status === 200 && ownerList.body.data.workspaces.length === 1, "owner session/list failed")
+const ownerWorkspaceCreate = await requestJson<ApiEnvelope<WorkspaceSummary>>(ownerJar, "/api/workspace/create", {
+  method: "POST",
+  body: {
+    projectId: ownerLogin.user.projectIds[0],
+    name: `share-e2e-${Date.now()}`,
+  },
+})
+assert(ownerWorkspaceCreate.status === 200, "owner workspace/create failed")
+
+const ownerWorkspace = ownerWorkspaceCreate.body.data
 
 const ownerSession = await requestJson<ApiEnvelope<SessionSummary>>(ownerJar, "/api/session/create", {
   method: "POST",
   body: {
     title: `Shared Session ${Date.now()}`,
-    projectId: ownerLogin.user.projectIds[0],
-    workspaceId: ownerList.body.data.workspaces[0].id,
+    projectId: ownerWorkspace.projectId,
+    workspaceId: ownerWorkspace.id,
   },
 })
 assert(ownerSession.status === 200, "owner session/create failed")
@@ -53,20 +69,40 @@ const forbiddenBeforeShare = await requestJson<ApiEnvelope<{ session: SessionSum
 )
 assert(forbiddenBeforeShare.status === 403, "target user should not read session before share")
 
-const shareCreate = await requestJson<ApiEnvelope<{ binding: { id: string } }>>(ownerJar, "/api/session/share/create", {
+const shareCreate = await requestJson<ApiEnvelope<{ binding: { id: string } }>>(ownerJar, "/api/workspace/share/create", {
   method: "POST",
   body: {
-    businessSessionId: ownerSession.body.data.id,
+    workspaceId: ownerWorkspace.id,
+    projectId: ownerWorkspace.projectId,
     targetUserId: targetLogin.user.id,
   },
 })
-assert(shareCreate.status === 200, "session/share/create failed")
+assert(shareCreate.status === 200, "workspace/share/create failed")
 
 const detailAfterShare = await requestJson<ApiEnvelope<{ session: SessionSummary; events: unknown[] }>>(
   targetJar,
   `/api/session/detail?businessSessionId=${ownerSession.body.data.id}`,
 )
 assert(detailAfterShare.status === 200, "target user should read shared session detail")
+assert(detailAfterShare.body.data.session.visibility === "workspace_share", "shared session visibility should be workspace_share")
+assert(detailAfterShare.body.data.session.capabilities?.close === false, "shared user should not close session")
+assert(detailAfterShare.body.data.session.capabilities?.fork === false, "shared user should not fork session")
+assert(detailAfterShare.body.data.session.capabilities?.shareWorkspace === false, "shared user should not share workspace")
+assert(detailAfterShare.body.data.session.capabilities?.updateMode === false, "shared user should not update mode")
+
+const targetListAfterShare = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: WorkspaceSummary[] }>>(
+  targetJar,
+  "/api/session/list",
+)
+assert(targetListAfterShare.status === 200, "target session/list failed")
+assert(
+  targetListAfterShare.body.data.items.some((item) => item.id === ownerSession.body.data.id),
+  "target user should see shared workspace session in session list",
+)
+assert(
+  targetListAfterShare.body.data.workspaces.every((workspace) => workspace.id !== ownerWorkspace.id),
+  "shared workspace should not appear in create-session workspace list",
+)
 
 const openAfterShare = await requestJson<ApiEnvelope<SessionSummary>>(targetJar, "/api/acp/session/open", {
   method: "POST",
@@ -78,7 +114,7 @@ const inputAfterShare = await requestJson<ApiEnvelope<{ accepted: boolean }>>(ta
   method: "POST",
   body: {
     businessSessionId: ownerSession.body.data.id,
-    parts: [{ type: "text", text: "请简短回复：share ok" }],
+    parts: [{ type: "text", text: "请简短回复：workspace share ok" }],
   },
 })
 assert(inputAfterShare.status === 200 && inputAfterShare.body.data.accepted, "target user should prompt shared session")
@@ -116,39 +152,22 @@ const forbiddenMode = await requestJson<ApiEnvelope<{ success: boolean }>>(targe
 })
 assert(forbiddenMode.status === 403, "target user should not update shared session mode")
 
-const forbiddenProviderSave = await requestJson<ApiEnvelope<{ success: boolean }>>(targetJar, "/api/provider-config/save", {
+const forbiddenReshare = await requestJson<ApiEnvelope<{ binding: { id: string } }>>(targetJar, "/api/workspace/share/create", {
   method: "POST",
   body: {
-    providerId: "share-test",
-    name: "Share Test",
-    api: "responses",
-    baseURL: "https://example.com",
-    apiKey: "share-test-key",
-    defaultModel: "share-test/model",
-    models: [{ id: "model", name: "model" }],
+    workspaceId: ownerWorkspace.id,
+    projectId: ownerWorkspace.projectId,
+    targetUserId: ownerLogin.user.id,
   },
 })
-assert(forbiddenProviderSave.status === 403, "target user should not save provider config")
-
-const forbiddenShareAgain = await requestJson<ApiEnvelope<{ binding: { id: string } }>>(
-  targetJar,
-  "/api/session/share/create",
-  {
-    method: "POST",
-    body: {
-      businessSessionId: ownerSession.body.data.id,
-      targetUserId: ownerLogin.user.id,
-    },
-  },
-)
-assert(forbiddenShareAgain.status === 403, "target user should not reshare shared session")
+assert(forbiddenReshare.status === 403, "target user should not reshare shared workspace")
 
 const forbiddenCreateInSharedWorkspace = await requestJson<ApiEnvelope<SessionSummary>>(targetJar, "/api/session/create", {
   method: "POST",
   body: {
     title: `Forbidden Shared Workspace ${Date.now()}`,
-    projectId: ownerLogin.user.projectIds[0],
-    workspaceId: ownerList.body.data.workspaces[0].id,
+    projectId: ownerWorkspace.projectId,
+    workspaceId: ownerWorkspace.id,
   },
 })
 assert(
@@ -156,14 +175,15 @@ assert(
   "target user should not create another session in shared workspace",
 )
 
-const shareDelete = await requestJson<ApiEnvelope<{ success: boolean }>>(ownerJar, "/api/session/share/delete", {
+const shareDelete = await requestJson<ApiEnvelope<{ success: boolean }>>(ownerJar, "/api/workspace/share/delete", {
   method: "POST",
   body: {
-    businessSessionId: ownerSession.body.data.id,
+    workspaceId: ownerWorkspace.id,
+    projectId: ownerWorkspace.projectId,
     targetUserId: targetLogin.user.id,
   },
 })
-assert(shareDelete.status === 200, "session/share/delete failed")
+assert(shareDelete.status === 200, "workspace/share/delete failed")
 
 const forbiddenAfterDelete = await requestJson<ApiEnvelope<{ session: SessionSummary }>>(
   targetJar,
@@ -199,9 +219,10 @@ async function requestJson<T>(
   } = {},
 ) {
   const response = await request(jar, path, init)
+  const text = await response.text()
   return {
     status: response.status,
-    body: (await response.json()) as T,
+    body: parseJsonText(text, path) as T,
   }
 }
 
@@ -246,4 +267,12 @@ function mergeCookies(jar: string[], response: Response) {
 function assert(condition: unknown, message: string): asserts condition {
   if (condition) return
   throw new Error(message)
+}
+
+function parseJsonText(text: string, path: string) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`invalid json response from ${path}: ${text}`)
+  }
 }

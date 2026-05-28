@@ -18,7 +18,8 @@ import {
   markSessionFailed,
   markSessionWaitingInput,
 } from "../session/session-status-machine-service"
-import { sessionSummary } from "../session/session-summary-service"
+import { buildSessionViewForUser } from "../session/session-summary-service"
+import { getLatestRuntimeBinding } from "../runtime-governance/runtime-binding-service"
 import { renewRuntimeLeaseForSession } from "../runtime-governance/runtime-lease-service"
 import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { auditService, sessionService } from "../store/store-singleton"
@@ -39,13 +40,13 @@ export async function loadSessionRuntimeForUser(input: {
   if (!result.ok) return result
   const workspaceResult = await requireRuntimeSessionWorkspace({
     user: input.user,
-    session: result.session,
+    session: await restoreSessionBindingForHistory(result.session),
   })
   if (!workspaceResult.ok) return workspaceResult
   await loadRealRuntime(workspaceResult.session)
   const loaded = await sessionService.getSession(result.session.id)
   if (!loaded) return { ok: false as const, reason: "session_not_found" }
-  return { ok: true as const, session: sessionSummary(loaded) }
+  return { ok: true as const, session: await buildSessionViewForUser(input.user, loaded) }
 }
 
 export async function resumeSessionRuntimeForUser(input: {
@@ -60,13 +61,13 @@ export async function resumeSessionRuntimeForUser(input: {
   if (!result.ok) return result
   const workspaceResult = await requireRuntimeSessionWorkspace({
     user: input.user,
-    session: result.session,
+    session: await restoreSessionBindingForHistory(result.session),
   })
   if (!workspaceResult.ok) return workspaceResult
   await resumeRealRuntime(workspaceResult.session)
   const resumed = await sessionService.getSession(result.session.id)
   if (!resumed) return { ok: false as const, reason: "session_not_found" }
-  return { ok: true as const, session: sessionSummary(resumed) }
+  return { ok: true as const, session: await buildSessionViewForUser(input.user, resumed) }
 }
 
 export async function forkSessionRuntimeForUser(input: {
@@ -88,7 +89,7 @@ export async function forkSessionRuntimeForUser(input: {
   await forkRealRuntime(result.session, forkedSession)
   const opened = await sessionService.getSession(forkedSession.id)
   if (!opened) return { ok: false as const, reason: "session_not_found" }
-  return { ok: true as const, session: sessionSummary(opened) }
+  return { ok: true as const, session: await buildSessionViewForUser(input.user, opened) }
 }
 
 export async function submitPromptForUser(input: {
@@ -346,4 +347,19 @@ async function markSessionFailedIfRunning(sessionId: string) {
 function isPromptAborted(error: unknown) {
   if (!(error instanceof Error)) return false
   return error.name === "MessageAbortedError" || /aborted|cancelled|canceled/i.test(error.message)
+}
+
+async function restoreSessionBindingForHistory(session: BusinessSession) {
+  if (session.binding?.acpSessionId) return session
+  const latestBinding = await getLatestRuntimeBinding(session.id)
+  if (!latestBinding?.acpSessionId || !latestBinding.runtimeKey) return session
+  return {
+    ...session,
+    binding: {
+      acpSessionId: latestBinding.acpSessionId,
+      runtimeKey: latestBinding.runtimeKey,
+      openedAt: latestBinding.boundAt,
+      transport: "real" as const,
+    },
+  }
 }

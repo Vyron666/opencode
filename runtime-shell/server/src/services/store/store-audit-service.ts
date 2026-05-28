@@ -1,5 +1,5 @@
 import * as AuditRepo from "../../repos/audit-repo"
-import type { AuditAction } from "../../types"
+import type { AuditAction, AuditResourceType } from "../../types"
 import type { PersistState, ReadState } from "./store-domain-support"
 
 export class StoreAuditService {
@@ -19,13 +19,7 @@ export class StoreAuditService {
     businessSessionId?: string
     requestId?: string
     action: AuditAction
-    resourceType:
-      | "auth_session"
-      | "workspace"
-      | "business_session"
-      | "provider_config"
-      | "custom_model"
-      | "session_share_binding"
+    resourceType: AuditResourceType
     resourceId?: string
     detail: Record<string, unknown>
   }) {

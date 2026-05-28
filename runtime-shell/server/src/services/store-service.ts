@@ -2,6 +2,7 @@ import { createLogger } from "../log"
 import { ensureDatabaseBootstrap } from "../db/bootstrap"
 import type {
   AuditAction,
+  AuditResourceType,
   BusinessSession,
   SessionEvent,
   User,
@@ -12,10 +13,10 @@ import { StoreAuditService } from "./store/store-audit-service"
 import { StoreAuthService } from "./store/store-auth-service"
 import { StoreMetadataService } from "./store/store-metadata-service"
 import { StoreSessionService } from "./store/store-session-service"
-import { StoreSessionShareService } from "./store/store-session-share-service"
 import { StoreStateService } from "./store/store-state-service"
 import { StoreUserService } from "./store/store-user-service"
 import { StoreWorkerService } from "./store/store-worker-service"
+import { StoreWorkspaceShareService } from "./store/store-workspace-share-service"
 import { StoreWorkspaceService } from "./store/store-workspace-service"
 
 const log = createLogger("store")
@@ -25,7 +26,10 @@ export class StoreService {
   readonly metadataService = new StoreMetadataService(() => this.stateService.readState())
   readonly userService = new StoreUserService(() => this.stateService.readState())
   readonly authService = new StoreAuthService()
-  readonly workspaceService = new StoreWorkspaceService()
+  readonly workspaceService = new StoreWorkspaceService(
+    () => this.stateService.readState(),
+    () => this.stateService.save(),
+  )
   readonly workerService = new StoreWorkerService(
     () => this.stateService.readState(),
     () => this.stateService.save(),
@@ -35,7 +39,7 @@ export class StoreService {
     () => this.stateService.save(),
     log,
   )
-  readonly sessionShareService = new StoreSessionShareService()
+  readonly workspaceShareService = new StoreWorkspaceShareService()
   readonly auditService = new StoreAuditService(() => this.stateService.readState(), () => this.stateService.save())
 
   async load() {
@@ -200,35 +204,35 @@ export class StoreService {
     return this.sessionService.appendEvent(event)
   }
 
-  async listSessionSharesForTargetUser(userId: string) {
-    return this.sessionShareService.listSharesForTargetUser(userId)
+  async listWorkspaceSharesForTargetUser(userId: string) {
+    return this.workspaceShareService.listSharesForTargetUser(userId)
   }
 
-  async listSessionSharesForSession(businessSessionId: string) {
-    return this.sessionShareService.listSharesForSession(businessSessionId)
+  async listWorkspaceSharesForWorkspace(workspaceId: string) {
+    return this.workspaceShareService.listSharesForWorkspace(workspaceId)
   }
 
-  async findSessionShareForTarget(input: {
-    businessSessionId: string
+  async findWorkspaceShareForTarget(input: {
+    workspaceId: string
     targetUserId: string
   }) {
-    return this.sessionShareService.findShareForSessionTarget(input)
+    return this.workspaceShareService.findShareForWorkspaceTarget(input)
   }
 
-  async createSessionShare(input: {
-    session: BusinessSession
+  async createWorkspaceShare(input: {
+    workspace: Workspace
     ownerUserId: string
     targetUserId: string
   }) {
-    return this.sessionShareService.createShareBinding(input)
+    return this.workspaceShareService.createShareBinding(input)
   }
 
-  async revokeSessionShare(input: {
-    businessSessionId: string
+  async revokeWorkspaceShare(input: {
+    workspaceId: string
     targetUserId: string
     updatedBy: string
   }) {
-    return this.sessionShareService.revokeShareBinding(input)
+    return this.workspaceShareService.revokeShareBinding(input)
   }
 
   listAuditLogs() {
@@ -242,13 +246,7 @@ export class StoreService {
     businessSessionId?: string
     requestId?: string
     action: AuditAction
-    resourceType:
-      | "auth_session"
-      | "workspace"
-      | "business_session"
-      | "provider_config"
-      | "custom_model"
-      | "session_share_binding"
+    resourceType: AuditResourceType
     resourceId?: string
     detail: Record<string, unknown>
   }) {

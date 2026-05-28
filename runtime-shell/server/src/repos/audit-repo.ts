@@ -1,5 +1,5 @@
 import { now, nextId } from "../store/state-support"
-import type { AuditAction, PersistedState } from "../types"
+import type { AuditAction, AuditResourceType, PersistedState } from "../types"
 import { insertAuditLog, listAuditLogs } from "./state-repo"
 
 export function listAllAuditLogs(state: PersistedState) {
@@ -13,13 +13,7 @@ export function appendAuditLog(state: PersistedState, input: {
   businessSessionId?: string
   requestId?: string
   action: AuditAction
-  resourceType:
-    | "auth_session"
-    | "workspace"
-    | "business_session"
-    | "provider_config"
-    | "custom_model"
-    | "session_share_binding"
+  resourceType: AuditResourceType
   resourceId?: string
   detail: Record<string, unknown>
 }) {

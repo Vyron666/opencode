@@ -23,7 +23,6 @@ type UserSummary = {
   id: string
   username: string
   projectIds: string[]
-  workspaceIds: string[]
 }
 
 const adminJar: string[] = []

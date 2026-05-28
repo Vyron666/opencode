@@ -77,15 +77,20 @@ export function useSessionCapabilities() {
 
 export function useViewerContext() {
   const user = useStore((state) => state.user)
+  const sessions = useStore((state) => state.sessions)
+  const currentSessionId = useStore((state) => state.currentSessionId)
   const sessionDetail = useStore((state) => state.sessionDetail)
   const users = useStore((state) => state.users)
 
   return useMemo(() => {
-    const session = sessionDetail?.session || null
+    const fallbackSession = currentSessionId
+      ? sessions.find((item) => item.id === currentSessionId) || null
+      : null
+    const session = sessionDetail?.session || fallbackSession || null
     const shares = Array.isArray(sessionDetail?.shares) ? sessionDetail.shares : []
     const isAdmin = user?.role === 'admin'
     const isOwner = Boolean(user && session && session.createdBy === user.id)
-    const isSharedSession = Boolean(user && session && !isAdmin && !isOwner)
+    const isSharedSession = session?.visibility === 'workspace_share'
     const owner = users.find((item) => item.id === session?.createdBy) || null
     return {
       user,
@@ -96,12 +101,19 @@ export function useViewerContext() {
       isOwner,
       isSharedSession,
       hasOutgoingShares: Boolean((isAdmin || isOwner) && shares.length > 0),
-      canManageSession: Boolean(isAdmin || isOwner),
-      canManageRuntimeSettings: Boolean(isAdmin || isOwner),
+      canManageSession: Boolean(session?.capabilities?.close),
+      canOpenSession: Boolean(session?.capabilities?.open),
+      canLoadSession: Boolean(session?.capabilities?.load),
+      canResumeSession: Boolean(session?.capabilities?.resume),
+      canManageRuntimeSettings: Boolean(
+        session?.capabilities?.updateMode && session?.capabilities?.updateModel && session?.capabilities?.updateConfig,
+      ),
       canManagePlatformSettings: Boolean(isAdmin),
-      canShareSession: Boolean(isAdmin || isOwner),
+      // 中文/English: sharing is scoped at workspace level, so the UI should read the
+      // capability through workspace wording consistently.
+      canShareWorkspace: Boolean(session?.capabilities?.shareWorkspace),
     }
-  }, [sessionDetail, user, users])
+  }, [currentSessionId, sessionDetail, sessions, user, users])
 }
 
 export function roleLabel(role) {

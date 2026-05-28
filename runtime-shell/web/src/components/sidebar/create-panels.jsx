@@ -1,13 +1,83 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../../store'
-import { Field, inputClassName, Select, useViewerContext } from './sidebar-support'
+import { Field, inputClassName, secondaryButtonClassName, Select, useViewerContext } from './sidebar-support'
 
 const DEFAULT_TITLE = 'Runtime Shell 会话'
+const DEFAULT_WORKSPACE_NAME = '新工作区'
+
+export function CreateWorkspacePanel() {
+  const createWorkspace = useStore((state) => state.createWorkspace)
+  const pendingWorkspaceAction = useStore((state) => state.pendingWorkspaceAction)
+  const user = useStore((state) => state.user)
+  const workspaces = useStore((state) => state.workspaces)
+  const [name, setName] = useState(DEFAULT_WORKSPACE_NAME)
+  const [projectId, setProjectId] = useState('')
+
+  const projectNameMap = useMemo(
+    () =>
+      new Map(
+        workspaces.map((workspace) => [workspace.projectId, workspace.projectName || workspace.projectId]),
+      ),
+    [workspaces],
+  )
+  const projectOptions = useMemo(
+    () =>
+      [...new Map(
+        (user?.projectIds || []).map((id) => [
+          id,
+          {
+            id,
+            label: projectNameMap.get(id) || id,
+          },
+        ]),
+      ).values()],
+    [projectNameMap, user],
+  )
+  const canSubmit = Boolean(name.trim() && projectId) && !pendingWorkspaceAction
+
+  useEffect(() => {
+    if (!projectOptions.length) {
+      if (projectId) setProjectId('')
+      return
+    }
+    if (projectOptions.some((option) => option.id === projectId)) return
+    setProjectId(projectOptions[0].id)
+  }, [projectId, projectOptions])
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!name.trim() || !projectId) return
+        void createWorkspace(name, projectId).then(() => {
+          setName(DEFAULT_WORKSPACE_NAME)
+        })
+      }}
+      className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
+    >
+      <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Workspace</span>
+      <Field label="工作区名称">
+        <input value={name} onChange={(event) => setName(event.target.value)} className={inputClassName} />
+      </Field>
+      <Field label="所属项目">
+        <Select value={projectId} onChange={setProjectId} options={projectOptions} emptyLabel="当前没有可用项目" />
+      </Field>
+      <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+        系统会在你的个人工作区根目录下自动创建文件夹，不需要手动填写 `rootPath`。
+      </p>
+      <button type="submit" disabled={!canSubmit} className={secondaryButtonClassName}>
+        {pendingWorkspaceAction === 'create' ? '创建工作区中...' : '新建工作区'}
+      </button>
+    </form>
+  )
+}
 
 export function CreateSessionPanel() {
   const createSession = useStore((state) => state.createSession)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
+  const preferredWorkspaceId = useStore((state) => state.preferredWorkspaceId)
   const workspaces = useStore((state) => state.workspaces)
+  const { isSharedSession } = useViewerContext()
   const [title, setTitle] = useState(DEFAULT_TITLE)
   const [workspaceId, setWorkspaceId] = useState('')
   const hasWorkspaces = workspaces.length > 0
@@ -19,9 +89,16 @@ export function CreateSessionPanel() {
       if (workspaceId) setWorkspaceId('')
       return
     }
+    if (preferredWorkspaceId && workspaces.some((workspace) => workspace.id === preferredWorkspaceId)) {
+      if (workspaceId !== preferredWorkspaceId) {
+        setWorkspaceId(preferredWorkspaceId)
+      }
+      useStore.setState({ preferredWorkspaceId: '' })
+      return
+    }
     if (selectedWorkspace) return
     setWorkspaceId(workspaces[0].id)
-  }, [hasWorkspaces, selectedWorkspace, workspaceId, workspaces])
+  }, [hasWorkspaces, preferredWorkspaceId, selectedWorkspace, workspaceId, workspaces])
 
   return (
     <form
@@ -57,17 +134,22 @@ export function CreateSessionPanel() {
           disabled={!selectedWorkspace}
         />
       </Field>
-      {!hasWorkspaces && (
+      {!hasWorkspaces ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          当前账号下还没有可用工作区，暂时无法创建会话。请先在服务端登记工作区，再回来创建会话。
+          当前还没有可用工作区，请先在上方新建一个工作区，再回来创建会话。
         </p>
-      )}
-      {selectedWorkspace && (
+      ) : null}
+      {selectedWorkspace ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          当前将使用工作区 <span className="font-semibold text-[var(--text)]">{selectedWorkspace.name}</span>，所属项目为{' '}
+          当前会使用工作区 <span className="font-semibold text-[var(--text)]">{selectedWorkspace.name}</span>，所属项目为{' '}
           <span className="font-semibold text-[var(--text)]">{selectedWorkspace.projectName || selectedWorkspace.projectId}</span>。
         </p>
-      )}
+      ) : null}
+      {isSharedSession ? (
+        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+          共享工作区只允许继续处理已有会话。新会话请从你自己的可用工作区中创建。
+        </p>
+      ) : null}
       <button
         type="submit"
         disabled={!canSubmit}
@@ -97,11 +179,11 @@ export function ForkSessionPanel() {
       <Field label="分支标题">
         <input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClassName} />
       </Field>
-      {isSharedSession && (
+      {isSharedSession ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          共享会话只允许继续协作，不允许从当前会话创建分支。
+          共享工作区下的会话只允许继续协作，不允许从当前会话创建分支。
         </p>
-      )}
+      ) : null}
       <button
         type="submit"
         disabled={Boolean(pendingSessionAction) || !canManageSession}

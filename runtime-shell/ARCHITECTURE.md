@@ -147,7 +147,7 @@ server/src
 1. 引入持久化认证会话。
 2. 引入最小角色模型与资源范围授权；`P1-D` 第一版仅保留 `admin`、`developer` 两种角色。
 3. 引入项目级与工作区级可见性控制。
-4. 引入会话分享绑定；分享 `session` 时默认连带授予该 `session` 所属 `workspace` 的访问权，不允许把 `session` 和其所处 `workspace` 拆开授权。
+4. 引入工作区共享绑定；分享 `workspace` 时默认连带授予该工作区下已有 `session` 的访问权，不允许把 `workspace` 和其下已有 `session` 拆开授权。
 
 ### 5.1 角色基线
 
@@ -161,19 +161,19 @@ server/src
    - 不具备平台级配置管理权限，不可访问 `system/workers`。
    - 可以把自己拥有的 `session` 分享给其他用户。
 
-### 5.2 会话分享基线
+### 5.2 工作区共享基线
 
-1. `session` 默认由创建者与 `admin` 可访问。
-2. `developer` 只能分享自己拥有的 `session`。
-3. 分享 `session` 时，默认同时授予该 `session` 所属 `workspace` 的访问权。
-4. 被分享用户获得的是“指定 `session` + 其所属 `workspace`”的成对授权，而不是两个独立授权对象。
-5. 取消分享只能由 `session owner` 或 `admin` 执行。
-6. Service 层授权顺序必须显式固定：`admin` -> `session owner` -> `share binding` -> 普通 scope 校验。
-7. 分享 `session` 的语义是“协作权限”，不是所有权转移。
-8. 被分享用户对 `session` 允许的动作仅限：读取详情、读取事件、`open/load/resume`、`prompt/input`、`cancel`、处理该 `session` 上的 `permission/question`。
-9. 被分享用户对 `session` 明确禁止的动作包括：`close`、`delete`、再次分享、修改分享关系、修改 provider/model/mode/config、`fork`。
-10. 被分享用户对 `workspace` 获得的是附属使用权，只允许该被分享 `session` 在该 `workspace` 上继续运行。
-11. 被分享用户对 `workspace` 明确禁止的动作包括：新建其它 `session`、独立访问该 `workspace`、管理 binding、启用/禁用/删除、再次分享 `workspace`。
+1. `workspace` 默认由创建者与 `admin` 在各自范围内管理。
+2. `developer` 只能分享自己拥有的 `workspace`。
+3. 分享 `workspace` 时，默认同时授予该工作区下已有 `session` 的访问权。
+4. 被共享用户获得的是“指定 `workspace` + 其下已有 `session`”的成对授权，而不是两个独立授权对象。
+5. 取消共享只能由工作区 owner 或 `admin` 执行。
+6. Service 层授权顺序必须显式固定：`admin` -> `session owner` -> `workspace share binding` -> 普通 scope 校验。
+7. 分享 `workspace` 的语义是“协作权限”，不是所有权转移。
+8. 被共享用户对 `session` 允许的动作仅限：读取详情、读取事件、`open/load/resume`、`prompt/input`、`cancel`、处理该 `session` 上的 `permission/question`。
+9. 被共享用户对 `session` 明确禁止的动作包括：`close`、`delete`、再次共享、修改共享关系、修改 provider/model/mode/config、`fork`。
+10. 被共享用户对 `workspace` 获得的是附属使用权，只允许该工作区下已有 `session` 在该 `workspace` 上继续运行。
+11. 被共享用户对 `workspace` 明确禁止的动作包括：新建其它 `session`、独立访问该 `workspace`、管理 binding、启用/禁用/删除、再次共享 `workspace`。
 
 ## 6. 工作区边界
 
@@ -181,7 +181,7 @@ server/src
 2. 运行时只允许使用已登记 `workspace` 的 `rootPath`。
 3. 工作区校验必须发生在应用服务层，而不是 ACP 层。
 4. 工作区非法、越权、不存在必须有明确区分错误。
-5. 如果访问来自 `session share binding`，则该绑定自动构成对应 `workspace` 的访问依据。
+5. 如果访问来自 `workspace share binding`，则该绑定自动构成对应 `workspace` 的访问依据。
 
 ## 7. 运行时与 Worker 治理
 

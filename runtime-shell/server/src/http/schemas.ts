@@ -15,9 +15,15 @@ export const sessionIdSchema = z.object({
   businessSessionId: z.string().min(1),
 })
 
-export const sessionShareSchema = z.object({
-  businessSessionId: z.string().min(1),
+export const workspaceShareSchema = z.object({
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1),
   targetUserId: z.string().min(1),
+})
+
+export const workspaceCreateSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().trim().min(1).max(80),
 })
 
 export const forkSessionSchema = z.object({

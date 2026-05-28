@@ -8,6 +8,7 @@ export function createBaseState(createConversationState, defaultCapabilities) {
     workers: [],
     workerOverview: null,
     currentSessionId: '',
+    preferredWorkspaceId: '',
     sessionDetail: null,
     eventBuffer: [],
     eventBufferVersion: 0,
@@ -30,6 +31,7 @@ export function createBaseState(createConversationState, defaultCapabilities) {
     activeSSESessionId: '',
     sessionSelectionVersion: 0,
     pendingSessionAction: '',
+    pendingWorkspaceAction: '',
     pendingSettingsAction: '',
     pendingShareAction: '',
   }
@@ -38,6 +40,7 @@ export function createBaseState(createConversationState, defaultCapabilities) {
 export function resetConversationState(createConversationState, defaultCapabilities, patch) {
   return {
     currentSessionId: '',
+    preferredWorkspaceId: '',
     sessionDetail: null,
     eventBuffer: [],
     eventBufferVersion: 0,
@@ -54,6 +57,7 @@ export function resetConversationState(createConversationState, defaultCapabilit
     respondingQuestionIds: new Set(),
     capabilities: defaultCapabilities,
     pendingSessionAction: '',
+    pendingWorkspaceAction: '',
     pendingSettingsAction: '',
     pendingShareAction: '',
     ...patch,

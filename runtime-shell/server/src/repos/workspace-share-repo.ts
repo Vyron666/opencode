@@ -1,14 +1,13 @@
 import { getRuntimeDatabaseClient } from "../db/runtime-db"
 import { nextId, now } from "../store/state-support"
-import type { BusinessSession, SessionShareBinding } from "../types"
+import type { Workspace, WorkspaceShareBinding } from "../types"
 
-type SessionShareBindingRow = {
+type WorkspaceShareBindingRow = {
   id: string
   tenant_id: string
   organization_id: string
   project_id: string
   workspace_id: string
-  business_session_id: string
   owner_user_id: string
   target_user_id: string
   status: "active" | "revoked"
@@ -18,14 +17,13 @@ type SessionShareBindingRow = {
   updated_by: string
 }
 
-function toSessionShareBinding(row: SessionShareBindingRow): SessionShareBinding {
+function toWorkspaceShareBinding(row: WorkspaceShareBindingRow): WorkspaceShareBinding {
   return {
     id: row.id,
     tenantId: row.tenant_id,
     organizationId: row.organization_id,
     projectId: row.project_id,
     workspaceId: row.workspace_id,
-    businessSessionId: row.business_session_id,
     ownerUserId: row.owner_user_id,
     targetUserId: row.target_user_id,
     status: row.status,
@@ -38,7 +36,7 @@ function toSessionShareBinding(row: SessionShareBindingRow): SessionShareBinding
 
 export async function listSharesForTargetUser(userId: string) {
   const db = getRuntimeDatabaseClient()
-  const rows = await db.queryRows<SessionShareBindingRow>(
+  const rows = await db.queryRows<WorkspaceShareBindingRow>(
     `
       SELECT
         id,
@@ -46,7 +44,6 @@ export async function listSharesForTargetUser(userId: string) {
         organization_id,
         project_id,
         workspace_id,
-        business_session_id,
         owner_user_id,
         target_user_id,
         status,
@@ -54,7 +51,7 @@ export async function listSharesForTargetUser(userId: string) {
         created_by,
         updated_at,
         updated_by
-      FROM session_share_binding
+      FROM workspace_share_binding
       WHERE target_user_id = ?
         AND status = ?
         AND deleted_at IS NULL
@@ -62,12 +59,17 @@ export async function listSharesForTargetUser(userId: string) {
     `,
     [userId, "active"],
   )
-  return rows.map(toSessionShareBinding)
+  const deduped = new Map<string, WorkspaceShareBinding>()
+  rows.map(toWorkspaceShareBinding).forEach((binding) => {
+    if (deduped.has(binding.workspaceId)) return
+    deduped.set(binding.workspaceId, binding)
+  })
+  return [...deduped.values()]
 }
 
-export async function listSharesForSession(businessSessionId: string) {
+export async function listSharesForWorkspace(workspaceId: string) {
   const db = getRuntimeDatabaseClient()
-  const rows = await db.queryRows<SessionShareBindingRow>(
+  const rows = await db.queryRows<WorkspaceShareBindingRow>(
     `
       SELECT
         id,
@@ -75,7 +77,6 @@ export async function listSharesForSession(businessSessionId: string) {
         organization_id,
         project_id,
         workspace_id,
-        business_session_id,
         owner_user_id,
         target_user_id,
         status,
@@ -83,23 +84,28 @@ export async function listSharesForSession(businessSessionId: string) {
         created_by,
         updated_at,
         updated_by
-      FROM session_share_binding
-      WHERE business_session_id = ?
+      FROM workspace_share_binding
+      WHERE workspace_id = ?
         AND status = ?
         AND deleted_at IS NULL
       ORDER BY created_at DESC
     `,
-    [businessSessionId, "active"],
+    [workspaceId, "active"],
   )
-  return rows.map(toSessionShareBinding)
+  const deduped = new Map<string, WorkspaceShareBinding>()
+  rows.map(toWorkspaceShareBinding).forEach((binding) => {
+    if (deduped.has(binding.targetUserId)) return
+    deduped.set(binding.targetUserId, binding)
+  })
+  return [...deduped.values()]
 }
 
-export async function findShareForSessionTarget(input: {
-  businessSessionId: string
+export async function findShareForWorkspaceTarget(input: {
+  workspaceId: string
   targetUserId: string
 }) {
   const db = getRuntimeDatabaseClient()
-  const row = await db.queryFirst<SessionShareBindingRow>(
+  const row = await db.queryFirst<WorkspaceShareBindingRow>(
     `
       SELECT
         id,
@@ -107,7 +113,6 @@ export async function findShareForSessionTarget(input: {
         organization_id,
         project_id,
         workspace_id,
-        business_session_id,
         owner_user_id,
         target_user_id,
         status,
@@ -115,38 +120,38 @@ export async function findShareForSessionTarget(input: {
         created_by,
         updated_at,
         updated_by
-      FROM session_share_binding
-      WHERE business_session_id = ?
+      FROM workspace_share_binding
+      WHERE workspace_id = ?
         AND target_user_id = ?
         AND deleted_at IS NULL
+      ORDER BY updated_at DESC
       LIMIT 1
     `,
-    [input.businessSessionId, input.targetUserId],
+    [input.workspaceId, input.targetUserId],
   )
   if (!row) return
-  return toSessionShareBinding(row)
+  return toWorkspaceShareBinding(row)
 }
 
 export async function createShareBinding(input: {
-  session: BusinessSession
+  workspace: Workspace
   ownerUserId: string
   targetUserId: string
 }) {
-  const existing = await findShareForSessionTarget({
-    businessSessionId: input.session.id,
+  const existing = await findShareForWorkspaceTarget({
+    workspaceId: input.workspace.id,
     targetUserId: input.targetUserId,
   })
   if (existing?.status === "active") return existing
 
   const db = getRuntimeDatabaseClient()
   const timestamp = now()
-  const binding: SessionShareBinding = {
-    id: existing?.id || nextId("share"),
-    tenantId: input.session.tenantId,
-    organizationId: input.session.organizationId,
-    projectId: input.session.projectId,
-    workspaceId: input.session.workspaceId,
-    businessSessionId: input.session.id,
+  const binding: WorkspaceShareBinding = {
+    id: existing?.id || nextId("wshare"),
+    tenantId: input.workspace.tenantId,
+    organizationId: input.workspace.organizationId,
+    projectId: input.workspace.projectId,
+    workspaceId: input.workspace.id,
     ownerUserId: input.ownerUserId,
     targetUserId: input.targetUserId,
     status: "active",
@@ -159,29 +164,28 @@ export async function createShareBinding(input: {
   if (existing) {
     await db.execute(
       `
-        UPDATE session_share_binding
+        UPDATE workspace_share_binding
         SET
           status = ?,
-          workspace_id = ?,
+          project_id = ?,
           updated_at = ?,
           updated_by = ?
         WHERE id = ?
           AND deleted_at IS NULL
       `,
-      [binding.status, binding.workspaceId, binding.updatedAt, binding.updatedBy, binding.id],
+      [binding.status, binding.projectId, binding.updatedAt, binding.updatedBy, binding.id],
     )
     return binding
   }
 
   await db.execute(
     `
-      INSERT INTO session_share_binding (
+      INSERT INTO workspace_share_binding (
         id,
         tenant_id,
         organization_id,
         project_id,
         workspace_id,
-        business_session_id,
         owner_user_id,
         target_user_id,
         status,
@@ -190,7 +194,7 @@ export async function createShareBinding(input: {
         updated_at,
         updated_by,
         deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       binding.id,
@@ -198,7 +202,6 @@ export async function createShareBinding(input: {
       binding.organizationId,
       binding.projectId,
       binding.workspaceId,
-      binding.businessSessionId,
       binding.ownerUserId,
       binding.targetUserId,
       binding.status,
@@ -213,21 +216,22 @@ export async function createShareBinding(input: {
 }
 
 export async function revokeShareBinding(input: {
-  businessSessionId: string
+  workspaceId: string
   targetUserId: string
   updatedBy: string
 }) {
-  const existing = await findShareForSessionTarget(input)
+  const existing = await findShareForWorkspaceTarget(input)
   if (!existing) return false
   const db = getRuntimeDatabaseClient()
   await db.execute(
     `
-      UPDATE session_share_binding
+      UPDATE workspace_share_binding
       SET status = ?, updated_at = ?, updated_by = ?
-      WHERE id = ?
+      WHERE workspace_id = ?
+        AND target_user_id = ?
         AND deleted_at IS NULL
     `,
-    ["revoked", now(), input.updatedBy, existing.id],
+    ["revoked", now(), input.updatedBy, input.workspaceId, input.targetUserId],
   )
   return true
 }

@@ -1,7 +1,14 @@
+import * as StateRepo from "../../repos/state-repo"
 import * as WorkspaceRepo from "../../repos/workspace-repo"
 import type { User } from "../../types"
+import type { PersistState, ReadState } from "./store-domain-support"
 
 export class StoreWorkspaceService {
+  constructor(
+    private readonly readState: ReadState,
+    private readonly persistState: PersistState,
+  ) {}
+
   async listWorkspaces() {
     return WorkspaceRepo.listAllWorkspaces()
   }
@@ -26,6 +33,11 @@ export class StoreWorkspaceService {
     createdBy: string
     name?: string
   }) {
-    return WorkspaceRepo.ensureWorkspace(input)
+    const workspace = await WorkspaceRepo.ensureWorkspace(input)
+    if (!StateRepo.getWorkspace(this.readState(), workspace.id)) {
+      StateRepo.insertWorkspace(this.readState(), workspace)
+      await this.persistState()
+    }
+    return workspace
   }
 }

@@ -4,6 +4,7 @@ import LoginScreen from './components/LoginScreen.jsx'
 import MainLayout from './components/MainLayout.jsx'
 
 let authBootstrapPromise = null
+const SESSION_LIST_REFRESH_INTERVAL_MS = 2000
 
 export default function App() {
   const isAuthenticated = useStore((state) => state.isAuthenticated)
@@ -27,6 +28,38 @@ export default function App() {
         authBootstrapPromise = null
       })
   }, [checkAuth, loadSessions, setFlash])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    let refreshing = false
+
+    const refreshSessions = () => {
+      if (refreshing) return
+      refreshing = true
+      void loadSessions()
+        .catch(() => undefined)
+        .finally(() => {
+          refreshing = false
+        })
+    }
+
+    const timer = setInterval(refreshSessions, SESSION_LIST_REFRESH_INTERVAL_MS)
+    const handleFocus = () => refreshSessions()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+      refreshSessions()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [isAuthenticated, loadSessions])
 
   return (
     <div className="h-dvh w-full overflow-hidden">

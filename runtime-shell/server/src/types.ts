@@ -86,13 +86,12 @@ export type Workspace = {
   updatedAt: string
 }
 
-export type SessionShareBinding = {
+export type WorkspaceShareBinding = {
   id: string
   tenantId: string
   organizationId: string
   projectId: string
   workspaceId: string
-  businessSessionId: string
   ownerUserId: string
   targetUserId: string
   status: "active" | "revoked"
@@ -102,6 +101,8 @@ export type SessionShareBinding = {
   updatedBy: string
 }
 
+export type SessionVisibility = "admin" | "owner" | "workspace_share" | "scoped"
+
 export type WorkspaceAccessResult =
   | {
       ok: true
@@ -109,22 +110,48 @@ export type WorkspaceAccessResult =
     }
   | {
       ok: false
-      reason: "workspace_not_found" | "forbidden" | "workspace_disabled" | "invalid_path"
+      reason:
+        | "workspace_not_found"
+        | "forbidden"
+        | "workspace_disabled"
+        | "invalid_path"
+        | "scope_mismatch"
+        | "workspace_not_shared"
+        | "share_revoked"
+    }
+
+export type WorkspaceCreationResult =
+  | {
+      ok: true
+      workspace: Workspace
+    }
+  | {
+      ok: false
+      reason: "forbidden" | "invalid_name" | "project_out_of_scope" | "create_failed"
     }
 
 export type AuditAction =
   | "auth.login"
   | "auth.logout"
   | "workspace.register"
+  | "workspace.create"
+  | "workspace.share"
+  | "workspace.unshare"
   | "session.create"
-  | "session.share"
-  | "session.unshare"
   | "session.open"
   | "session.close"
   | "session.prompt"
   | "session.cancel"
   | "custom_model.save"
   | "provider.save"
+
+export type AuditResourceType =
+  | "auth_session"
+  | "workspace"
+  | "workspace_share_binding"
+  | "business_session"
+  | "provider_config"
+  | "custom_model"
 
 export type AuditLog = {
   id: string
@@ -134,13 +161,7 @@ export type AuditLog = {
   businessSessionId?: string
   requestId?: string
   action: AuditAction
-  resourceType:
-    | "auth_session"
-    | "workspace"
-    | "business_session"
-    | "provider_config"
-    | "custom_model"
-    | "session_share_binding"
+  resourceType: AuditResourceType
   resourceId?: string
   detail: Record<string, unknown>
   createdAt: string
@@ -342,7 +363,7 @@ export type PersistedState = {
   permissions: Permission[]
   authSessions: AuthSession[]
   workspaces: Workspace[]
-  sessionShareBindings: SessionShareBinding[]
+  workspaceShareBindings: WorkspaceShareBinding[]
   workers: WorkerNode[]
   sessions: BusinessSession[]
   events: SessionEvent[]

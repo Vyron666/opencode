@@ -18,13 +18,13 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
   await seedWorkers(state)
   await seedSessions(state)
   await seedAuthSessions(state)
-  await seedSessionShareBindings(state)
+  await seedWorkspaceShareBindings(state)
   log.info("database bootstrap completed", {
     workspaceCount: state.workspaces.length,
     workerCount: state.workers.length,
     sessionCount: state.sessions.length,
     authSessionCount: state.authSessions.length,
-    sessionShareBindingCount: state.sessionShareBindings.length,
+    workspaceShareBindingCount: state.workspaceShareBindings.length,
   })
 
   async function seedWorkspaces(input: PersistedState) {
@@ -124,7 +124,44 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
     const existing = await db.queryRows<ExistingRow>("SELECT id FROM worker_node")
     const existingIds = new Set(existing.map((item) => item.id))
     for (const worker of input.workers) {
-      if (existingIds.has(worker.id)) continue
+      if (existingIds.has(worker.id)) {
+        // 中文/English: bootstrap keeps the local worker definition aligned with current
+        // defaults so a stale dev DB does not permanently pin capacity/status to old values.
+        await db.execute(
+          `
+            UPDATE worker_node
+            SET
+              tenant_id = ?,
+              organization_id = ?,
+              worker_code = ?,
+              name = ?,
+              base_url = ?,
+              status = ?,
+              capacity = ?,
+              active_session_count = ?,
+              last_heartbeat_at = ?,
+              updated_at = ?,
+              updated_by = ?
+            WHERE id = ?
+              AND deleted_at IS NULL
+          `,
+          [
+            worker.tenantId ?? null,
+            worker.organizationId ?? null,
+            worker.workerCode,
+            worker.name,
+            worker.baseUrl,
+            worker.status,
+            worker.capacity,
+            worker.activeSessionCount,
+            worker.lastHeartbeatAt,
+            worker.lastHeartbeatAt,
+            "system_bootstrap",
+            worker.id,
+          ],
+        )
+        continue
+      }
       // 中文/English: bootstrap seeds the local worker once so P2 scheduling can
       // move to DB-backed worker discovery without breaking existing installs.
       await db.execute(
@@ -208,20 +245,19 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
     }
   }
 
-  async function seedSessionShareBindings(input: PersistedState) {
-    const existing = await db.queryRows<ExistingRow>("SELECT id FROM session_share_binding")
+  async function seedWorkspaceShareBindings(input: PersistedState) {
+    const existing = await db.queryRows<ExistingRow>("SELECT id FROM workspace_share_binding")
     const existingIds = new Set(existing.map((item) => item.id))
-    for (const binding of input.sessionShareBindings) {
+    for (const binding of input.workspaceShareBindings) {
       if (existingIds.has(binding.id)) continue
       await db.execute(
         `
-          INSERT INTO session_share_binding (
+          INSERT INTO workspace_share_binding (
             id,
             tenant_id,
             organization_id,
             project_id,
             workspace_id,
-            business_session_id,
             owner_user_id,
             target_user_id,
             status,
@@ -238,7 +274,6 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
           binding.organizationId,
           binding.projectId,
           binding.workspaceId,
-          binding.businessSessionId,
           binding.ownerUserId,
           binding.targetUserId,
           binding.status,

@@ -5,7 +5,8 @@
 } from '../../components/chat/conversation-blocks'
 import {
   buildCapabilitiesFromSession,
-  hasSessionCapabilities,
+  deriveCapPatch,
+  mergeCapabilities,
   parseConfigValue,
 } from '../capabilities'
 import { createRequestFailureHandler } from './interaction-action-support'
@@ -92,6 +93,10 @@ export function createSessionActions(input) {
           .filter((eventId) => typeof eventId === 'string'),
       )
       const isRunning = deriveRunningStateFromEvents(eventBuffer)
+      const eventCapabilities = eventBuffer.reduce((capabilities, event) => {
+        const patch = deriveCapPatch(event)
+        return patch ? mergeCapabilities(capabilities, patch) : capabilities
+      }, buildCapabilitiesFromSession(session))
 
       input.set({
         sessionDetail: data,
@@ -108,7 +113,7 @@ export function createSessionActions(input) {
         pendingQuestions: session?.pendingQuestions ?? [],
         respondingPermissionIds: new Set(),
         respondingQuestionIds: new Set(),
-        capabilities: buildCapabilitiesFromSession(session),
+        capabilities: eventCapabilities,
       })
       return data
     },
@@ -123,11 +128,21 @@ export function createSessionActions(input) {
         (value) => value,
         createRequestFailureHandler(input, { pendingSessionAction: '' }, '刷新会话列表失败'),
       )
-      input.set((state) => ({
-        currentSessionId: session.id,
-        sessionSelectionVersion: state.sessionSelectionVersion + 1,
-        pendingSessionAction: '',
-      }))
+      input.set((state) =>
+        input.resetConversationState({
+          currentSessionId: session.id,
+          sessionSelectionVersion: state.sessionSelectionVersion + 1,
+          pendingSessionAction: '',
+          sessionDetail: {
+            session,
+            events: [],
+            shares: [],
+          },
+          pendingPermissions: session.pendingPermissions ?? [],
+          pendingQuestions: session.pendingQuestions ?? [],
+          capabilities: buildCapabilitiesFromSession(session),
+        }),
+      )
     },
 
     activateSession: async () => {
@@ -148,22 +163,20 @@ export function createSessionActions(input) {
         return
       }
 
-      if (hasSessionCapabilities(session)) {
-        if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
-        input.get().connectSSE()
-        input.set({ pendingSessionAction: '' })
-        return
-      }
-
-      if (!session.binding?.acpSessionId || session.status === 'created') {
-        await input.api.openSession(currentSessionId).then(
-          () => undefined,
-          createRequestFailureHandler(input, {}, '打开会话失败'),
-        )
-      } else if (session.status === 'completed') {
+      if (session.status === 'completed') {
         await input.api.loadSession(currentSessionId).then(
           () => undefined,
           createRequestFailureHandler(input, {}, '加载历史失败'),
+        )
+      } else if (
+        !session.binding?.acpSessionId ||
+        session.status === 'created' ||
+        session.status === 'orphaned' ||
+        session.status === 'failed'
+      ) {
+        await input.api.openSession(currentSessionId).then(
+          () => undefined,
+          createRequestFailureHandler(input, {}, '打开会话失败'),
         )
       } else {
         await input.api.resumeSession(currentSessionId).then(
@@ -337,13 +350,13 @@ export function createSessionActions(input) {
       input.set({ pendingSettingsAction: '' })
     },
 
-    shareSession: async (targetUserId) => {
-      const currentSessionId = input.get().currentSessionId
-      if (!currentSessionId || !targetUserId) return
+    shareWorkspace: async (targetUserId) => {
+      const session = input.get().sessionDetail?.session
+      if (!session?.workspaceId || !session?.projectId || !targetUserId) return
       input.set({ pendingShareAction: 'share' })
-      await input.api.shareSession(currentSessionId, targetUserId).then(
+      await input.api.shareWorkspace(session.workspaceId, session.projectId, targetUserId).then(
         () => undefined,
-        createRequestFailureHandler(input, { pendingShareAction: '' }, '分享会话失败'),
+        createRequestFailureHandler(input, { pendingShareAction: '' }, '共享工作区失败'),
       )
       await input.get().loadSessionDetail().then(
         (value) => value,
@@ -352,13 +365,13 @@ export function createSessionActions(input) {
       input.set({ pendingShareAction: '' })
     },
 
-    unshareSession: async (targetUserId) => {
-      const currentSessionId = input.get().currentSessionId
-      if (!currentSessionId || !targetUserId) return
+    unshareWorkspace: async (targetUserId) => {
+      const session = input.get().sessionDetail?.session
+      if (!session?.workspaceId || !session?.projectId || !targetUserId) return
       input.set({ pendingShareAction: 'unshare' })
-      await input.api.unshareSession(currentSessionId, targetUserId).then(
+      await input.api.unshareWorkspace(session.workspaceId, session.projectId, targetUserId).then(
         () => undefined,
-        createRequestFailureHandler(input, { pendingShareAction: '' }, '取消分享失败'),
+        createRequestFailureHandler(input, { pendingShareAction: '' }, '取消共享工作区失败'),
       )
       await input.get().loadSessionDetail().then(
         (value) => value,
