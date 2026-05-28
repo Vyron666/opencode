@@ -9,6 +9,7 @@
     "typecheck": "bunx tsc --noEmit",
     "db:migrate": "bun server/src/db/migrate.ts",
     "e2e:smoke": "bun scripts/e2e-smoke.ts",
+    "e2e:question": "bun scripts/e2e-question-form.ts",
     "e2e:scope": "bun scripts/e2e-scope-boundary.ts",
     "e2e:share": "bun scripts/e2e-workspace-share.ts",
     "e2e:web": "node scripts/e2e-web-ui.mjs"

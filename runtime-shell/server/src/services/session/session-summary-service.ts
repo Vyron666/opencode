@@ -64,13 +64,13 @@ function readRuntimeHintMessage(
   lastFailureMessage?: string,
 ) {
   if (status === "orphaned" || status === "failed") {
-    return lastFailureMessage || "会话运行时需要恢复后才能继续使用"
+    return lastFailureMessage || "\u4f1a\u8bdd\u8fd0\u884c\u65f6\u9700\u8981\u6062\u590d\u540e\u624d\u80fd\u7ee7\u7eed\u4f7f\u7528"
   }
   if (!hasLease && (status === "active" || status === "waiting_input" || status === "cancelling")) {
-    return "会话正在等待运行时重新接管"
+    return "\u4f1a\u8bdd\u6b63\u5728\u7b49\u5f85\u8fd0\u884c\u65f6\u91cd\u65b0\u63a5\u7ba1"
   }
   if (bindingStatus === "lost") {
-    return "会话运行时绑定已丢失，重新打开时会自动恢复"
+    return "\u4f1a\u8bdd\u8fd0\u884c\u65f6\u7ed1\u5b9a\u5df2\u4e22\u5931\uff0c\u91cd\u65b0\u6253\u5f00\u65f6\u4f1a\u81ea\u52a8\u6062\u590d"
   }
   return ""
 }

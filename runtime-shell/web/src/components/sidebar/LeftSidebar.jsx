@@ -33,8 +33,8 @@ export default function LeftSidebar() {
           </div>
           <div>
             <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Runtime Workspace</span>
-            <h2 className="mt-0.5 text-sm font-bold">会话导航</h2>
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">选择会话、创建新会话，或继续历史上下文。</p>
+            <h2 className="mt-0.5 text-sm font-bold">{'\u4f1a\u8bdd\u5bfc\u822a'}</h2>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">{'\u9009\u62e9\u4f1a\u8bdd\u3001\u521b\u5efa\u65b0\u4f1a\u8bdd\uff0c\u6216\u7ee7\u7eed\u5386\u53f2\u4e0a\u4e0b\u6587\u3002'}</p>
           </div>
         </div>
       </div>
@@ -44,14 +44,14 @@ export default function LeftSidebar() {
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Account</span>
-              <h3 className="text-sm font-bold mt-0.5">当前登录</h3>
+              <h3 className="text-sm font-bold mt-0.5">{'\u5f53\u524d\u767b\u5f55'}</h3>
             </div>
             <button
               onClick={() => setConfirmLogout(true)}
-              aria-label="退出登录"
+              aria-label={'\u9000\u51fa\u767b\u5f55'}
               className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
             >
-              退出
+              {'\u9000\u51fa'}
             </button>
           </div>
           <div className="grid gap-1">
@@ -64,50 +64,50 @@ export default function LeftSidebar() {
       <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
         <div className="mb-3">
           <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Actions</span>
-          <h3 className="text-sm font-bold mt-0.5">会话操作</h3>
+          <h3 className="text-sm font-bold mt-0.5">{'\u4f1a\u8bdd\u64cd\u4f5c'}</h3>
         </div>
         <div className="grid gap-2">
           <button
             onClick={() => openSession()}
-            aria-label="打开当前选中会话"
+            aria-label={'\u6253\u5f00\u5f53\u524d\u9009\u4e2d\u4f1a\u8bdd'}
             disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canOpenSession}
             className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow focus-visible:ring-2 focus-visible:ring-brand"
           >
-            {pendingSessionAction === 'open' ? '打开中...' : '打开当前会话'}
+            {pendingSessionAction === 'open' ? '\u6253\u5f00\u4e2d...' : '\u6253\u5f00\u5f53\u524d\u4f1a\u8bdd'}
           </button>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => loadHistory()}
-              aria-label="加载会话历史"
+              aria-label={'\u52a0\u8f7d\u4f1a\u8bdd\u5386\u53f2'}
               disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canLoadSession}
               className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {pendingSessionAction === 'load' ? '加载中...' : '加载历史'}
+              {pendingSessionAction === 'load' ? '\u52a0\u8f7d\u4e2d...' : '\u52a0\u8f7d\u5386\u53f2'}
             </button>
             <button
               onClick={() => resumeSession()}
-              aria-label="恢复会话"
+              aria-label={'\u6062\u590d\u4f1a\u8bdd'}
               disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canResumeSession}
               className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {pendingSessionAction === 'resume' ? '恢复中...' : '恢复会话'}
+              {pendingSessionAction === 'resume' ? '\u6062\u590d\u4e2d...' : '\u6062\u590d\u4f1a\u8bdd'}
             </button>
           </div>
           <button
             onClick={() => setConfirmClose(true)}
-            aria-label="关闭当前会话"
+            aria-label={'\u5173\u95ed\u5f53\u524d\u4f1a\u8bdd'}
             disabled={Boolean(pendingSessionAction) || !canManageSession}
             className="text-xs px-3 py-1.5 rounded-[8px] bg-danger/10 text-[#e88a7a] border border-danger/20 hover:bg-danger/20 transition-colors focus-visible:ring-2 focus-visible:ring-danger disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {pendingSessionAction === 'close' ? '关闭中...' : '关闭当前会话'}
+            {pendingSessionAction === 'close' ? '\u5173\u95ed\u4e2d...' : '\u5173\u95ed\u5f53\u524d\u4f1a\u8bdd'}
           </button>
           {isSharedSession ? (
             <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-              当前会话来自共享工作区协作{owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。
+              {`\u5f53\u524d\u4f1a\u8bdd\u6765\u81ea\u5171\u4eab\u5de5\u4f5c\u533a\u534f\u4f5c${owner?.displayName ? `\uff0c\u5171\u4eab\u4eba\uff1a${owner.displayName}` : ''}\u3002\u4f60\u53ef\u4ee5\u7ee7\u7eed\u5bf9\u8bdd\u548c\u5904\u7406\u4ea4\u4e92\uff0c\u4f46\u4e0d\u80fd\u5173\u95ed\u8be5\u4f1a\u8bdd\u3002`}
             </div>
           ) : !hasCurrentSession ? (
             <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-              请先从下方会话列表中选择一个会话，再执行打开、加载历史或恢复操作。
+              {'\u8bf7\u5148\u4ece\u4e0b\u65b9\u4f1a\u8bdd\u5217\u8868\u4e2d\u9009\u62e9\u4e00\u4e2a\u4f1a\u8bdd\uff0c\u518d\u6267\u884c\u6253\u5f00\u3001\u52a0\u8f7d\u5386\u53f2\u6216\u6062\u590d\u64cd\u4f5c\u3002'}
             </div>
           ) : null}
         </div>
@@ -117,21 +117,21 @@ export default function LeftSidebar() {
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Sessions</span>
-            <h3 className="text-sm font-bold mt-0.5">最近活动</h3>
+            <h3 className="text-sm font-bold mt-0.5">{'\u6700\u8fd1\u6d3b\u52a8'}</h3>
           </div>
           <button
             onClick={() => loadSessions()}
-            aria-label="刷新会话列表"
+            aria-label={'\u5237\u65b0\u4f1a\u8bdd\u5217\u8868'}
             disabled={Boolean(pendingSessionAction)}
             className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            刷新
+            {'\u5237\u65b0'}
           </button>
         </div>
         <div className="grid gap-2 max-h-[300px] overflow-y-auto">
           {sessions.length === 0 ? (
             <div className="text-xs text-[var(--text-muted)] text-center py-4 border border-dashed border-[var(--line-strong)] rounded-[14px]">
-              暂无会话，请先创建。
+              {'\u6682\u65e0\u4f1a\u8bdd\uff0c\u8bf7\u5148\u521b\u5efa\u3002'}
             </div>
           ) : null}
           {sessions.map((session) => {
@@ -150,7 +150,7 @@ export default function LeftSidebar() {
                 key={session.id}
                 onClick={() => setCurrentSession(session.id)}
                 disabled={Boolean(pendingSessionAction)}
-                aria-label={`选择会话: ${session.title}`}
+                aria-label={`\u9009\u62e9\u4f1a\u8bdd: ${session.title}`}
                 aria-current={isActive ? 'true' : undefined}
                 className={`w-full text-left p-3 rounded-[14px] border text-sm transition-all ${
                   isActive ? 'border-brand bg-brand/10 shadow-glow' : 'border-[var(--line)] bg-black/30 hover:bg-black/50 hover:border-[var(--line-strong)]'
@@ -163,11 +163,11 @@ export default function LeftSidebar() {
                   <span aria-hidden="true">/</span>
                   <span>{session.binding?.transport || 'unbound'}</span>
                   <span aria-hidden="true">/</span>
-                  <span>{session.eventCount || 0} 事件</span>
+                  <span>{`${session.eventCount || 0} \u4e8b\u4ef6`}</span>
                   {session.visibility === 'workspace_share' ? (
                     <>
                       <span aria-hidden="true">/</span>
-                      <span>共享工作区</span>
+                      <span>{'\u5171\u4eab\u5de5\u4f5c\u533a'}</span>
                     </>
                   ) : null}
                 </div>
@@ -179,9 +179,9 @@ export default function LeftSidebar() {
 
       <ConfirmDialog
         open={confirmLogout}
-        title="退出登录"
-        message="确定要退出当前账号吗？"
-        confirmLabel="退出"
+        title={'\u9000\u51fa\u767b\u5f55'}
+        message={'\u786e\u5b9a\u8981\u9000\u51fa\u5f53\u524d\u8d26\u53f7\u5417\uff1f'}
+        confirmLabel={'\u9000\u51fa'}
         onConfirm={() => {
           setConfirmLogout(false)
           logout()
@@ -191,9 +191,9 @@ export default function LeftSidebar() {
       />
       <ConfirmDialog
         open={confirmClose}
-        title="关闭会话"
-        message="确定要关闭当前会话吗？此操作不可撤销。"
-        confirmLabel="关闭"
+        title={'\u5173\u95ed\u4f1a\u8bdd'}
+        message={'\u786e\u5b9a\u8981\u5173\u95ed\u5f53\u524d\u4f1a\u8bdd\u5417\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002'}
+        confirmLabel={'\u5173\u95ed'}
         onConfirm={() => {
           setConfirmClose(false)
           closeSession()

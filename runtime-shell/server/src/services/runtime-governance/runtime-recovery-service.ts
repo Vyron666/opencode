@@ -1,4 +1,5 @@
 import type { User } from "../../types"
+import { getRuntime } from "../../acp-runtime-manager"
 import { authorizeSystemWorkersAccess } from "../access/authorization-service"
 import { markRuntimeBindingLost, getActiveRuntimeBinding, createRuntimeBinding } from "./runtime-binding-service"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
@@ -88,6 +89,7 @@ export async function cleanupRuntimeGovernanceForUser(user: User) {
 
   for (const session of sessions) {
     const binding = await getActiveRuntimeBinding(session.id)
+    const runtime = getRuntime(session.id)
     const isRuntimeStatus =
       session.status === "opening" ||
       session.status === "active" ||
@@ -97,6 +99,13 @@ export async function cleanupRuntimeGovernanceForUser(user: User) {
 
     if (!binding) {
       if (!isRuntimeStatus) continue
+      await resetSessionRuntime(session.id, "created")
+      cleanedSessionIds.push(session.id)
+      continue
+    }
+
+    if (session.status === "opening" && !runtime) {
+      await markRuntimeBindingLost(session.id)
       await resetSessionRuntime(session.id, "created")
       cleanedSessionIds.push(session.id)
       continue

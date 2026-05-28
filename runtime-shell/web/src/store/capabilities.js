@@ -11,13 +11,16 @@ export const DEFAULT_CAPABILITIES = {
 
 export function buildCapabilitiesFromSession(sessionSummary) {
   const capabilityState = sessionSummary?.capabilityState || {}
+  const configOptions = normalizeConfigOptions(capabilityState.configOptions)
+  const modes = normalizeModeOptions(capabilityState.modes, configOptions)
+  const models = normalizeModelOptions(capabilityState.models, configOptions)
 
   return mergeCapabilities(DEFAULT_CAPABILITIES, {
-    modeId: capabilityState.modeId || capabilityState.modes?.currentModeId || readConfigCurrentValue(capabilityState.configOptions, 'mode'),
-    modelId: capabilityState.modelId || capabilityState.models?.currentModelId || readConfigCurrentValue(capabilityState.configOptions, 'model'),
-    modes: normalizeModeOptions(capabilityState.modes),
-    models: normalizeModelOptions(capabilityState.models),
-    configOptions: normalizeConfigOptions(capabilityState.configOptions),
+    modeId: readCurrentModeId(capabilityState, configOptions, modes),
+    modelId: readCurrentModelId(capabilityState, configOptions, models),
+    modes,
+    models,
+    configOptions,
     availableCommands: Array.isArray(capabilityState.availableCommands) ? capabilityState.availableCommands : [],
     usage: capabilityState.usage || null,
     sessionInfo: capabilityState.sessionInfo || null,
@@ -61,10 +64,14 @@ export function deriveCapPatch(event) {
       const normalized = normalizeConfigOptions(payload.configOptions)
       const modeOption = normalized.find((item) => item.id === 'mode' || item.raw?.category === 'mode')
       const modelOption = normalized.find((item) => item.id === 'model' || item.raw?.category === 'model')
+      const modes = normalizeModeOptions(null, normalized)
+      const models = normalizeModelOptions(null, normalized)
 
       return {
         modeId: typeof modeOption?.currentValue === 'string' ? modeOption.currentValue : undefined,
         modelId: typeof modelOption?.currentValue === 'string' ? modelOption.currentValue : undefined,
+        ...(modes.length ? { modes } : {}),
+        ...(models.length ? { models } : {}),
         configOptions: normalized,
       }
     }
@@ -81,20 +88,42 @@ export function parseConfigValue(value) {
   return value
 }
 
-function normalizeModeOptions(modeState) {
-  if (!modeState || !Array.isArray(modeState.availableModes)) return []
-  return modeState.availableModes.map((item) => ({
-    id: item.id || item.modeId || '',
-    label: item.name || item.label || item.id || item.modeId || '',
+function normalizeModeOptions(modeState, configOptions = []) {
+  if (modeState && Array.isArray(modeState.availableModes)) {
+    return modeState.availableModes.map((item) => ({
+      id: item.id || item.modeId || '',
+      label: item.name || item.label || item.id || item.modeId || '',
+      raw: item,
+    }))
+  }
+
+  const modeOption = Array.isArray(configOptions)
+    ? configOptions.find((item) => item.id === 'mode' || item.raw?.category === 'mode')
+    : null
+  if (!modeOption || !Array.isArray(modeOption.options)) return []
+  return modeOption.options.map((item) => ({
+    id: item.id || item.modeId || item.value || '',
+    label: item.label || item.name || item.value || item.id || '',
     raw: item,
   }))
 }
 
-function normalizeModelOptions(modelState) {
-  if (!modelState || !Array.isArray(modelState.availableModels)) return []
-  return modelState.availableModels.map((item) => ({
-    id: item.id || item.modelId || '',
-    label: item.name || item.label || item.modelId || item.id || '',
+function normalizeModelOptions(modelState, configOptions = []) {
+  if (modelState && Array.isArray(modelState.availableModels)) {
+    return modelState.availableModels.map((item) => ({
+      id: item.id || item.modelId || '',
+      label: item.name || item.label || item.modelId || item.id || '',
+      raw: item,
+    }))
+  }
+
+  const modelOption = Array.isArray(configOptions)
+    ? configOptions.find((item) => item.id === 'model' || item.raw?.category === 'model')
+    : null
+  if (!modelOption || !Array.isArray(modelOption.options)) return []
+  return modelOption.options.map((item) => ({
+    id: item.id || item.modelId || item.value || '',
+    label: item.label || item.name || item.value || item.id || '',
     raw: item,
   }))
 }
@@ -122,4 +151,20 @@ function readConfigCurrentValue(configOptions, configId) {
   if (!Array.isArray(configOptions)) return ''
   const option = configOptions.find((item) => item?.id === configId || item?.configId === configId)
   return typeof option?.currentValue === 'string' ? option.currentValue : ''
+}
+
+function readCurrentModeId(capabilityState, configOptions, modes) {
+  const configModeId = readConfigCurrentValue(configOptions, 'mode')
+  if (configModeId) return configModeId
+  if (typeof capabilityState.modes?.currentModeId === 'string') return capabilityState.modes.currentModeId
+  if (typeof capabilityState.modeId === 'string' && capabilityState.modeId) return capabilityState.modeId
+  return modes[0]?.id || ''
+}
+
+function readCurrentModelId(capabilityState, configOptions, models) {
+  const configModelId = readConfigCurrentValue(configOptions, 'model')
+  if (configModelId) return configModelId
+  if (typeof capabilityState.models?.currentModelId === 'string') return capabilityState.models.currentModelId
+  if (typeof capabilityState.modelId === 'string' && capabilityState.modelId) return capabilityState.modelId
+  return models[0]?.id || ''
 }

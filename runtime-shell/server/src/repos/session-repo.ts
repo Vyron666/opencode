@@ -294,34 +294,30 @@ export async function patchSession(sessionId: string, patch: BusinessSessionPatc
     binding: patch.binding === undefined ? current.binding : patch.binding || undefined,
   }
   const db = getRuntimeDatabaseClient()
+  const updates = [
+    patch.workspaceId !== undefined ? ["workspace_binding_id = ?", session.workspaceId] : null,
+    patch.workerId !== undefined ? ["worker_node_id = ?", session.workerId] : null,
+    patch.title !== undefined ? ["title = ?", session.title] : null,
+    patch.status !== undefined ? ["status = ?", session.status] : null,
+    patch.workspacePath !== undefined ? ["workspace_path = ?", session.workspacePath] : null,
+    patch.lastEventAt !== undefined ? ["last_event_at = ?", session.lastEventAt || null] : null,
+    patch.binding !== undefined ? ["binding_json = ?", session.binding ? stringifyJson(session.binding) : null] : null,
+    patch.capabilityState !== undefined
+      ? ["capability_state_json = ?", stringifyJson(session.capabilityState)]
+      : null,
+    ["updated_at = ?", session.updatedAt],
+    ["updated_by = ?", session.createdBy],
+  ].filter((item): item is [string, string | null] => Boolean(item))
   await db.execute(
     `
       UPDATE business_session
       SET
-        workspace_binding_id = ?,
-        worker_node_id = ?,
-        title = ?,
-        status = ?,
-        workspace_path = ?,
-        last_event_at = ?,
-        updated_at = ?,
-        updated_by = ?,
-        binding_json = ?,
-        capability_state_json = ?
+        ${updates.map((item) => item[0]).join(",\n        ")}
       WHERE id = ?
         AND deleted_at IS NULL
     `,
     [
-      session.workspaceId,
-      session.workerId,
-      session.title,
-      session.status,
-      session.workspacePath,
-      session.lastEventAt || null,
-      session.updatedAt,
-      session.createdBy,
-      session.binding ? stringifyJson(session.binding) : null,
-      stringifyJson(session.capabilityState),
+      ...updates.map((item) => item[1]),
       session.id,
     ],
   )

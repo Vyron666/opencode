@@ -191,6 +191,12 @@ const forbiddenAfterDelete = await requestJson<ApiEnvelope<{ session: SessionSum
 )
 assert(forbiddenAfterDelete.status === 403, "target user should lose shared session access after revoke")
 
+const ownerClose = await requestJson<ApiEnvelope<SessionSummary>>(ownerJar, "/api/session/close", {
+  method: "POST",
+  body: { businessSessionId: ownerSession.body.data.id },
+})
+assert(ownerClose.status === 200, "owner should close shared test session")
+
 console.log(
   JSON.stringify({
     ok: true,

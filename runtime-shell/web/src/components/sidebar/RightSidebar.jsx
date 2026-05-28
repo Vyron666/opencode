@@ -3,13 +3,8 @@ import { CreateSessionPanel, CreateWorkspacePanel, ForkSessionPanel } from './cr
 import { EventStreamPanel, PlanPanel } from './event-panels'
 import { MetricsPanel, PermissionPanel, QuestionPanel, SessionDetailPanel } from './inspect-panels'
 import { WorkspaceSharePanel } from './workspace-share-panel'
-import {
-  ConfigSettingPanel,
-  CustomModelsPanel,
-  ModelSettingPanel,
-  ProviderConfigPanel,
-  WorkerOverviewPanel,
-} from './settings-panels'
+import { ModelSettingPanel, ConfigSettingPanel } from './runtime-settings-panels'
+import { CustomModelsPanel, ProviderConfigPanel, WorkerOverviewPanel } from './admin-settings-panels'
 import { TABS } from './sidebar-support'
 
 export default function RightSidebar() {

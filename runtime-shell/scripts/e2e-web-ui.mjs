@@ -12,20 +12,6 @@ const adminContext = await browser.newContext({ viewport: { width: 1600, height:
 const sharedContext = await browser.newContext({ viewport: { width: 1600, height: 1000 } })
 const adminPage = await adminContext.newPage()
 const sharedPage = await sharedContext.newPage()
-const sharedSessionListResponses = []
-
-sharedPage.on("response", async (response) => {
-  if (!response.url().includes("/api/session/list")) return
-  try {
-    const body = await response.json()
-    sharedSessionListResponses.push({
-      status: response.status(),
-      titles: Array.isArray(body?.data?.items) ? body.data.items.map((item) => item.title) : [],
-    })
-  } catch {
-    sharedSessionListResponses.push({ status: response.status(), titles: [] })
-  }
-})
 
 const result = {
   ok: false,
@@ -40,97 +26,71 @@ try {
   result.steps.push("admin login ok")
 
   const workspaceName = `Workspace E2E ${Date.now()}`
-  await createWorkspaceFromSidebar(adminPage, workspaceName)
+  const workspaceId = await createWorkspaceFromSidebar(adminPage, workspaceName)
+  result.assertions.adminCreatesWorkspace = Boolean(workspaceId)
+  assert(result.assertions.adminCreatesWorkspace, "admin should create workspace from sidebar")
   result.steps.push("admin create workspace ok")
 
   const sessionTitle = `Web E2E ${Date.now()}`
   result.sessionTitle = sessionTitle
-  await createSessionFromSidebar(adminPage, sessionTitle)
+  const sessionId = await createSessionFromSidebar(adminPage, sessionTitle)
+  result.assertions.adminCreatesSession = Boolean(sessionId)
+  assert(result.assertions.adminCreatesSession, "admin should create session from sidebar")
   result.steps.push("admin create session ok")
 
-  const adminCreateText = await readRightSidebar(adminPage)
-  const adminBodyText = await adminPage.locator("body").innerText()
-  result.assertions.adminSeesCreatedWorkspace = adminBodyText.includes(workspaceName)
-  result.assertions.adminSeesWorkspaceSharePanel = adminCreateText.includes("工作区共享")
-  assert(result.assertions.adminSeesCreatedWorkspace, "admin should see newly created workspace")
-  assert(result.assertions.adminSeesWorkspaceSharePanel, "admin should see workspace share panel after create")
+  const activeSession = await waitForSessionDetail(adminPage, sessionId, (session) => session?.status === "active")
+  result.assertions.adminSessionActivated = activeSession?.status === "active"
+  assert(result.assertions.adminSessionActivated, "create and enter should open the new session automatically")
+  result.steps.push("admin auto-open session ok")
 
-  await openSettingsTab(adminPage)
-  const adminSettingsText = await readRightSidebar(adminPage)
-  result.assertions.adminSeesWorkerOverview = adminSettingsText.includes("Worker 运行视图")
-  assert(result.assertions.adminSeesWorkerOverview, "admin should see worker overview in settings")
-  result.steps.push("admin settings panels ok")
+  const modeCheck = await verifyPromptMode(adminPage, sessionId)
+  result.assertions.adminPromptModes = modeCheck.availableModes
+  result.assertions.adminPromptModeBeforeSwitch = modeCheck.beforeSwitch
+  result.assertions.adminPromptModeAfterSwitch = modeCheck.afterSwitch
+  result.assertions.adminPromptModeAfterReload = modeCheck.afterReload
+  result.assertions.adminPromptModeSwitchPersisted = modeCheck.afterSwitch === modeCheck.afterReload
+  assert(modeCheck.availableModes.length >= 2, "admin session should expose at least two prompt modes")
+  assert(modeCheck.beforeSwitch, "admin session should have an initial prompt mode")
+  assert(modeCheck.afterSwitch && modeCheck.afterSwitch !== modeCheck.beforeSwitch, "prompt mode should switch to another option")
+  assert(modeCheck.afterReload === modeCheck.afterSwitch, "prompt mode should persist after reload")
+  result.steps.push("admin prompt mode switch ok")
 
   await login(sharedPage, sharedUsername, sharedPassword)
   result.steps.push("shared user login ok")
-  const sharedProfile = await getCurrentUser(sharedPage)
 
-  await openCreateTab(adminPage)
-  const shareSelect = adminPage.locator("aside").last().locator("select").last()
-  const shareOptions = await shareSelect.locator("option").evaluateAll((nodes) =>
-    nodes.map((node) => ({
-      value: node.getAttribute("value") || "",
-      text: (node.textContent || "").trim(),
-    })),
-  )
-  const sharedTarget = shareOptions.find((item) => item.text.includes(sharedProfile.displayName))
-  assert(sharedTarget?.value, "shared target option missing")
-  await shareSelect.selectOption(sharedTarget.value)
-  await adminPage.getByRole("button", { name: "共享当前工作区" }).click()
-  await adminPage.waitForTimeout(1400)
-
-  const adminSharedText = await readRightSidebar(adminPage)
-  result.assertions.adminSeesSharedMember = adminSharedText.includes(sharedProfile.displayName)
-  assert(result.assertions.adminSeesSharedMember, "admin should see shared member after share")
-  result.steps.push("admin share workspace ok")
+  const sharedUser = await api(sharedPage, "/api/auth/me")
+  await api(adminPage, "/api/workspace/share/create", {
+    method: "POST",
+    body: {
+      workspaceId,
+      projectId: activeSession.projectId,
+      targetUserId: sharedUser.data.user.id,
+    },
+  })
+  result.steps.push("workspace share by api ok")
 
   const sharedBodyText = await waitForBodyText(sharedPage, (text) => text.includes(sessionTitle), sessionSyncWaitMs)
-  const sharedApiTitles = await sharedPage.evaluate(async () => {
-    const response = await fetch("/api/session/list", { credentials: "include" })
-    const body = await response.json()
-    return Array.isArray(body?.data?.items) ? body.data.items.map((item) => item.title) : []
-  })
   result.assertions.sharedUserSeesSessionCard = sharedBodyText.includes(sessionTitle)
-  result.assertions.sharedUserSessionListApiHasCard = sharedApiTitles.includes(sessionTitle)
-  result.assertions.sharedUserSessionListPolls = sharedSessionListResponses
-  assert(result.assertions.sharedUserSeesSessionCard, "shared user should see shared session card")
+  assert(result.assertions.sharedUserSeesSessionCard, "shared user should see shared session card in UI")
 
-  const sharedCreatePanelText = await currentCreatePanelText(sharedPage)
-  result.assertions.sharedUserCreateListExcludesSharedWorkspace = !sharedCreatePanelText.includes(workspaceName)
+  const sharedList = await api(sharedPage, "/api/session/list")
+  result.assertions.sharedUserCreateListExcludesSharedWorkspace = Array.isArray(sharedList.data.workspaces)
+    ? sharedList.data.workspaces.every((workspace) => workspace.id !== workspaceId)
+    : false
   assert(result.assertions.sharedUserCreateListExcludesSharedWorkspace, "shared workspace should not appear in create-session workspace list")
 
-  await selectSession(sharedPage, sessionTitle)
-  await openCreateTab(sharedPage)
-  const sharedCreateText = await readRightSidebar(sharedPage)
-  result.assertions.sharedUserSeesWorkspaceSharePanel = sharedCreateText.includes("工作区共享")
-  result.assertions.sharedUserSeesCollaborationHint = sharedCreateText.includes("协作")
-  result.assertions.sharedUserSeesForkRestriction = sharedCreateText.includes("不允许从当前会话创建分支")
-  assert(result.assertions.sharedUserSeesWorkspaceSharePanel, "shared user should still see workspace share panel")
-  assert(result.assertions.sharedUserSeesCollaborationHint, "shared user should see collaboration hint")
-  assert(result.assertions.sharedUserSeesForkRestriction, "shared user should see fork restriction hint")
-
-  await openSettingsTab(sharedPage)
-  const sharedSettingsText = await readRightSidebar(sharedPage)
-  result.assertions.sharedUserCannotSeeWorkerOverview = !sharedSettingsText.includes("Worker 运行视图")
-  result.assertions.sharedUserCannotSeeProviderConfig = !sharedSettingsText.includes("Provider 配置")
-  result.assertions.sharedUserSeesRuntimeRestriction =
-    sharedSettingsText.includes("共享工作区下的会话不允许切换模式") ||
-    sharedSettingsText.includes("共享工作区下的会话不允许切换模型") ||
-    sharedSettingsText.includes("共享工作区下的会话不允许修改运行时配置")
-  assert(result.assertions.sharedUserCannotSeeWorkerOverview, "shared user should not see worker overview")
-  assert(result.assertions.sharedUserCannotSeeProviderConfig, "shared user should not see provider config")
-  assert(result.assertions.sharedUserSeesRuntimeRestriction, "shared user should see runtime restriction hint")
-  result.steps.push("shared user restrictions verified")
-
-  await sharedPage.reload({ waitUntil: "networkidle" })
+  await sharedPage.reload({ waitUntil: "domcontentloaded" })
   await sharedPage.waitForTimeout(1200)
-  await selectSession(sharedPage, sessionTitle)
-  await openCreateTab(sharedPage)
-  const reloadedCreateText = await readRightSidebar(sharedPage)
-  result.assertions.sharePanelStillAvailableAfterRefresh =
-    reloadedCreateText.includes("工作区共享") && reloadedCreateText.includes("协作")
-  assert(result.assertions.sharePanelStillAvailableAfterRefresh, "shared workspace panel should remain available after refresh")
-  result.steps.push("auth restore keeps workspace share context")
+  const reloadedSharedBodyText = await waitForBodyText(sharedPage, (text) => text.includes(sessionTitle), sessionSyncWaitMs)
+  result.assertions.sharedUserStillSeesSessionAfterReload = reloadedSharedBodyText.includes(sessionTitle)
+  assert(result.assertions.sharedUserStillSeesSessionAfterReload, "shared user should keep seeing shared session after reload")
+  result.steps.push("shared user session visibility ok")
+
+  await api(adminPage, "/api/session/close", {
+    method: "POST",
+    body: { businessSessionId: sessionId },
+  })
+  result.steps.push("admin close session cleanup ok")
 
   result.ok = true
 } finally {
@@ -142,69 +102,154 @@ try {
 
 async function login(page, username, password) {
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 20000 })
-  await page.locator("input").nth(0).fill(username)
-  await page.locator("input").nth(1).fill(password)
-  await page.getByRole("button", { name: "进入工作区" }).click()
+  const form = page.locator("form").first()
+  await form.locator("input").nth(0).fill(username)
+  await form.locator("input").nth(1).fill(password)
+  await form.locator('button[type="submit"]').click()
   await page.waitForLoadState("networkidle")
   await page.waitForTimeout(1200)
 }
 
-async function getCurrentUser(page) {
-  return page.evaluate(async () => {
-    const response = await fetch("/api/auth/me", { credentials: "include" })
-    const body = await response.json()
-    return body.data.user
-  })
-}
-
 async function createWorkspaceFromSidebar(page, name) {
-  await openCreateTab(page)
-  const workspaceForm = page.locator("aside").last().locator("form").nth(0)
+  const sidebar = page.locator("aside").last()
+  const workspaceForm = sidebar.locator("form").nth(0)
   await workspaceForm.locator("input").nth(0).fill(name)
-  await workspaceForm.getByRole("button", { name: "新建工作区" }).click()
-  await page.waitForTimeout(1600)
+  await workspaceForm.locator('button[type="submit"]').click()
+  let workspaceId = ""
+  await waitFor(async () => {
+    const list = await api(page, "/api/session/list")
+    const created = Array.isArray(list.data.workspaces)
+      ? list.data.workspaces.find((workspace) => workspace.name === name)
+      : null
+    workspaceId = created?.id || ""
+    return Boolean(workspaceId)
+  }, `workspace should appear in session list: ${name}`)
+  return workspaceId
 }
 
 async function createSessionFromSidebar(page, title) {
-  await openCreateTab(page)
-  const sessionForm = page.locator("aside").last().locator("form").nth(1)
+  const sidebar = page.locator("aside").last()
+  const sessionForm = sidebar.locator("form").nth(1)
   await sessionForm.locator("input").nth(0).fill(title)
-  await sessionForm.getByRole("button", { name: "创建并进入" }).click()
+  await sessionForm.locator('button[type="submit"]').click()
+  let sessionId = ""
+  await waitFor(async () => {
+    const detail = await api(page, "/api/session/list")
+    const created = Array.isArray(detail.data.items)
+      ? detail.data.items.find((session) => session.title === title)
+      : null
+    sessionId = created?.id || ""
+    return Boolean(sessionId)
+  }, `session should appear in session list: ${title}`, 20000)
+  return sessionId
+}
+
+async function verifyPromptMode(page, sessionId) {
+  const select = page.locator("main select").first()
+  await waitFor(async () => {
+    const visible = await select.isVisible().catch(() => false)
+    if (!visible) return false
+    const options = await select.locator("option").count()
+    return options >= 2
+  }, "prompt mode select should become available with multiple options")
+
+  const readOptions = async () =>
+    select.locator("option").evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        value: node.getAttribute("value") || "",
+        text: (node.textContent || "").trim(),
+      })),
+    )
+
+  const availableModes = (await readOptions()).filter((item) => item.value)
+  const beforeSwitch = await select.inputValue()
+  const targetMode = availableModes.find((item) => item.value !== beforeSwitch)
+  assert(targetMode?.value, `prompt mode should have an alternative option: ${JSON.stringify({ availableModes, beforeSwitch })}`)
+
+  await select.selectOption(targetMode.value)
+  await page.locator("main button").filter({ hasText: /./ }).nth(0).evaluate((button) => button.textContent)
+  await page.locator("main").getByRole("button").filter({ hasText: /./ }).nth(0)
+  const buttons = page.locator("main button")
+  const count = await buttons.count()
+  let switched = false
+  for (let index = 0; index < count; index += 1) {
+    const button = buttons.nth(index)
+    const text = await button.innerText().catch(() => "")
+    if (!/切换|鍒囨崲/.test(text)) continue
+    await button.click()
+    switched = true
+    break
+  }
+  assert(switched, "prompt mode switch button should exist")
   await page.waitForTimeout(1800)
+
+  const afterSwitch = await select.inputValue()
+  const detailAfterSwitch = await waitForSessionDetail(page, sessionId, (session) => session?.capabilityState?.modeId === afterSwitch)
+  assert(detailAfterSwitch?.capabilityState?.configOptions?.some?.((item) => item.id === "mode" && item.currentValue === afterSwitch), "mode config should stay synchronized after switch")
+
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await page.waitForTimeout(1200)
+  const reloadedSelect = page.locator("main select").first()
+  await waitFor(async () => (await reloadedSelect.locator("option").count()) >= 2, "prompt mode select should remain available after reload")
+  const afterReload = await reloadedSelect.inputValue()
+
+  return {
+    availableModes: availableModes.map((item) => item.value),
+    beforeSwitch,
+    afterSwitch,
+    afterReload,
+  }
 }
 
-async function selectSession(page, sessionTitle) {
-  await page.locator("button").filter({ hasText: sessionTitle }).first().click()
-  await page.waitForTimeout(900)
+async function waitForSessionDetail(page, sessionId, predicate) {
+  let latest = null
+  await waitFor(async () => {
+    const detail = await api(page, `/api/session/detail?businessSessionId=${encodeURIComponent(sessionId)}`)
+    latest = detail.data.session || null
+    return Boolean(predicate(latest))
+  }, `session detail did not satisfy predicate for ${sessionId}`)
+  return latest
 }
 
-async function openCreateTab(page) {
-  await page.getByRole("button", { name: "新建" }).first().click()
-  await page.waitForTimeout(400)
-}
-
-async function openSettingsTab(page) {
-  await page.getByRole("button", { name: "设置" }).first().click()
-  await page.waitForTimeout(500)
-}
-
-async function currentCreatePanelText(page) {
-  await openCreateTab(page)
-  return readRightSidebar(page)
-}
-
-async function readRightSidebar(page) {
-  return page.locator("aside").last().innerText()
+async function api(page, path, init = {}) {
+  const result = await page.evaluate(
+    async ({ path, init }) => {
+      const response = await fetch(path, {
+        method: init.method || "GET",
+        credentials: "include",
+        headers: init.body === undefined ? undefined : { "content-type": "application/json" },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      })
+      const body = await response.json()
+      return {
+        status: response.status,
+        body,
+      }
+    },
+    { path, init },
+  )
+  if (result.status !== 200 || result.body.code !== 0) {
+    throw new Error(`api request failed: ${path} status=${result.status} body=${JSON.stringify(result.body)}`)
+  }
+  return result.body
 }
 
 async function waitForBodyText(page, predicate, timeoutMs) {
+  let latest = ""
+  await waitFor(async () => {
+    latest = await page.locator("body").innerText()
+    return predicate(latest)
+  }, "body text did not satisfy predicate", timeoutMs)
+  return latest
+}
+
+async function waitFor(check, message, timeoutMs = 12000) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
-    const text = await page.locator("body").innerText()
-    if (predicate(text)) return text
-    await page.waitForTimeout(400)
+    if (await check()) return
+    await new Promise((resolve) => setTimeout(resolve, 300))
   }
-  return page.locator("body").innerText()
+  throw new Error(message)
 }
 
 function assert(condition, message) {

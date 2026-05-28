@@ -132,7 +132,7 @@ export async function listReadyWorkersForUser(user: User) {
         updated_at,
         version
       FROM worker_node
-      WHERE status = 'ready'
+      WHERE status IN ('ready', 'busy', 'degraded')
         AND deleted_at IS NULL
         AND (tenant_id IS NULL OR tenant_id = ?)
         AND (organization_id IS NULL OR organization_id = ?)

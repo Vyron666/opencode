@@ -18,7 +18,12 @@ export function QuestionSchemaForm(input) {
             {field.required ? <span className="ml-1 text-danger">*</span> : null}
           </span>
           {field.description ? <span className="text-[11px] text-[var(--text-muted)]">{field.description}</span> : null}
-          <QuestionFieldControl field={field} value={input.formValues[field.id]} setFormValues={input.setFormValues} />
+          <QuestionFieldControl
+            field={field}
+            value={input.formValues[field.id]}
+            formValues={input.formValues}
+            setFormValues={input.setFormValues}
+          />
         </label>
       ))}
 

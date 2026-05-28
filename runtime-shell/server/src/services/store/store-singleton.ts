@@ -4,7 +4,6 @@ const storeService = new StoreService()
 
 export const runtimeStore = storeService
 export const stateService = storeService.stateService
-export const metadataService = storeService.metadataService
 export const userService = storeService.userService
 export const authService = storeService.authService
 export const workspaceService = storeService.workspaceService

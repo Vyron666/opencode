@@ -230,7 +230,7 @@ function buildDefaultWorkers(timestamp: string): WorkerNode[] {
       status: "ready",
       // 中文/English: local development should tolerate a few concurrent sessions,
       // otherwise one active session makes the whole shell feel "stuck" for other users.
-      capacity: 4,
+      capacity: 16,
       activeSessionCount: 0,
       lastHeartbeatAt: timestamp,
       version: "local",

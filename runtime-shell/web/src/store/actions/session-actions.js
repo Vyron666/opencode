@@ -16,6 +16,7 @@ export function createSessionActions(input) {
   return {
     setCurrentSession: (id) => {
       input.get().disconnectSSE()
+      writeStoredCurrentSessionId(input.get().user?.id, id)
       input.set((state) =>
         input.resetConversationState({
           currentSessionId: id,
@@ -29,18 +30,33 @@ export function createSessionActions(input) {
       const currentSessionId = input.get().currentSessionId
       const nextSessions = Array.isArray(data.items) ? data.items : []
       const nextWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : []
+      const restoredSessionId = !currentSessionId
+        ? readStoredCurrentSessionId(input.get().user?.id, nextSessions)
+        : ''
       const hasCurrentSession = currentSessionId
         ? nextSessions.some((session) => session.id === currentSessionId)
         : false
 
       if (!currentSessionId || hasCurrentSession) {
-        input.set({ sessions: nextSessions, workspaces: nextWorkspaces })
+        if (currentSessionId) {
+          writeStoredCurrentSessionId(input.get().user?.id, currentSessionId)
+        }
+        input.set((state) => ({
+          sessions: nextSessions,
+          workspaces: nextWorkspaces,
+          currentSessionId: restoredSessionId || state.currentSessionId,
+          sessionSelectionVersion:
+            restoredSessionId && restoredSessionId !== state.currentSessionId
+              ? state.sessionSelectionVersion + 1
+              : state.sessionSelectionVersion,
+        }))
         return nextSessions
       }
 
       // 中文/English: if the current session is no longer visible after refresh,
       // clear client-side runtime state so the UI does not keep operating on a stale session.
       input.get().disconnectSSE()
+      writeStoredCurrentSessionId(input.get().user?.id, '')
       input.set((state) =>
         input.resetConversationState({
           sessions: nextSessions,
@@ -73,6 +89,7 @@ export function createSessionActions(input) {
         // 中文/English: when the current session becomes forbidden or disappears,
         // clear the stale selection immediately so the UI returns to a safe idle state.
         input.get().disconnectSSE()
+        writeStoredCurrentSessionId(input.get().user?.id, '')
         input.set((state) =>
           input.resetConversationState({
             sessions: state.sessions.filter((session) => session.id !== currentSessionId),
@@ -132,6 +149,8 @@ export function createSessionActions(input) {
         input.resetConversationState({
           currentSessionId: session.id,
           sessionSelectionVersion: state.sessionSelectionVersion + 1,
+          // 中文/English: seed the newly created session into view first, then let
+          // activateSession own the activate flag so the open flow is not short-circuited.
           pendingSessionAction: '',
           sessionDetail: {
             session,
@@ -142,6 +161,11 @@ export function createSessionActions(input) {
           pendingQuestions: session.pendingQuestions ?? [],
           capabilities: buildCapabilitiesFromSession(session),
         }),
+      )
+      writeStoredCurrentSessionId(input.get().user?.id, session.id)
+      await input.get().activateSession().then(
+        (value) => value,
+        createRequestFailureHandler(input, { pendingSessionAction: '' }, '打开新会话失败'),
       )
     },
 
@@ -208,6 +232,7 @@ export function createSessionActions(input) {
         createRequestFailureHandler(input, { pendingSessionAction: '' }, '刷新会话列表失败'),
       )
       input.get().disconnectSSE()
+      writeStoredCurrentSessionId(input.get().user?.id, '')
       input.set((state) =>
         input.resetConversationState({
           currentSessionId: '',
@@ -289,6 +314,7 @@ export function createSessionActions(input) {
         (value) => value,
         createRequestFailureHandler(input, { pendingSessionAction: '' }, '刷新会话列表失败'),
       )
+      writeStoredCurrentSessionId(input.get().user?.id, forked.id)
       input.set((state) => ({
         currentSessionId: forked.id,
         sessionSelectionVersion: state.sessionSelectionVersion + 1,
@@ -385,4 +411,40 @@ export function createSessionActions(input) {
 function isLatestSessionSelection(input, sessionId, sessionSelectionVersion) {
   const state = input.get()
   return state.currentSessionId === sessionId && state.sessionSelectionVersion === sessionSelectionVersion
+}
+
+function readStoredCurrentSessionId(userId, sessions) {
+  const storedId = readStoredSessionValue(userId)
+  if (!storedId) return ''
+  if (sessions.some((session) => session.id === storedId)) return storedId
+  writeStoredCurrentSessionId(userId, '')
+  return ''
+}
+
+function writeStoredCurrentSessionId(userId, sessionId) {
+  const storage = getSessionSelectionStorage()
+  const key = buildSessionSelectionStorageKey(userId)
+  if (!storage || !key) return
+  if (!sessionId) {
+    storage.removeItem(key)
+    return
+  }
+  storage.setItem(key, sessionId)
+}
+
+function readStoredSessionValue(userId) {
+  const storage = getSessionSelectionStorage()
+  const key = buildSessionSelectionStorageKey(userId)
+  if (!storage || !key) return ''
+  return storage.getItem(key) || ''
+}
+
+function buildSessionSelectionStorageKey(userId) {
+  if (!userId) return ''
+  return `runtime-shell.current-session.${userId}`
+}
+
+function getSessionSelectionStorage() {
+  if (typeof window === 'undefined') return null
+  return window.localStorage
 }

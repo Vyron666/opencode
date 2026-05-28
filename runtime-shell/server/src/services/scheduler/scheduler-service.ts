@@ -4,7 +4,22 @@ import { sessionService, workerService } from "../store/store-singleton"
 export async function selectWorkerForNewSession(user: User) {
   const workers = await workerService.listReadyWorkersForUser(user)
   if (!workers.length) return
+  const sessions = await sessionService.listSessions()
   return workers
+    .map((worker) => ({
+      ...worker,
+      // 中文/English: recompute live load from session state at scheduling time so
+      // a stale persisted counter does not incorrectly block new session allocation.
+      activeSessionCount: sessions.filter(
+        (session) =>
+          session.workerId === worker.id &&
+          (session.status === "opening" ||
+            session.status === "active" ||
+            session.status === "waiting_input" ||
+            session.status === "cancelling" ||
+            session.status === "closing"),
+      ).length,
+    }))
     .filter((worker) => worker.activeSessionCount < worker.capacity)
     .sort(compareWorkers)[0]
 }

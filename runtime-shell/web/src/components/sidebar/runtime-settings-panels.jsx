@@ -16,14 +16,14 @@ export function ModelSettingPanel() {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
-  const { canManageRuntimeSettings, isSharedSession } = useViewerContext()
+  const { canUpdateModel, isSharedSession } = useViewerContext()
   const [selected, setSelected] = useState('')
-
-  if (!currentSessionId) return null
 
   useEffect(() => {
     setSelected(capabilities.modelId || capabilities.models?.[0]?.id || '')
   }, [capabilities.modelId, capabilities.models, currentSessionId])
+
+  if (!currentSessionId) return null
 
   return (
     <form
@@ -34,16 +34,25 @@ export function ModelSettingPanel() {
       }}
       className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
     >
-      <Field label="模型">
-        <Select value={selected} onChange={setSelected} options={capabilities.models} emptyLabel="当前会话没有可选模型" />
+      <Field label={'\u6a21\u578b'}>
+        <Select
+          value={selected}
+          onChange={setSelected}
+          options={capabilities.models}
+          emptyLabel={'\u5f53\u524d\u4f1a\u8bdd\u6ca1\u6709\u53ef\u9009\u6a21\u578b'}
+        />
       </Field>
-      {isSharedSession ? <div className="text-[11px] text-[var(--text-muted)]">共享工作区下的会话不允许切换模型。</div> : null}
+      {isSharedSession ? (
+        <div className="text-[11px] text-[var(--text-muted)]">
+          {'\u5171\u4eab\u5de5\u4f5c\u533a\u4e0b\u7684\u4f1a\u8bdd\u4e0d\u5141\u8bb8\u5207\u6362\u6a21\u578b\u3002'}
+        </div>
+      ) : null}
       <button
         type="submit"
-        disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction) || !canManageRuntimeSettings}
+        disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction) || !canUpdateModel}
         className={secondaryButtonClassName}
       >
-        {pendingSettingsAction === 'model' ? '切换中...' : '切换模型'}
+        {pendingSettingsAction === 'model' ? '\u5207\u6362\u4e2d...' : '\u5207\u6362\u6a21\u578b'}
       </button>
     </form>
   )
@@ -54,7 +63,7 @@ export function ConfigSettingPanel() {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
-  const { canManageRuntimeSettings, isSharedSession } = useViewerContext()
+  const { canUpdateConfig, isSharedSession } = useViewerContext()
   const configOptions = capabilities.configOptions || []
   const userConfigOptions = useMemo(
     () => configOptions.filter((item) => item.id !== 'mode' && item.id !== 'model'),
@@ -67,8 +76,6 @@ export function ConfigSettingPanel() {
     [configId, userConfigOptions],
   )
 
-  if (!currentSessionId) return null
-
   useEffect(() => {
     const fallbackId = userConfigOptions[0]?.id || ''
     setConfigId(userConfigOptions.some((item) => item.id === configId) ? configId : fallbackId)
@@ -77,6 +84,8 @@ export function ConfigSettingPanel() {
   useEffect(() => {
     setValue(stringifyConfigValue(selectedConfig?.currentValue))
   }, [selectedConfig?.id, selectedConfig?.currentValue])
+
+  if (!currentSessionId) return null
 
   return (
     <form
@@ -87,10 +96,15 @@ export function ConfigSettingPanel() {
       }}
       className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
     >
-      <Field label="配置项">
-        <Select value={configId} onChange={setConfigId} options={userConfigOptions} emptyLabel="当前会话没有可配置项" />
+      <Field label={'\u914d\u7f6e\u9879'}>
+        <Select
+          value={configId}
+          onChange={setConfigId}
+          options={userConfigOptions}
+          emptyLabel={'\u5f53\u524d\u4f1a\u8bdd\u6ca1\u6709\u53ef\u914d\u7f6e\u9879'}
+        />
       </Field>
-      <Field label="配置值">
+      <Field label={'\u914d\u7f6e\u503c'}>
         {selectedConfig?.type === 'boolean' ? (
           <select value={value} onChange={(event) => setValue(event.target.value)} className={selectClassName}>
             <option value="true">true</option>
@@ -105,17 +119,26 @@ export function ConfigSettingPanel() {
             ))}
           </select>
         ) : (
-          <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="例如 high / true / code" className={inputClassName} />
+          <input
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder={'\u4f8b\u5982 high / true / code'}
+            className={inputClassName}
+          />
         )}
       </Field>
       {selectedConfig?.description ? <div className="text-[11px] text-[var(--text-muted)] -mt-1">{selectedConfig.description}</div> : null}
-      {isSharedSession ? <div className="text-[11px] text-[var(--text-muted)]">共享工作区下的会话不允许修改运行时配置。</div> : null}
+      {isSharedSession ? (
+        <div className="text-[11px] text-[var(--text-muted)]">
+          {'\u5171\u4eab\u5de5\u4f5c\u533a\u4e0b\u7684\u4f1a\u8bdd\u4e0d\u5141\u8bb8\u4fee\u6539\u8fd0\u884c\u65f6\u914d\u7f6e\u3002'}
+        </div>
+      ) : null}
       <button
         type="submit"
-        disabled={!configId || !currentSessionId || Boolean(pendingSettingsAction) || !canManageRuntimeSettings}
+        disabled={!configId || !currentSessionId || Boolean(pendingSettingsAction) || !canUpdateConfig}
         className={secondaryButtonClassName}
       >
-        {pendingSettingsAction === 'config' ? '更新中...' : '更新配置'}
+        {pendingSettingsAction === 'config' ? '\u66f4\u65b0\u4e2d...' : '\u66f4\u65b0\u914d\u7f6e'}
       </button>
     </form>
   )

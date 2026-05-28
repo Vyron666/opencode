@@ -8,6 +8,12 @@ export function createWorkspaceActions(input) {
         (value) => value,
         createRequestFailureHandler(input, { pendingWorkspaceAction: '' }, '创建工作区失败'),
       )
+      input.set((state) => ({
+        // 中文/English: push the freshly created workspace into local state first so
+        // the adjacent create-session form can immediately target it without waiting for polling.
+        workspaces: state.workspaces.some((item) => item.id === workspace.id) ? state.workspaces : [...state.workspaces, workspace],
+        preferredWorkspaceId: workspace.id || '',
+      }))
       await input.get().loadSessions().then(
         (value) => value,
         createRequestFailureHandler(input, { pendingWorkspaceAction: '' }, '刷新工作区列表失败'),

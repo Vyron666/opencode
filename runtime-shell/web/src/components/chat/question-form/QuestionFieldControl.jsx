@@ -1,4 +1,8 @@
-export function QuestionFieldControl({ field, value, setFormValues }) {
+import { buildQuestionCustomValueKey } from './question-form-support'
+
+const CUSTOM_INPUT_SENTINEL = '__custom__'
+
+export function QuestionFieldControl({ field, value, formValues, setFormValues }) {
   if (field.kind === 'boolean') {
     return (
       <label className="flex items-center gap-2 rounded-[10px] border border-[var(--line)] bg-black/30 px-3 py-2 text-xs text-[var(--text-dim)]">
@@ -57,24 +61,45 @@ export function QuestionFieldControl({ field, value, setFormValues }) {
   }
 
   if (field.kind === 'select') {
+    const customValueKey = buildQuestionCustomValueKey(field.id)
+    const customValue = typeof formValues?.[customValueKey] === 'string' ? formValues[customValueKey] : ''
+
     return (
-      <select
-        value={typeof value === 'string' ? value : ''}
-        onChange={(event) =>
-          setFormValues((current) => ({
-            ...current,
-            [field.id]: event.target.value,
-          }))
-        }
-        className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
-      >
-        <option value="">请选择</option>
-        {field.options.map((option) => (
-          <option key={`${field.id}-${option.value}`} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <div className="grid gap-2">
+        <select
+          value={typeof value === 'string' ? value : ''}
+          onChange={(event) =>
+            setFormValues((current) => ({
+              ...current,
+              [field.id]: event.target.value,
+              ...(event.target.value === CUSTOM_INPUT_SENTINEL ? {} : { [customValueKey]: '' }),
+            }))
+          }
+          className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
+        >
+          <option value="">请选择</option>
+          {field.options.map((option) => (
+            <option key={`${field.id}-${option.value}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+          {field.allowCustom ? <option value={CUSTOM_INPUT_SENTINEL}>让我填写</option> : null}
+        </select>
+        {field.allowCustom && value === CUSTOM_INPUT_SENTINEL ? (
+          <input
+            type="text"
+            value={customValue}
+            onChange={(event) =>
+              setFormValues((current) => ({
+                ...current,
+                [customValueKey]: event.target.value,
+              }))
+            }
+            placeholder="请输入"
+            className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
+          />
+        ) : null}
+      </div>
     )
   }
 

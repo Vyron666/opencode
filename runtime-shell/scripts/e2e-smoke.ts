@@ -16,11 +16,12 @@ type SessionSummary = {
 
 type WorkspaceSummary = {
   id: string
+  projectId: string
 }
 
 const cookieJar: string[] = []
 
-const login = await requestJson<ApiEnvelope<{ user: { username: string } }>>("/api/auth/login", {
+const login = await requestJson<ApiEnvelope<{ user: { username: string; projectIds: string[] } }>>("/api/auth/login", {
   method: "POST",
   body: {
     username,
@@ -29,19 +30,29 @@ const login = await requestJson<ApiEnvelope<{ user: { username: string } }>>("/a
 })
 assert(login.status === 200 && login.body.code === 0, `login failed: ${login.status}`)
 
-const me = await requestJson<ApiEnvelope<{ user: { username: string } }>>("/api/auth/me")
+const me = await requestJson<ApiEnvelope<{ user: { username: string; projectIds: string[] } }>>("/api/auth/me")
 assert(me.status === 200 && me.body.data.user.username === username, "auth/me mismatch")
+assert(me.body.data.user.projectIds.length > 0, "auth/me returned no project scope")
 
 const list = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: WorkspaceSummary[] }>>("/api/session/list")
-assert(list.status === 200 && list.body.data.workspaces.length > 0, "session/list returned no workspace")
+assert(list.status === 200, "session/list failed")
 
-const workspaceId = list.body.data.workspaces[0].id
+// 中文/English: workspaces are user-created now, so smoke must create an owned workspace first.
+const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
+  method: "POST",
+  body: {
+    projectId: me.body.data.user.projectIds[0],
+    name: `smoke-${Date.now()}`,
+  },
+})
+assert(workspace.status === 200 && workspace.body.data.id, "workspace/create failed")
+
 const session = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
   method: "POST",
   body: {
     title: `Smoke ${Date.now()}`,
-    projectId: "default",
-    workspaceId,
+    projectId: workspace.body.data.projectId,
+    workspaceId: workspace.body.data.id,
   },
 })
 assert(session.status === 200 && session.body.data.id, "session/create failed")
@@ -89,7 +100,7 @@ console.log(
     ok: true,
     baseUrl,
     businessSessionId,
-    workspaceId,
+    workspaceId: workspace.body.data.id,
     detailEventCount: detail.body.data.events.length,
     idleCancelStatus: idleCancel.status,
     closeStatus: close.body.data.status,

@@ -254,13 +254,21 @@ export async function updateSessionModeForUser(input: {
     return { ok: false as const, reason: "runtime_not_active" }
   }
   await renewRuntimeLeaseForSession(result.session.id)
-  const response = await runtime.client.setSessionMode(input.modeId)
+  await runtime.client.setSessionMode(input.modeId)
   const current = await sessionService.getSession(result.session.id)
   await sessionService.updateSession(result.session.id, {
     capabilityState: {
       ...current?.capabilityState,
       modeId: input.modeId,
-      modes: response ? (response as Record<string, unknown>) : current?.capabilityState?.modes,
+      modes: {
+        ...(current?.capabilityState?.modes ?? {}),
+        currentModeId: input.modeId,
+      },
+      configOptions: Array.isArray(current?.capabilityState?.configOptions)
+        ? current.capabilityState.configOptions.map((item) =>
+            item.id === "mode" ? { ...item, currentValue: input.modeId } : item,
+          )
+        : current?.capabilityState?.configOptions,
     },
   })
   return { ok: true as const, success: true }
@@ -282,13 +290,21 @@ export async function updateSessionModelForUser(input: {
     return { ok: false as const, reason: "runtime_not_active" }
   }
   await renewRuntimeLeaseForSession(result.session.id)
-  const response = await runtime.client.setSessionModel(input.modelId)
+  await runtime.client.setSessionModel(input.modelId)
   const current = await sessionService.getSession(result.session.id)
   await sessionService.updateSession(result.session.id, {
     capabilityState: {
       ...current?.capabilityState,
       modelId: input.modelId,
-      models: response ? (response as Record<string, unknown>) : current?.capabilityState?.models,
+      models: {
+        ...(current?.capabilityState?.models ?? {}),
+        currentModelId: input.modelId,
+      },
+      configOptions: Array.isArray(current?.capabilityState?.configOptions)
+        ? current.capabilityState.configOptions.map((item) =>
+            item.id === "model" ? { ...item, currentValue: input.modelId } : item,
+          )
+        : current?.capabilityState?.configOptions,
     },
   })
   return { ok: true as const, success: true }

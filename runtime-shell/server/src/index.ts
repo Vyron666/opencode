@@ -3,7 +3,7 @@ import { Config } from "./config"
 import { createLogger } from "./log"
 import { ensureRuntimeConfigInitialized } from "./provider-config"
 import { startRuntimeGovernanceLoop } from "./services/runtime-governance/runtime-governance-loop"
-import { store } from "./store"
+import { runtimeStore } from "./services/store/store-singleton"
 import { registerStaticRoutes } from "./http/routes/static-routes"
 import { registerAuthRoutes } from "./http/routes/auth-routes"
 import { registerSystemRoutes } from "./http/routes/system-routes"
@@ -19,7 +19,7 @@ registerSystemRoutes(app)
 registerSessionRoutes(app)
 registerInteractionRoutes(app)
 
-await store.load()
+await runtimeStore.load()
 await ensureRuntimeConfigInitialized()
 startRuntimeGovernanceLoop()
 

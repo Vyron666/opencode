@@ -2,10 +2,10 @@ import { useMemo } from 'react'
 import { useStore, buildCapabilitiesFromSession } from '../../store'
 
 export const TABS = [
-  { id: 'create', label: '新建' },
-  { id: 'settings', label: '设置' },
-  { id: 'inspect', label: '检查' },
-  { id: 'events', label: '事件' },
+  { id: 'create', label: '\u65b0\u5efa' },
+  { id: 'settings', label: '\u8bbe\u7f6e' },
+  { id: 'inspect', label: '\u68c0\u67e5' },
+  { id: 'events', label: '\u4e8b\u4ef6' },
 ]
 
 export const inputClassName =
@@ -26,7 +26,7 @@ export function Field({ label, children }) {
   )
 }
 
-export function Select({ id, options, value, onChange, emptyLabel = '请先打开会话' }) {
+export function Select({ id, options, value, onChange, emptyLabel = '\u8bf7\u5148\u6253\u5f00\u4f1a\u8bdd' }) {
   return (
     <select
       id={id}
@@ -68,7 +68,9 @@ export function useSessionCapabilities() {
       modes: capabilities.modes?.length ? capabilities.modes : detailCapabilities.modes,
       models: capabilities.models?.length ? capabilities.models : detailCapabilities.models,
       configOptions: capabilities.configOptions?.length ? capabilities.configOptions : detailCapabilities.configOptions,
-      availableCommands: capabilities.availableCommands?.length ? capabilities.availableCommands : detailCapabilities.availableCommands,
+      availableCommands: capabilities.availableCommands?.length
+        ? capabilities.availableCommands
+        : detailCapabilities.availableCommands,
       usage: capabilities.usage || detailCapabilities.usage,
       sessionInfo: capabilities.sessionInfo || detailCapabilities.sessionInfo,
     }
@@ -92,6 +94,10 @@ export function useViewerContext() {
     const isOwner = Boolean(user && session && session.createdBy === user.id)
     const isSharedSession = session?.visibility === 'workspace_share'
     const owner = users.find((item) => item.id === session?.createdBy) || null
+    const canUpdateMode = Boolean(session?.capabilities?.updateMode)
+    const canUpdateModel = Boolean(session?.capabilities?.updateModel)
+    const canUpdateConfig = Boolean(session?.capabilities?.updateConfig)
+
     return {
       user,
       session,
@@ -105,9 +111,10 @@ export function useViewerContext() {
       canOpenSession: Boolean(session?.capabilities?.open),
       canLoadSession: Boolean(session?.capabilities?.load),
       canResumeSession: Boolean(session?.capabilities?.resume),
-      canManageRuntimeSettings: Boolean(
-        session?.capabilities?.updateMode && session?.capabilities?.updateModel && session?.capabilities?.updateConfig,
-      ),
+      canUpdateMode,
+      canUpdateModel,
+      canUpdateConfig,
+      canManageRuntimeSettings: canUpdateMode || canUpdateModel || canUpdateConfig,
       canManagePlatformSettings: Boolean(isAdmin),
       // 中文/English: sharing is scoped at workspace level, so the UI should read the
       // capability through workspace wording consistently.
@@ -117,8 +124,8 @@ export function useViewerContext() {
 }
 
 export function roleLabel(role) {
-  if (role === 'admin') return '管理员'
-  if (role === 'developer') return '开发者'
+  if (role === 'admin') return '\u7ba1\u7406\u5458'
+  if (role === 'developer') return '\u5f00\u53d1\u8005'
   return role || '-'
 }
 

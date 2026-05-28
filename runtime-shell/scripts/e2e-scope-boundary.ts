@@ -34,22 +34,59 @@ assert(adminLogin.user.projectIds.length === 2, "admin scope not initialized")
 const developerLogin = await login("developer", developerPassword, developerJar)
 const developerSecondaryLogin = await login("developer-secondary", developerSecondaryPassword, developerSecondaryJar)
 
+// 中文/English: owned workspaces are no longer implicit defaults, so scope checks create
+// one workspace per user and then verify visibility/isolation from that known baseline.
+const developerWorkspaceCreate = await requestJson<ApiEnvelope<WorkspaceSummary>>(developerJar, "/api/workspace/create", {
+  method: "POST",
+  body: {
+    projectId: developerLogin.user.projectIds[0],
+    name: `scope-developer-${Date.now()}`,
+  },
+})
+assert(developerWorkspaceCreate.status === 200, "developer workspace/create failed")
+
+const developerSecondaryWorkspaceCreate = await requestJson<ApiEnvelope<WorkspaceSummary>>(
+  developerSecondaryJar,
+  "/api/workspace/create",
+  {
+    method: "POST",
+    body: {
+      projectId: developerSecondaryLogin.user.projectIds[0],
+      name: `scope-developer-secondary-${Date.now()}`,
+    },
+  },
+)
+assert(developerSecondaryWorkspaceCreate.status === 200, "developer-secondary workspace/create failed")
+
+const developerWorkspace = developerWorkspaceCreate.body.data
+const developerSecondaryWorkspace = developerSecondaryWorkspaceCreate.body.data
+
 const developerList = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: WorkspaceSummary[] }>>(
   developerJar,
   "/api/session/list",
 )
 assert(developerList.status === 200, "developer session/list failed")
-assert(developerList.body.data.workspaces.length === 1, "developer workspace scope mismatch")
+assert(
+  developerList.body.data.workspaces.some((workspace) => workspace.id === developerWorkspace.id),
+  "developer should see owned workspace in create-session list",
+)
+assert(
+  developerList.body.data.workspaces.every((workspace) => workspace.id !== developerSecondaryWorkspace.id),
+  "developer should not see developer-secondary workspace",
+)
 
 const developerSecondaryList = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: WorkspaceSummary[] }>>(
   developerSecondaryJar,
   "/api/session/list",
 )
 assert(developerSecondaryList.status === 200, "developer-secondary session/list failed")
-assert(developerSecondaryList.body.data.workspaces.length === 1, "developer-secondary workspace scope mismatch")
 assert(
-  developerList.body.data.workspaces[0].id !== developerSecondaryList.body.data.workspaces[0].id,
-  "developers must not share workspace scope by default",
+  developerSecondaryList.body.data.workspaces.some((workspace) => workspace.id === developerSecondaryWorkspace.id),
+  "developer-secondary should see owned workspace in create-session list",
+)
+assert(
+  developerSecondaryList.body.data.workspaces.every((workspace) => workspace.id !== developerWorkspace.id),
+  "developer-secondary should not see developer workspace",
 )
 
 const developerSession = await requestJson<ApiEnvelope<SessionSummary>>(developerJar, "/api/session/create", {
@@ -57,7 +94,7 @@ const developerSession = await requestJson<ApiEnvelope<SessionSummary>>(develope
   body: {
     title: `Developer Scope ${Date.now()}`,
     projectId: developerLogin.user.projectIds[0],
-    workspaceId: developerList.body.data.workspaces[0].id,
+    workspaceId: developerWorkspace.id,
   },
 })
 assert(developerSession.status === 200, "developer session/create failed")
@@ -91,7 +128,7 @@ const developerSecondaryCreateForbidden = await requestJson<ApiEnvelope<SessionS
     body: {
       title: `Developer Secondary Forbidden ${Date.now()}`,
       projectId: developerLogin.user.projectIds[0],
-      workspaceId: developerList.body.data.workspaces[0].id,
+      workspaceId: developerWorkspace.id,
     },
   },
 )
@@ -108,7 +145,7 @@ const developerSecondarySession = await requestJson<ApiEnvelope<SessionSummary>>
     body: {
       title: `Developer Secondary Scope ${Date.now()}`,
       projectId: developerSecondaryLogin.user.projectIds[0],
-      workspaceId: developerSecondaryList.body.data.workspaces[0].id,
+      workspaceId: developerSecondaryWorkspace.id,
     },
   },
 )
@@ -127,8 +164,8 @@ console.log(
     baseUrl,
     developerSessionId: developerSession.body.data.id,
     developerSecondarySessionId: developerSecondarySession.body.data.id,
-    developerWorkspaceId: developerList.body.data.workspaces[0].id,
-    developerSecondaryWorkspaceId: developerSecondaryList.body.data.workspaces[0].id,
+    developerWorkspaceId: developerWorkspace.id,
+    developerSecondaryWorkspaceId: developerSecondaryWorkspace.id,
   }),
 )
 

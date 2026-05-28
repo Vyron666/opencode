@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../../store'
 import { Field, inputClassName, secondaryButtonClassName, Select, useViewerContext } from './sidebar-support'
 
-const DEFAULT_TITLE = 'Runtime Shell 会话'
-const DEFAULT_WORKSPACE_NAME = '新工作区'
+const DEFAULT_TITLE = 'Runtime Shell \u4f1a\u8bdd'
+const DEFAULT_WORKSPACE_NAME = '\u65b0\u5de5\u4f5c\u533a'
 
 export function CreateWorkspacePanel() {
   const createWorkspace = useStore((state) => state.createWorkspace)
@@ -56,17 +56,19 @@ export function CreateWorkspacePanel() {
       className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
     >
       <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Workspace</span>
-      <Field label="工作区名称">
+      <Field label={'\u5de5\u4f5c\u533a\u540d\u79f0'}>
         <input value={name} onChange={(event) => setName(event.target.value)} className={inputClassName} />
       </Field>
-      <Field label="所属项目">
-        <Select value={projectId} onChange={setProjectId} options={projectOptions} emptyLabel="当前没有可用项目" />
+      <Field label={'\u6240\u5c5e\u9879\u76ee'}>
+        <Select value={projectId} onChange={setProjectId} options={projectOptions} emptyLabel={'\u5f53\u524d\u6ca1\u6709\u53ef\u7528\u9879\u76ee'} />
       </Field>
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-        系统会在你的个人工作区根目录下自动创建文件夹，不需要手动填写 `rootPath`。
+        {'\u7cfb\u7edf\u4f1a\u5728\u4f60\u7684\u4e2a\u4eba\u5de5\u4f5c\u533a\u6839\u76ee\u5f55\u4e0b\u81ea\u52a8\u521b\u5efa\u6587\u4ef6\u5939\uff0c\u4e0d\u9700\u8981\u624b\u52a8\u586b\u5199 '}
+        <code>rootPath</code>
+        {'\u3002'}
       </p>
       <button type="submit" disabled={!canSubmit} className={secondaryButtonClassName}>
-        {pendingWorkspaceAction === 'create' ? '创建工作区中...' : '新建工作区'}
+        {pendingWorkspaceAction === 'create' ? '\u521b\u5efa\u5de5\u4f5c\u533a\u4e2d...' : '\u65b0\u5efa\u5de5\u4f5c\u533a'}
       </button>
     </form>
   )
@@ -75,6 +77,7 @@ export function CreateWorkspacePanel() {
 export function CreateSessionPanel() {
   const createSession = useStore((state) => state.createSession)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
+  const pendingWorkspaceAction = useStore((state) => state.pendingWorkspaceAction)
   const preferredWorkspaceId = useStore((state) => state.preferredWorkspaceId)
   const workspaces = useStore((state) => state.workspaces)
   const { isSharedSession } = useViewerContext()
@@ -82,7 +85,7 @@ export function CreateSessionPanel() {
   const [workspaceId, setWorkspaceId] = useState('')
   const hasWorkspaces = workspaces.length > 0
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId) || null
-  const canSubmit = Boolean(title.trim() && selectedWorkspace) && !pendingSessionAction
+  const canSubmit = Boolean(title.trim() && selectedWorkspace) && !pendingSessionAction && !pendingWorkspaceAction
 
   useEffect(() => {
     if (!hasWorkspaces) {
@@ -112,10 +115,10 @@ export function CreateSessionPanel() {
       className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
     >
       <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Create</span>
-      <Field label="会话标题">
+      <Field label={'\u4f1a\u8bdd\u6807\u9898'}>
         <input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClassName} />
       </Field>
-      <Field label="工作区">
+      <Field label={'\u5de5\u4f5c\u533a'}>
         <Select
           value={workspaceId}
           onChange={setWorkspaceId}
@@ -123,10 +126,10 @@ export function CreateSessionPanel() {
             id: workspace.id,
             label: `${workspace.name} / ${workspace.projectName || workspace.projectId}`,
           }))}
-          emptyLabel="暂无可用工作区"
+          emptyLabel={'\u6682\u65e0\u53ef\u7528\u5de5\u4f5c\u533a'}
         />
       </Field>
-      <Field label="所属项目">
+      <Field label={'\u6240\u5c5e\u9879\u76ee'}>
         <input
           value={selectedWorkspace?.projectName || selectedWorkspace?.projectId || ''}
           className={inputClassName}
@@ -136,18 +139,21 @@ export function CreateSessionPanel() {
       </Field>
       {!hasWorkspaces ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          当前还没有可用工作区，请先在上方新建一个工作区，再回来创建会话。
+          {'\u5f53\u524d\u8fd8\u6ca1\u6709\u53ef\u7528\u5de5\u4f5c\u533a\uff0c\u8bf7\u5148\u5728\u4e0a\u65b9\u65b0\u5efa\u4e00\u4e2a\u5de5\u4f5c\u533a\uff0c\u518d\u56de\u6765\u521b\u5efa\u4f1a\u8bdd\u3002'}
         </p>
       ) : null}
       {selectedWorkspace ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          当前会使用工作区 <span className="font-semibold text-[var(--text)]">{selectedWorkspace.name}</span>，所属项目为{' '}
-          <span className="font-semibold text-[var(--text)]">{selectedWorkspace.projectName || selectedWorkspace.projectId}</span>。
+          {'\u5f53\u524d\u4f1a\u4f7f\u7528\u5de5\u4f5c\u533a '}
+          <span className="font-semibold text-[var(--text)]">{selectedWorkspace.name}</span>
+          {'\uff0c\u6240\u5c5e\u9879\u76ee\u4e3a '}
+          <span className="font-semibold text-[var(--text)]">{selectedWorkspace.projectName || selectedWorkspace.projectId}</span>
+          {'\u3002'}
         </p>
       ) : null}
       {isSharedSession ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          共享工作区只允许继续处理已有会话。新会话请从你自己的可用工作区中创建。
+          {'\u5171\u4eab\u5de5\u4f5c\u533a\u53ea\u5141\u8bb8\u7ee7\u7eed\u5904\u7406\u5df2\u6709\u4f1a\u8bdd\u3002\u65b0\u4f1a\u8bdd\u8bf7\u4ece\u4f60\u81ea\u5df1\u7684\u53ef\u7528\u5de5\u4f5c\u533a\u4e2d\u521b\u5efa\u3002'}
         </p>
       ) : null}
       <button
@@ -155,7 +161,7 @@ export function CreateSessionPanel() {
         disabled={!canSubmit}
         className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100 disabled:active:scale-100"
       >
-        {pendingSessionAction === 'create' ? '创建中...' : '创建并进入'}
+        {pendingSessionAction === 'create' ? '\u521b\u5efa\u4e2d...' : '\u521b\u5efa\u5e76\u8fdb\u5165'}
       </button>
     </form>
   )
@@ -176,12 +182,12 @@ export function ForkSessionPanel() {
       className="grid gap-2.5"
     >
       <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Fork</span>
-      <Field label="分支标题">
+      <Field label={'\u5206\u652f\u6807\u9898'}>
         <input value={title} onChange={(event) => setTitle(event.target.value)} className={inputClassName} />
       </Field>
       {isSharedSession ? (
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          共享工作区下的会话只允许继续协作，不允许从当前会话创建分支。
+          {'\u5171\u4eab\u5de5\u4f5c\u533a\u4e0b\u7684\u4f1a\u8bdd\u53ea\u5141\u8bb8\u7ee7\u7eed\u534f\u4f5c\uff0c\u4e0d\u5141\u8bb8\u4ece\u5f53\u524d\u4f1a\u8bdd\u521b\u5efa\u5206\u652f\u3002'}
         </p>
       ) : null}
       <button
@@ -189,7 +195,7 @@ export function ForkSessionPanel() {
         disabled={Boolean(pendingSessionAction) || !canManageSession}
         className="rounded-[10px] py-2 px-4 text-xs font-semibold bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {pendingSessionAction === 'fork' ? '创建分支中...' : '从当前会话创建分支'}
+        {pendingSessionAction === 'fork' ? '\u521b\u5efa\u5206\u652f\u4e2d...' : '\u4ece\u5f53\u524d\u4f1a\u8bdd\u521b\u5efa\u5206\u652f'}
       </button>
     </form>
   )

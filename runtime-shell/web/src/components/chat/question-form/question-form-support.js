@@ -2,6 +2,9 @@ export function buildInitialLegacyAnswers(prompts) {
   return prompts.map(() => [])
 }
 
+const CUSTOM_INPUT_SENTINEL = '__custom__'
+const CUSTOM_INPUT_HINT = 'Custom input is allowed.'
+
 export function buildLegacyQuestionAnswers(prompts, legacyAnswers, legacyCustomAnswers) {
   return prompts.map((prompt, index) => {
     const selected = Array.isArray(legacyAnswers[index]) ? [...legacyAnswers[index]] : []
@@ -24,7 +27,7 @@ export function buildQuestionFields(schema) {
     const baseField = {
       id,
       label: property.title || id,
-      description: property.description || '',
+      description: normalizeQuestionDescription(property.description || ''),
       required: required.has(id),
       defaultValue: property.default,
     }
@@ -42,7 +45,7 @@ export function buildQuestionFields(schema) {
     if (property.type === 'string') {
       const options = questionStringOptions(property)
       if (options.length) {
-        return [{ ...baseField, kind: 'select', options }]
+        return [{ ...baseField, kind: 'select', options, allowCustom: questionAllowsCustomInput(property) }]
       }
       return [{
         ...baseField,
@@ -76,6 +79,14 @@ export function buildInitialQuestionFormValues(fields) {
       return result
     }
 
+    if (field.kind === 'select' && field.allowCustom) {
+      const customValue = typeof field.defaultValue === 'string' ? field.defaultValue : ''
+      const matched = field.options.some((option) => option.value === customValue)
+      result[field.id] = matched ? customValue : customValue ? CUSTOM_INPUT_SENTINEL : ''
+      result[buildQuestionCustomValueKey(field.id)] = matched ? '' : customValue
+      return result
+    }
+
     result[field.id] = field.defaultValue ?? ''
     return result
   }, {})
@@ -101,6 +112,13 @@ export function buildQuestionFormContent(fields, formValues) {
       return result
     }
 
+    if (field.kind === 'select') {
+      const resolved = readQuestionFieldValue(field, formValues)
+      if (!resolved && !field.required) return result
+      result[field.id] = resolved
+      return result
+    }
+
     if (typeof value === 'string') {
       if (!value && !field.required) return result
       result[field.id] = value
@@ -116,6 +134,7 @@ export function hasEmptyRequiredQuestionField(fields, formValues) {
     const value = formValues[field.id]
     if (field.kind === 'boolean') return value !== true && value !== false
     if (field.kind === 'multiselect') return !Array.isArray(value) || value.length === 0
+    if (field.kind === 'select') return !readQuestionFieldValue(field, formValues)
     return value === '' || value == null
   })
 }
@@ -124,6 +143,10 @@ export function formatData(value) {
   if (value == null) return ''
   if (typeof value === 'string') return value
   return JSON.stringify(value, null, 2)
+}
+
+export function buildQuestionCustomValueKey(fieldId) {
+  return `${fieldId}__custom`
 }
 
 function questionStringOptions(property) {
@@ -178,4 +201,25 @@ function questionInputType(format) {
   if (format === 'date') return 'date'
   if (format === 'date-time') return 'datetime-local'
   return 'text'
+}
+
+function questionAllowsCustomInput(property) {
+  return typeof property?.description === 'string' && property.description.includes(CUSTOM_INPUT_HINT)
+}
+
+function normalizeQuestionDescription(description) {
+  if (typeof description !== 'string') return ''
+  return description.replace(CUSTOM_INPUT_HINT, '').trim()
+}
+
+function readQuestionFieldValue(field, formValues) {
+  const value = formValues[field.id]
+  if (field.kind !== 'select' || !field.allowCustom) {
+    return typeof value === 'string' ? value : ''
+  }
+  if (value !== CUSTOM_INPUT_SENTINEL) {
+    return typeof value === 'string' ? value : ''
+  }
+  const customValue = formValues[buildQuestionCustomValueKey(field.id)]
+  return typeof customValue === 'string' ? customValue.trim() : ''
 }
