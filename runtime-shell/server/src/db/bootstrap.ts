@@ -15,11 +15,13 @@ function stringifyJson(value: unknown) {
 export async function ensureDatabaseBootstrap(state: PersistedState) {
   const db = getRuntimeDatabaseClient()
   await seedWorkspaces(state)
+  await seedWorkers(state)
   await seedSessions(state)
   await seedAuthSessions(state)
   await seedSessionShareBindings(state)
   log.info("database bootstrap completed", {
     workspaceCount: state.workspaces.length,
+    workerCount: state.workers.length,
     sessionCount: state.sessions.length,
     authSessionCount: state.authSessions.length,
     sessionShareBindingCount: state.sessionShareBindings.length,
@@ -113,6 +115,54 @@ export async function ensureDatabaseBootstrap(state: PersistedState) {
           null,
           session.binding ? stringifyJson(session.binding) : null,
           stringifyJson(session.capabilityState ?? {}),
+        ],
+      )
+    }
+  }
+
+  async function seedWorkers(input: PersistedState) {
+    const existing = await db.queryRows<ExistingRow>("SELECT id FROM worker_node")
+    const existingIds = new Set(existing.map((item) => item.id))
+    for (const worker of input.workers) {
+      if (existingIds.has(worker.id)) continue
+      // 中文/English: bootstrap seeds the local worker once so P2 scheduling can
+      // move to DB-backed worker discovery without breaking existing installs.
+      await db.execute(
+        `
+          INSERT INTO worker_node (
+            id,
+            tenant_id,
+            organization_id,
+            worker_code,
+            name,
+            base_url,
+            status,
+            capacity,
+            active_session_count,
+            last_heartbeat_at,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          worker.id,
+          worker.tenantId ?? null,
+          worker.organizationId ?? null,
+          worker.workerCode,
+          worker.name,
+          worker.baseUrl,
+          worker.status,
+          worker.capacity,
+          worker.activeSessionCount,
+          worker.lastHeartbeatAt,
+          worker.lastHeartbeatAt,
+          "system_bootstrap",
+          worker.lastHeartbeatAt,
+          "system_bootstrap",
+          null,
         ],
       )
     }

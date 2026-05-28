@@ -2,6 +2,7 @@ import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
 import { AcpProcessClient } from "../acp-process-client"
 import { getCustomModels } from "../config"
 import { createLogger } from "../log"
+import { recordRuntimeFailure } from "../services/runtime-governance/runtime-failure-service"
 import type { BusinessSession } from "../types"
 import { activateSessionRuntime, resetSessionRuntime } from "../services/session/session-lifecycle-service"
 import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
@@ -62,9 +63,18 @@ export async function bindRuntime(
     clearPendingQuestionsBySession(session.id)
     if (consumeClosingSession(session.id)) return
     void Promise.resolve()
-      // 中文/English: unexpected worker exit marks the session failed and clears
+      // 中文/English: unexpected worker exit marks the session orphaned and clears
       // the runtime binding so later reopen starts from a clean runtime boundary.
-      .then(() => resetSessionRuntime(session.id, "failed"))
+      .then(() => resetSessionRuntime(session.id, "orphaned"))
+      .then(() =>
+        recordRuntimeFailure({
+          businessSessionId: session.id,
+          workerId: session.workerId,
+          failureType: "runtime_exit",
+          message: "ACP runtime exited unexpectedly",
+          detail: { code, signal },
+        }),
+      )
       .then(() =>
         persistAndFanout(
           createEvent(

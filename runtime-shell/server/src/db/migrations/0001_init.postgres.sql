@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS worker_node (
   capacity INTEGER NOT NULL,
   active_session_count INTEGER NOT NULL DEFAULT 0,
   last_heartbeat_at TIMESTAMPTZ NOT NULL,
+  version VARCHAR(64),
   created_at TIMESTAMPTZ NOT NULL,
   created_by VARCHAR(64),
   updated_at TIMESTAMPTZ NOT NULL,

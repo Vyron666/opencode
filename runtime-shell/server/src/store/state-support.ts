@@ -197,6 +197,8 @@ function buildDefaultWorkers(timestamp: string): WorkerNode[] {
   return [
     {
       id: "worker_local",
+      tenantId: DEFAULT_TENANT_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
       workerCode: "worker_local",
       name: "opencode-worker",
       baseUrl: Config.opencodeBaseUrl,
@@ -204,6 +206,7 @@ function buildDefaultWorkers(timestamp: string): WorkerNode[] {
       capacity: 1,
       activeSessionCount: 0,
       lastHeartbeatAt: timestamp,
+      version: "local",
     },
   ]
 }

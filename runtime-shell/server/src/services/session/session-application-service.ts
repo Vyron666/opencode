@@ -1,12 +1,15 @@
 import { closeRuntime } from "../../acp-runtime-manager"
-import type { BusinessSession, User } from "../../types"
+import type { User } from "../../types"
 import { buildAccessContext } from "../access/access-context-service"
+import { createRuntimeBinding } from "../runtime-governance/runtime-binding-service"
+import { auditService, sessionService, sessionShareService, userService } from "../store/store-singleton"
+import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { ensureWorkspaceForUser, requireSessionAction } from "./session-access-service"
 import { resetSessionRuntime } from "./session-lifecycle-service"
-import { openSessionWithFallback } from "./session-runtime-service"
+import { markSessionActive, markSessionClosing, markSessionOpening } from "./session-status-machine-service"
 import { sessionSummary } from "./session-summary-service"
-import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
-import { auditService, sessionService, sessionShareService, userService, workerService } from "../store/store-singleton"
+import { openSessionWithFallback } from "./session-runtime-service"
+import { assignWorkerForNewSession, ensureWorkerForSessionOpen } from "./session-worker-assignment-service"
 
 export async function listUserSessionOverview(user: User) {
   const context = await buildAccessContext(user)
@@ -23,15 +26,15 @@ export async function createSessionForUser(input: {
   projectId: string
   workspaceId: string
 }) {
-  const worker = workerService.listWorkers()[0]
-  if (!worker) return { ok: false as const, reason: "worker_not_found" }
-
   const workspaceResult = await ensureWorkspaceForUser({
     user: input.user,
     projectId: input.projectId,
     workspaceId: input.workspaceId,
   })
   if (!workspaceResult.ok) return workspaceResult
+
+  const worker = await assignWorkerForNewSession(input.user)
+  if (!worker) return { ok: false as const, reason: "worker_not_found" }
 
   const session = await sessionService.createSession({
     title: input.title,
@@ -40,6 +43,11 @@ export async function createSessionForUser(input: {
     user: input.user,
     workerId: worker.id,
   })
+  await createRuntimeBinding({
+    businessSessionId: session.id,
+    workerId: worker.id,
+  })
+
   const auditLogTask = auditService.appendAuditLog({
     tenantId: input.user.tenantId,
     organizationId: input.user.organizationId,
@@ -53,6 +61,7 @@ export async function createSessionForUser(input: {
       title: session.title,
       workspaceId: workspaceResult.workspace.id,
       workspacePath: workspaceResult.workspace.rootPath,
+      workerId: worker.id,
     },
   })
   // 中文/English: session creation must not wait for audit durability before responding.
@@ -107,6 +116,7 @@ export async function closeSessionForUser(input: {
   })
   if (!result.ok) return result
 
+  await markSessionClosing(result.session.id)
   const closedReal = await closeRuntime(result.session.id)
   const closed = await resetSessionRuntime(result.session.id, "completed")
   const auditLogTask = auditService.appendAuditLog({
@@ -149,8 +159,23 @@ export async function openSessionForUser(input: {
   })
   if (!workspaceResult.ok) return workspaceResult
 
-  const opened = await openSessionWithFallback(workspaceResult.session)
-  if (!opened) return { ok: false as const, reason: "open_failed" }
+  const recoverableSession = await prepareSessionForOpen(workspaceResult.session)
+  await markSessionOpening(recoverableSession.id)
+  const worker = await ensureWorkerForSessionOpen({
+    user: input.user,
+    session: recoverableSession,
+  })
+  if (!worker) {
+    await resetSessionRuntime(recoverableSession.id, "created")
+    return { ok: false as const, reason: "worker_not_found" }
+  }
+
+  const reopenedSession = (await sessionService.getSession(recoverableSession.id)) || recoverableSession
+  const opened = await openSessionWithFallback(reopenedSession)
+  if (!opened) {
+    await resetSessionRuntime(recoverableSession.id, "created")
+    return { ok: false as const, reason: "open_failed" }
+  }
 
   const auditLogTask = auditService.appendAuditLog({
     tenantId: opened.tenantId,
@@ -161,7 +186,9 @@ export async function openSessionForUser(input: {
     action: "session.open",
     resourceType: "business_session",
     resourceId: opened.id,
-    detail: {},
+    detail: {
+      workerId: worker.id,
+    },
   })
   // 中文/English: runtime open should not block on audit persistence.
   void auditLogTask
@@ -172,104 +199,10 @@ export async function openSessionForUser(input: {
   }
 }
 
-export async function createSessionShareForUser(input: {
-  user: User
-  requestId: string
-  businessSessionId: string
-  targetUserId: string
-}) {
-  if (input.user.id === input.targetUserId) {
-    return { ok: false as const, reason: "share_target_invalid" }
-  }
-  const result = await requireSessionAction({
-    user: input.user,
-    sessionId: input.businessSessionId,
-    action: "share_create",
-  })
-  if (!result.ok) return result
-  const targetUser = userService.getUser(input.targetUserId)
-  if (!targetUser) return { ok: false as const, reason: "target_user_not_found" }
-  if (
-    targetUser.tenantId !== input.user.tenantId ||
-    targetUser.organizationId !== input.user.organizationId
-  ) {
-    return { ok: false as const, reason: "forbidden" }
-  }
-  return await createSessionShareForValidatedUser({
-    actor: input.user,
-    requestId: input.requestId,
-    session: result.session,
-    targetUserId: input.targetUserId,
-  })
-}
-
-export async function deleteSessionShareForUser(input: {
-  user: User
-  requestId: string
-  businessSessionId: string
-  targetUserId: string
-}) {
-  const result = await requireSessionAction({
-    user: input.user,
-    sessionId: input.businessSessionId,
-    action: "share_delete",
-  })
-  if (!result.ok) return result
-  const revoked = await sessionShareService.revokeShareBinding({
-    businessSessionId: result.session.id,
-    targetUserId: input.targetUserId,
-    updatedBy: input.user.id,
-  })
-  if (!revoked) return { ok: false as const, reason: "share_not_found" }
-
-  const auditLogTask = auditService.appendAuditLog({
-    tenantId: result.session.tenantId,
-    organizationId: result.session.organizationId,
-    userId: input.user.id,
-    businessSessionId: result.session.id,
-    requestId: input.requestId,
-    action: "session.unshare",
-    resourceType: "session_share_binding",
-    resourceId: `${result.session.id}:${input.targetUserId}`,
-    detail: {
-      targetUserId: input.targetUserId,
-      workspaceId: result.session.workspaceId,
-    },
-  })
-  void auditLogTask
-
-  return { ok: true as const, success: true }
-}
-
-async function createSessionShareForValidatedUser(input: {
-  actor: User
-  requestId: string
-  session: BusinessSession
-  targetUserId: string
-}) {
-  const binding = await sessionShareService.createShareBinding({
-    session: input.session,
-    ownerUserId: input.actor.id,
-    targetUserId: input.targetUserId,
-  })
-  const auditLogTask = auditService.appendAuditLog({
-    tenantId: input.session.tenantId,
-    organizationId: input.session.organizationId,
-    userId: input.actor.id,
-    businessSessionId: input.session.id,
-    requestId: input.requestId,
-    action: "session.share",
-    resourceType: "session_share_binding",
-    resourceId: binding.id,
-    detail: {
-      targetUserId: input.targetUserId,
-      workspaceId: input.session.workspaceId,
-    },
-  })
-  // 中文/English: share write path should finish after DB state is durable, not after audit persistence.
-  void auditLogTask
-  return {
-    ok: true as const,
-    binding,
-  }
+async function prepareSessionForOpen(session: import("../../types").BusinessSession) {
+  if (session.status !== "orphaned" && session.status !== "failed") return session
+  // 中文/English: if the user can still open the same session/workspace, recover the
+  // runtime boundary transparently so reopening feels like a short reload, not a manual repair flow.
+  await resetSessionRuntime(session.id, "created")
+  return (await sessionService.getSession(session.id)) || session
 }

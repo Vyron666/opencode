@@ -122,8 +122,40 @@ export class StoreService {
     return this.workerService.listWorkers()
   }
 
+  async findWorker(workerId: string) {
+    return this.workerService.findWorkerById(workerId)
+  }
+
+  async listReadyWorkersForUser(user: User) {
+    return this.workerService.listReadyWorkersForUser(user)
+  }
+
+  async listWorkersByStatus(statuses: WorkerNode["status"][]) {
+    return this.workerService.listWorkersByStatus(statuses)
+  }
+
+  async registerWorker(input: {
+    tenantId?: string
+    organizationId?: string
+    workerCode: string
+    name: string
+    baseUrl: string
+    capacity: number
+    version?: string
+  }) {
+    return this.workerService.registerWorker(input)
+  }
+
   async touchWorker(workerId: string, patch?: Partial<WorkerNode>) {
     return this.workerService.touchWorker(workerId, patch)
+  }
+
+  async reportWorkerHeartbeat(workerId: string, patch?: Partial<WorkerNode>) {
+    return this.workerService.reportWorkerHeartbeat(workerId, patch)
+  }
+
+  async listWorkersHeartbeatExpired(expireBefore: string) {
+    return this.workerService.listWorkersHeartbeatExpired(expireBefore)
   }
 
   async listSessions() {

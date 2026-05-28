@@ -3,6 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import { Config } from "../../config"
 import { loginUser, logoutUser } from "../../services/auth/auth-application-service"
 import { sanitizeUser } from "../../services/auth/auth-user-service"
+import { userService } from "../../services/store/store-singleton"
 import { loginSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
@@ -57,6 +58,14 @@ export function registerAuthRoutes(app: Hono) {
     const reqId = requestId(c)
     const user = await requireUser(c)
     if (!user) return unauthorized(c)
-    return c.json(jsonOk({ user: sanitizeUser(user) }, reqId))
+    return c.json(
+      jsonOk(
+        {
+          user: sanitizeUser(user),
+          users: userService.listUsers().map(sanitizeUser),
+        },
+        reqId,
+      ),
+    )
   })
 }

@@ -5,6 +5,7 @@ import type { User } from "../../types"
 import { authorizeSettingsAction } from "../access/authorization-service"
 import { buildAccessContext } from "../access/access-context-service"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
+import { markSessionCreated } from "../session/session-status-machine-service"
 import { auditService, sessionService } from "../store/store-singleton"
 
 export async function listCustomModelsForUser(user: User) {
@@ -106,6 +107,7 @@ export async function saveProviderConfigForUser(input: {
   // Historical created sessions stay untouched and reopen explicitly when needed.
   for (const session of affectedSessions) {
     await closeRuntime(session.id)
+    await markSessionCreated(session.id)
     await resetSessionRuntime(session.id, "created")
   }
 

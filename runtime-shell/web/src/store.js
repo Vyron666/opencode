@@ -34,7 +34,7 @@ export const useStore = create((set, get) => ({
 
   checkAuth: async () => {
     const data = await api.me()
-    set({ user: data.user, isAuthenticated: true })
+    set({ user: data.user, users: data.users || [], isAuthenticated: true })
     return true
   },
 

@@ -2,12 +2,11 @@ import type { Hono } from "hono"
 import {
   closeSessionForUser,
   createSessionForUser,
-  createSessionShareForUser,
-  deleteSessionShareForUser,
   getSessionDetailForUser,
   listUserSessionOverview,
   openSessionForUser,
 } from "../../services/session/session-application-service"
+import { createSessionShareForUser, deleteSessionShareForUser } from "../../services/session/session-share-application-service"
 import { createSessionSchema, sessionIdSchema, sessionShareSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"

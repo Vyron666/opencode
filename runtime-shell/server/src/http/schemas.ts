@@ -147,3 +147,28 @@ export const providerConfigSchema = z.object({
   defaultModel: z.string().min(1),
   models: z.array(providerModelSchema).min(1),
 })
+
+export const workerRegisterSchema = z.object({
+  tenantId: z.string().min(1).optional(),
+  organizationId: z.string().min(1).optional(),
+  nodeCode: z.string().min(1),
+  endpoint: z.string().min(1),
+  version: z.string().min(1).optional(),
+  capacityTotal: z.number().int().positive(),
+  name: z.string().min(1).optional(),
+})
+
+export const workerHeartbeatSchema = z.object({
+  workerNodeId: z.string().min(1),
+  capacityUsed: z.number().int().min(0),
+  status: z.enum(["registering", "ready", "busy", "degraded", "offline", "draining"]),
+})
+
+export const sessionRecoverSchema = z.object({
+  businessSessionId: z.string().min(1),
+})
+
+export const sessionRebindSchema = z.object({
+  businessSessionId: z.string().min(1),
+  reason: z.string().min(1),
+})

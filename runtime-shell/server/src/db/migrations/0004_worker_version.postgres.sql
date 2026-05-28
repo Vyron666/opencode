@@ -1,0 +1,2 @@
+ALTER TABLE worker_node
+  ADD COLUMN IF NOT EXISTS version VARCHAR(64);

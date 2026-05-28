@@ -1,4 +1,6 @@
 import type { AcpBinding, SessionCapabilityState, SessionStatus } from "../../types"
+import { markRuntimeBindingBound, markRuntimeBindingLost, releaseRuntimeBinding } from "../runtime-governance/runtime-binding-service"
+import { refreshRuntimeLease, releaseRuntimeLease } from "../runtime-governance/runtime-lease-service"
 import { sessionService } from "../store/store-singleton"
 
 export async function activateSessionRuntime(input: {
@@ -6,20 +8,44 @@ export async function activateSessionRuntime(input: {
   binding: AcpBinding
   capabilityState?: SessionCapabilityState
 }) {
-  return sessionService.updateSession(input.sessionId, {
+  const updated = await sessionService.updateSession(input.sessionId, {
     status: "active",
     binding: input.binding,
     capabilityState: input.capabilityState,
   })
+  await markRuntimeBindingBound({
+    sessionId: input.sessionId,
+    acpSessionId: input.binding.acpSessionId,
+    runtimeKey: input.binding.runtimeKey,
+  })
+  const liveSession = updated || (await sessionService.getSession(input.sessionId))
+  if (liveSession) {
+    await refreshRuntimeLease({
+      businessSessionId: input.sessionId,
+      workerId: liveSession.workerId,
+      // 中文/English: runtimeKey identifies the current runtime holder, while workerId
+      // keeps the node ownership explicit for offline detection and safe cleanup.
+      leaseOwner: input.binding.runtimeKey,
+    })
+  }
+  return updated
 }
 
 export async function resetSessionRuntime(sessionId: string, status: InactiveSessionStatus) {
-  // 中文/English: once a runtime is closed or lost, the ACP binding must be cleared
-  // so follow-up load/resume logic does not rely on a stale session id.
-  return sessionService.updateSession(sessionId, {
+  // 中文/English: clear the persisted ACP binding on the session first, then
+  // update the runtime binding record so worker load calculations see the new session status.
+  const updated = await sessionService.updateSession(sessionId, {
     status,
     binding: null,
   })
+  if (status === "completed") {
+    await releaseRuntimeBinding(sessionId)
+  }
+  if (status === "failed" || status === "orphaned") {
+    await markRuntimeBindingLost(sessionId)
+  }
+  await releaseRuntimeLease(sessionId)
+  return updated
 }
 
 export async function setSessionStatus(sessionId: string, status: SessionStatus) {
@@ -30,4 +56,4 @@ export async function setSessionStatus(sessionId: string, status: SessionStatus)
   })
 }
 
-type InactiveSessionStatus = Extract<SessionStatus, "created" | "completed" | "failed">
+type InactiveSessionStatus = Extract<SessionStatus, "created" | "completed" | "failed" | "orphaned">

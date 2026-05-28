@@ -1,5 +1,5 @@
 import * as WorkerRepo from "../../repos/worker-repo"
-import type { WorkerNode } from "../../types"
+import type { User, WorkerNode } from "../../types"
 import type { PersistState, ReadState } from "./store-domain-support"
 
 export class StoreWorkerService {
@@ -9,12 +9,45 @@ export class StoreWorkerService {
   ) {}
 
   listWorkers() {
-    return WorkerRepo.listAllWorkers(this.readState())
+    return WorkerRepo.listAllWorkers()
   }
 
   async touchWorker(workerId: string, patch?: Partial<WorkerNode>) {
-    const worker = WorkerRepo.touchWorker(this.readState(), workerId, patch)
-    if (!worker) return
-    await this.persist()
+    return WorkerRepo.updateWorker(workerId, patch ?? {})
+  }
+
+  async reportWorkerHeartbeat(workerId: string, patch?: Partial<WorkerNode>) {
+    return WorkerRepo.updateWorker(workerId, {
+      ...patch,
+      lastHeartbeatAt: new Date().toISOString(),
+    })
+  }
+
+  async registerWorker(input: {
+    tenantId?: string
+    organizationId?: string
+    workerCode: string
+    name: string
+    baseUrl: string
+    capacity: number
+    version?: string
+  }) {
+    return WorkerRepo.registerWorker(input)
+  }
+
+  async findWorkerById(workerId: string) {
+    return WorkerRepo.findWorkerById(workerId)
+  }
+
+  async listReadyWorkersForUser(user: User) {
+    return WorkerRepo.listReadyWorkersForUser(user)
+  }
+
+  async listWorkersByStatus(statuses: WorkerNode["status"][]) {
+    return WorkerRepo.listWorkersByStatus(statuses)
+  }
+
+  async listWorkersHeartbeatExpired(expireBefore: string) {
+    return WorkerRepo.listWorkersHeartbeatExpired(expireBefore)
   }
 }

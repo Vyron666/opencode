@@ -1,5 +1,9 @@
 import type { Hono } from "hono"
 import {
+  recoverSessionForUser,
+  rebindSessionForUser,
+} from "../../services/runtime-governance/runtime-recovery-service"
+import {
   cancelPromptForUser,
   forkSessionRuntimeForUser,
   loadSessionRuntimeForUser,
@@ -15,12 +19,87 @@ import {
   inputSchema,
   modeSchema,
   modelSchema,
+  sessionRecoverSchema,
   sessionIdSchema,
+  sessionRebindSchema,
 } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
 export function registerAcpSessionRoutes(app: Hono) {
+  app.post("/api/acp/session/recover", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = sessionRecoverSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid recover payload", 400, reqId, body.error.flatten()), 400)
+    }
+
+    const result = await recoverSessionForUser({
+      user,
+      businessSessionId: body.data.businessSessionId,
+    })
+    if (!result.ok) {
+      if (result.reason === "session_not_found") {
+        return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_not_found") {
+        return c.json(jsonError("workspace not found", 404, reqId), 404)
+      }
+      if (result.reason === "workspace_disabled") {
+        return c.json(jsonError("workspace is disabled", 409, reqId), 409)
+      }
+      if (result.reason === "invalid_path") {
+        return c.json(jsonError("workspace path is invalid", 409, reqId), 409)
+      }
+      if (result.reason === "invalid_session_status") {
+        return c.json(jsonError("session status does not support recovery", 409, reqId), 409)
+      }
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+
+    return c.json(jsonOk(result.session, reqId))
+  })
+
+  app.post("/api/acp/session/rebind", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = sessionRebindSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid rebind payload", 400, reqId, body.error.flatten()), 400)
+    }
+
+    const result = await rebindSessionForUser({
+      user,
+      businessSessionId: body.data.businessSessionId,
+      reason: body.data.reason,
+    })
+    if (!result.ok) {
+      if (result.reason === "session_not_found") {
+        return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      if (result.reason === "worker_not_found") {
+        return c.json(jsonError("worker not found", 503, reqId), 503)
+      }
+      if (result.reason === "invalid_session_status") {
+        return c.json(jsonError("session status does not support rebind", 409, reqId), 409)
+      }
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+
+    return c.json(
+      jsonOk(
+        {
+          session: result.session,
+          binding: result.binding,
+        },
+        reqId,
+      ),
+    )
+  })
+
   app.post("/api/acp/session/load", async (c) => {
     const reqId = requestId(c)
     const user = await requireUser(c)

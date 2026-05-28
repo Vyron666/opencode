@@ -12,8 +12,14 @@ import { createLogger } from "../../log"
 import type { BusinessSession, User } from "../../types"
 import { requireSessionAction } from "../session/session-access-service"
 import { createSessionEvent } from "../session/session-event-service"
-import { setSessionStatus } from "../session/session-lifecycle-service"
+import {
+  markSessionActive,
+  markSessionCancelling,
+  markSessionFailed,
+  markSessionWaitingInput,
+} from "../session/session-status-machine-service"
 import { sessionSummary } from "../session/session-summary-service"
+import { renewRuntimeLeaseForSession } from "../runtime-governance/runtime-lease-service"
 import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { auditService, sessionService } from "../store/store-singleton"
 import { withLocaleGuidance } from "./runtime-input-service"
@@ -106,8 +112,10 @@ export async function submitPromptForUser(input: {
   if (!runtime || runtime.transport !== "real") {
     return { ok: false as const, reason: "runtime_not_active" }
   }
+  await renewRuntimeLeaseForSession(result.session.id)
 
   const liveSession = await requireLiveSession(result.session.id)
+  await markSessionWaitingInput(liveSession.id)
 
   // 中文/English: publish the user event before prompt starts so SSE shows the turn immediately.
   const userEventTask = publishRuntimeEvent(
@@ -120,8 +128,8 @@ export async function submitPromptForUser(input: {
   void Promise.resolve(promptTask).then(
     async (promptResult) => {
       await runtime.client.flushPendingEvents()
-      await setSessionStatus(liveSession.id, "active")
-      const completedSession = await requireLiveSession(liveSession.id)
+      const completedSession = await restoreActiveSessionIfRunning(liveSession.id)
+      if (!completedSession) return
       await publishRuntimeEvent(
         createSessionEvent(completedSession, "turn_completed", {
           stopReason: promptResult?.stopReason || "unknown",
@@ -139,8 +147,8 @@ export async function submitPromptForUser(input: {
     async (error) => {
       await runtime.client.flushPendingEvents()
       if (isPromptAborted(error)) {
-        await setSessionStatus(liveSession.id, "active")
-        const cancelledSession = await requireLiveSession(liveSession.id)
+        const cancelledSession = await restoreActiveSessionIfRunning(liveSession.id)
+        if (!cancelledSession) return
         await publishRuntimeEvent(
           createSessionEvent(cancelledSession, "turn_completed", {
             stopReason: "cancelled",
@@ -157,8 +165,8 @@ export async function submitPromptForUser(input: {
         return
       }
       const message = error instanceof Error ? error.message : String(error)
-      await setSessionStatus(liveSession.id, "failed")
-      const failedSession = await requireLiveSession(liveSession.id)
+      const failedSession = await markSessionFailedIfRunning(liveSession.id)
+      if (!failedSession) return
       await publishRuntimeEvent(
         createSessionEvent(failedSession, "session_failed", {
           message: `模型调用失败: ${message}`,
@@ -205,8 +213,13 @@ export async function cancelPromptForUser(input: {
     action: "cancel",
   })
   if (!result.ok) return result
-  const success = await cancelRuntimePrompt(result.session.id)
-  if (!success) return { ok: false as const, reason: "runtime_not_active" }
+  const runtime = getRuntime(result.session.id)
+  if (!runtime || runtime.transport !== "real" || !runtime.client.hasActivePrompt()) {
+    return { ok: false as const, reason: "runtime_not_active" }
+  }
+  await renewRuntimeLeaseForSession(result.session.id)
+  await markSessionCancelling(result.session.id)
+  await cancelRuntimePrompt(result.session.id)
 
   const auditLogTask = auditService.appendAuditLog({
     tenantId: result.session.tenantId,
@@ -239,6 +252,7 @@ export async function updateSessionModeForUser(input: {
   if (!runtime || runtime.transport !== "real") {
     return { ok: false as const, reason: "runtime_not_active" }
   }
+  await renewRuntimeLeaseForSession(result.session.id)
   const response = await runtime.client.setSessionMode(input.modeId)
   const current = await sessionService.getSession(result.session.id)
   await sessionService.updateSession(result.session.id, {
@@ -266,6 +280,7 @@ export async function updateSessionModelForUser(input: {
   if (!runtime || runtime.transport !== "real") {
     return { ok: false as const, reason: "runtime_not_active" }
   }
+  await renewRuntimeLeaseForSession(result.session.id)
   const response = await runtime.client.setSessionModel(input.modelId)
   const current = await sessionService.getSession(result.session.id)
   await sessionService.updateSession(result.session.id, {
@@ -294,6 +309,7 @@ export async function updateSessionConfigForUser(input: {
   if (!runtime || runtime.transport !== "real") {
     return { ok: false as const, reason: "runtime_not_active" }
   }
+  await renewRuntimeLeaseForSession(result.session.id)
   const response = await runtime.client.setSessionConfigOption(input.configId, input.value)
   const current = await sessionService.getSession(result.session.id)
   await sessionService.updateSession(result.session.id, {
@@ -311,6 +327,20 @@ async function requireLiveSession(sessionId: string): Promise<BusinessSession> {
   const session = await sessionService.getSession(sessionId)
   if (!session) throw new Error(`session not found: ${sessionId}`)
   return session
+}
+
+async function restoreActiveSessionIfRunning(sessionId: string) {
+  const session = await requireLiveSession(sessionId)
+  if (session.status !== "waiting_input" && session.status !== "cancelling") return
+  await markSessionActive(sessionId)
+  return requireLiveSession(sessionId)
+}
+
+async function markSessionFailedIfRunning(sessionId: string) {
+  const session = await requireLiveSession(sessionId)
+  if (session.status !== "waiting_input" && session.status !== "cancelling") return
+  await markSessionFailed(sessionId)
+  return requireLiveSession(sessionId)
 }
 
 function isPromptAborted(error: unknown) {

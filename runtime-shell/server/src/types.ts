@@ -146,10 +146,12 @@ export type AuditLog = {
   createdAt: string
 }
 
-export type WorkerStatus = "ready" | "offline" | "busy"
+export type WorkerStatus = "registering" | "ready" | "busy" | "degraded" | "offline" | "draining"
 
 export type WorkerNode = {
   id: string
+  tenantId?: string
+  organizationId?: string
   workerCode: string
   name: string
   baseUrl: string
@@ -157,9 +159,72 @@ export type WorkerNode = {
   capacity: number
   activeSessionCount: number
   lastHeartbeatAt: string
+  version?: string
 }
 
-export type SessionStatus = "created" | "active" | "idle" | "completed" | "failed"
+export type WorkerHeartbeat = {
+  id: string
+  workerId: string
+  capacityUsed: number
+  status: WorkerStatus
+  reportedAt: string
+  createdAt: string
+}
+
+export type SessionStatus =
+  | "created"
+  | "opening"
+  | "active"
+  | "waiting_input"
+  | "cancelling"
+  | "closing"
+  | "completed"
+  | "failed"
+  | "orphaned"
+
+export type SessionRuntimeBindingStatus = "binding" | "bound" | "lost" | "releasing" | "released"
+
+export type BusinessSessionRuntimeBinding = {
+  id: string
+  businessSessionId: string
+  workerId: string
+  acpSessionId?: string
+  runtimeKey?: string
+  bindingStatus: SessionRuntimeBindingStatus
+  boundAt: string
+  releasedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type RuntimeLease = {
+  id: string
+  businessSessionId: string
+  workerId: string
+  leaseOwner: string
+  leaseExpiresAt: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type RuntimeFailureType =
+  | "worker_offline"
+  | "runtime_exit"
+  | "open_timeout"
+  | "prompt_timeout"
+  | "close_timeout"
+  | "binding_conflict"
+
+export type RuntimeFailureLog = {
+  id: string
+  businessSessionId?: string
+  workerId?: string
+  failureType: RuntimeFailureType
+  message?: string
+  detail?: Record<string, unknown>
+  createdAt: string
+}
 
 export type SessionCapabilityState = {
   modelId?: string

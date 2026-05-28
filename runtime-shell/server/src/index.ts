@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { Config } from "./config"
 import { createLogger } from "./log"
 import { ensureRuntimeConfigInitialized } from "./provider-config"
+import { startRuntimeGovernanceLoop } from "./services/runtime-governance/runtime-governance-loop"
 import { store } from "./store"
 import { registerStaticRoutes } from "./http/routes/static-routes"
 import { registerAuthRoutes } from "./http/routes/auth-routes"
@@ -20,6 +21,7 @@ registerInteractionRoutes(app)
 
 await store.load()
 await ensureRuntimeConfigInitialized()
+startRuntimeGovernanceLoop()
 
 log.info("server started", { host: Config.host, port: Config.port })
 

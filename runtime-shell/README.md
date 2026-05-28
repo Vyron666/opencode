@@ -42,3 +42,35 @@ docker compose up --build
 - `admin / change-me`
 - `developer / change-me`
 - `developer-secondary / change-me`
+
+## E2E
+
+当前仓库内置了 4 组可重复执行的端到端脚本：
+
+- `bun run e2e:smoke`
+  - 服务端基础链路：登录、创建会话、打开、发送消息、读取详情、关闭
+- `bun run e2e:scope`
+  - 多用户作用域边界：工作区隔离、会话不可见、事件流不可越权访问
+- `bun run e2e:share`
+  - 会话分享权限：分享前不可见、分享后可协作、受限动作禁止
+- `bun run e2e:web`
+  - 前端浏览器联调：登录、创建会话、`会话共享` 面板、`Worker 运行视图`、共享后协作受限提示
+
+前端联调脚本依赖 `playwright`：
+
+```bash
+cd runtime-shell
+bun install
+bun run e2e:web
+```
+
+如需指定部署地址或账号，可使用环境变量：
+
+```bash
+RUNTIME_SHELL_WEB_BASE_URL=http://127.0.0.1:3100 \
+RUNTIME_SHELL_WEB_ADMIN_USERNAME=admin \
+RUNTIME_SHELL_WEB_ADMIN_PASSWORD=change-me \
+RUNTIME_SHELL_WEB_SHARED_USERNAME=developer-secondary \
+RUNTIME_SHELL_WEB_SHARED_PASSWORD=change-me \
+bun run e2e:web
+```
