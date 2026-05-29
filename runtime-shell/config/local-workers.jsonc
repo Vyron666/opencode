@@ -1,0 +1,6 @@
+{
+  // 中文/English: change only this count to boot a different number of local opencode-worker nodes.
+  "count": 3,
+  // 中文/English: scheduler capacity advertised by each generated local worker node.
+  "capacity": 8
+}

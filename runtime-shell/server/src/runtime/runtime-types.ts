@@ -6,7 +6,7 @@ import type {
   NewSessionResponse,
   ResumeSessionResponse,
 } from "@agentclientprotocol/sdk"
-import type { AcpProcessClient } from "../acp-process-client"
+import type { AcpProcessClient } from "../acp/acp-process-client"
 
 export type RuntimeEntry = {
   client: AcpProcessClient

@@ -9,6 +9,12 @@ import {
   mergeCapabilities,
   parseConfigValue,
 } from '../capabilities'
+import {
+  readLocationCurrentSessionId,
+  readStoredCurrentSessionId,
+  writeCurrentSessionIdToLocation,
+  writeStoredCurrentSessionId,
+} from '../session-selection-support'
 import { createRequestFailureHandler } from './interaction-action-support'
 import { deriveRunningStateFromEvents } from '../runtime-phase'
 
@@ -17,9 +23,24 @@ export function createSessionActions(input) {
     setCurrentSession: (id) => {
       input.get().disconnectSSE()
       writeStoredCurrentSessionId(input.get().user?.id, id)
+      writeCurrentSessionIdToLocation(id, 'push')
       input.set((state) =>
         input.resetConversationState({
           currentSessionId: id,
+          sessionSelectionVersion: state.sessionSelectionVersion + 1,
+        }),
+      )
+    },
+
+    syncCurrentSessionFromLocation: () => {
+      const currentSessionId = input.get().currentSessionId
+      const nextSessionId = readLocationCurrentSessionId(input.get().sessions)
+      if (nextSessionId === currentSessionId) return
+      input.get().disconnectSSE()
+      writeStoredCurrentSessionId(input.get().user?.id, nextSessionId)
+      input.set((state) =>
+        input.resetConversationState({
+          currentSessionId: nextSessionId,
           sessionSelectionVersion: state.sessionSelectionVersion + 1,
         }),
       )
@@ -31,7 +52,7 @@ export function createSessionActions(input) {
       const nextSessions = Array.isArray(data.items) ? data.items : []
       const nextWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : []
       const restoredSessionId = !currentSessionId
-        ? readStoredCurrentSessionId(input.get().user?.id, nextSessions)
+        ? readLocationCurrentSessionId(nextSessions) || readStoredCurrentSessionId(input.get().user?.id, nextSessions)
         : ''
       const hasCurrentSession = currentSessionId
         ? nextSessions.some((session) => session.id === currentSessionId)
@@ -40,6 +61,10 @@ export function createSessionActions(input) {
       if (!currentSessionId || hasCurrentSession) {
         if (currentSessionId) {
           writeStoredCurrentSessionId(input.get().user?.id, currentSessionId)
+          writeCurrentSessionIdToLocation(currentSessionId, 'replace')
+        } else if (restoredSessionId) {
+          writeStoredCurrentSessionId(input.get().user?.id, restoredSessionId)
+          writeCurrentSessionIdToLocation(restoredSessionId, 'replace')
         }
         input.set((state) => ({
           sessions: nextSessions,
@@ -57,6 +82,7 @@ export function createSessionActions(input) {
       // clear client-side runtime state so the UI does not keep operating on a stale session.
       input.get().disconnectSSE()
       writeStoredCurrentSessionId(input.get().user?.id, '')
+      writeCurrentSessionIdToLocation('', 'replace')
       input.set((state) =>
         input.resetConversationState({
           sessions: nextSessions,
@@ -90,6 +116,7 @@ export function createSessionActions(input) {
         // clear the stale selection immediately so the UI returns to a safe idle state.
         input.get().disconnectSSE()
         writeStoredCurrentSessionId(input.get().user?.id, '')
+        writeCurrentSessionIdToLocation('', 'replace')
         input.set((state) =>
           input.resetConversationState({
             sessions: state.sessions.filter((session) => session.id !== currentSessionId),
@@ -163,6 +190,7 @@ export function createSessionActions(input) {
         }),
       )
       writeStoredCurrentSessionId(input.get().user?.id, session.id)
+      writeCurrentSessionIdToLocation(session.id, 'push')
       await input.get().activateSession().then(
         (value) => value,
         createRequestFailureHandler(input, { pendingSessionAction: '' }, '打开新会话失败'),
@@ -233,6 +261,7 @@ export function createSessionActions(input) {
       )
       input.get().disconnectSSE()
       writeStoredCurrentSessionId(input.get().user?.id, '')
+      writeCurrentSessionIdToLocation('', 'push')
       input.set((state) =>
         input.resetConversationState({
           currentSessionId: '',
@@ -315,6 +344,7 @@ export function createSessionActions(input) {
         createRequestFailureHandler(input, { pendingSessionAction: '' }, '刷新会话列表失败'),
       )
       writeStoredCurrentSessionId(input.get().user?.id, forked.id)
+      writeCurrentSessionIdToLocation(forked.id, 'push')
       input.set((state) => ({
         currentSessionId: forked.id,
         sessionSelectionVersion: state.sessionSelectionVersion + 1,
@@ -411,40 +441,4 @@ export function createSessionActions(input) {
 function isLatestSessionSelection(input, sessionId, sessionSelectionVersion) {
   const state = input.get()
   return state.currentSessionId === sessionId && state.sessionSelectionVersion === sessionSelectionVersion
-}
-
-function readStoredCurrentSessionId(userId, sessions) {
-  const storedId = readStoredSessionValue(userId)
-  if (!storedId) return ''
-  if (sessions.some((session) => session.id === storedId)) return storedId
-  writeStoredCurrentSessionId(userId, '')
-  return ''
-}
-
-function writeStoredCurrentSessionId(userId, sessionId) {
-  const storage = getSessionSelectionStorage()
-  const key = buildSessionSelectionStorageKey(userId)
-  if (!storage || !key) return
-  if (!sessionId) {
-    storage.removeItem(key)
-    return
-  }
-  storage.setItem(key, sessionId)
-}
-
-function readStoredSessionValue(userId) {
-  const storage = getSessionSelectionStorage()
-  const key = buildSessionSelectionStorageKey(userId)
-  if (!storage || !key) return ''
-  return storage.getItem(key) || ''
-}
-
-function buildSessionSelectionStorageKey(userId) {
-  if (!userId) return ''
-  return `runtime-shell.current-session.${userId}`
-}
-
-function getSessionSelectionStorage() {
-  if (typeof window === 'undefined') return null
-  return window.localStorage
 }

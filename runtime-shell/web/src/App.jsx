@@ -11,6 +11,7 @@ export default function App() {
   const checkAuth = useStore((state) => state.checkAuth)
   const loadSessions = useStore((state) => state.loadSessions)
   const setFlash = useStore((state) => state.setFlash)
+  const syncCurrentSessionFromLocation = useStore((state) => state.syncCurrentSessionFromLocation)
 
   useEffect(() => {
     // 中文/English: dedupe the initial auth bootstrap so React StrictMode
@@ -60,6 +61,19 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [isAuthenticated, loadSessions])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const handlePopState = () => {
+      syncCurrentSessionFromLocation()
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [isAuthenticated, syncCurrentSessionFromLocation])
 
   return (
     <div className="h-dvh w-full overflow-hidden">

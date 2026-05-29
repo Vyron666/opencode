@@ -315,7 +315,7 @@ export async function listWorkersHeartbeatExpired(expireBefore: string) {
         version
       FROM worker_node
       WHERE last_heartbeat_at < ?
-        AND status IN ('registering', 'ready', 'busy', 'degraded')
+        AND status IN ('registering', 'ready', 'busy', 'degraded', 'offline', 'draining')
         AND deleted_at IS NULL
       ORDER BY last_heartbeat_at ASC
     `,

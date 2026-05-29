@@ -7,6 +7,15 @@ export type CustomModel = {
   providerId?: string
 }
 
+export type LocalWorkerConfig = {
+  id: string
+  workerCode: string
+  name: string
+  baseUrl: string
+  capacity: number
+  version?: string
+}
+
 function parseCustomModels(raw: string): CustomModel[] {
   const errors: ParseError[] = []
   const parsed = parse(raw, errors)
@@ -25,6 +34,10 @@ async function loadCustomModelsFile(filePath: string): Promise<CustomModel[]> {
 
 let customModelsCache: CustomModel[] | null = null
 
+export function getCustomModelsFilePath() {
+  return process.env.RUNTIME_SHELL_CUSTOM_MODELS_FILE || `${Config.dataFile}.custom-models.json`
+}
+
 export async function getCustomModels(): Promise<CustomModel[]> {
   if (customModelsCache !== null) return customModelsCache
   const envRaw = process.env.RUNTIME_SHELL_CUSTOM_MODELS
@@ -33,7 +46,7 @@ export async function getCustomModels(): Promise<CustomModel[]> {
   } else {
     customModelsCache = []
   }
-  const filePath = process.env.RUNTIME_SHELL_CUSTOM_MODELS_FILE || path.resolve(process.cwd(), "./data/custom-models.json")
+  const filePath = getCustomModelsFilePath()
   const fileModels = await loadCustomModelsFile(filePath)
   const merged = new Map<string, CustomModel>()
   customModelsCache.forEach((m) => merged.set(m.modelId, m))
@@ -44,6 +57,43 @@ export async function getCustomModels(): Promise<CustomModel[]> {
 
 export function invalidateCustomModelsCache() {
   customModelsCache = null
+}
+
+function parseLocalWorkers(raw: string | undefined) {
+  if (!raw) return []
+  const errors: ParseError[] = []
+  const parsed = parse(raw, errors)
+  if (errors.length > 0 || !Array.isArray(parsed)) return []
+  return parsed.flatMap((item) => {
+    if (!item || typeof item !== "object") return []
+    const baseUrl = typeof item.baseUrl === "string" ? item.baseUrl.replace(/\/+$/, "") : ""
+    const id = typeof item.id === "string" ? item.id : ""
+    const workerCode = typeof item.workerCode === "string" ? item.workerCode : id
+    const name = typeof item.name === "string" ? item.name : workerCode
+    const capacity = Number(item.capacity)
+    if (!id || !workerCode || !name || !baseUrl || !Number.isFinite(capacity) || capacity <= 0) return []
+    return [{
+      id,
+      workerCode,
+      name,
+      baseUrl,
+      capacity,
+      version: typeof item.version === "string" ? item.version : undefined,
+    } satisfies LocalWorkerConfig]
+  })
+}
+
+function readLocalWorkers() {
+  const configured = parseLocalWorkers(process.env.RUNTIME_SHELL_LOCAL_WORKERS)
+  if (configured.length > 0) return configured
+  return [{
+    id: "worker_local",
+    workerCode: "worker_local",
+    name: "opencode-worker",
+    baseUrl: (process.env.OPENCODE_BASE_URL || "http://127.0.0.1:4096").replace(/\/+$/, ""),
+    capacity: 16,
+    version: "local",
+  }] satisfies LocalWorkerConfig[]
 }
 
 export const Config = {
@@ -58,6 +108,9 @@ export const Config = {
   opencodeBaseUrl: (process.env.OPENCODE_BASE_URL || "http://127.0.0.1:4096").replace(/\/+$/, ""),
   opencodeUsername: process.env.OPENCODE_SERVER_USERNAME || "opencode",
   opencodePassword: process.env.OPENCODE_SERVER_PASSWORD || "",
+  // 中文/English: keep a small explicit local worker list so scheduler and governance
+  // can exercise multi-node behavior before remote execution is fully separated.
+  localWorkers: readLocalWorkers(),
   workerHeartbeatTimeoutMs: Number(process.env.RUNTIME_SHELL_WORKER_HEARTBEAT_TIMEOUT_MS || "30000"),
   // 中文/English: keep runtime lease much longer than a brief user idle period so
   // reopening the same session/workspace usually continues without manual recovery.

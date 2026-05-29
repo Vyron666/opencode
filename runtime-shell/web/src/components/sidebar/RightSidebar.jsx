@@ -26,7 +26,7 @@ export default function RightSidebar() {
   }
 
   return (
-    <aside className="sidebar-right min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden max-[1100px]:hidden">
+    <aside className="sidebar-right min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden max-[1100px]:order-2 max-[1100px]:h-auto max-[1100px]:overflow-visible">
       <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 relative min-h-0">
         <button
           onClick={() => setCollapsed(true)}

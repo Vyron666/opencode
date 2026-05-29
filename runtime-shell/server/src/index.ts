@@ -4,6 +4,7 @@ import { createLogger } from "./log"
 import { ensureRuntimeConfigInitialized } from "./provider-config"
 import { startRuntimeGovernanceLoop } from "./services/runtime-governance/runtime-governance-loop"
 import { runtimeStore } from "./services/store/store-singleton"
+import { startLocalWorkerHeartbeatLoop } from "./services/worker/local-worker-heartbeat-loop"
 import { registerStaticRoutes } from "./http/routes/static-routes"
 import { registerAuthRoutes } from "./http/routes/auth-routes"
 import { registerSystemRoutes } from "./http/routes/system-routes"
@@ -21,6 +22,7 @@ registerInteractionRoutes(app)
 
 await runtimeStore.load()
 await ensureRuntimeConfigInitialized()
+startLocalWorkerHeartbeatLoop()
 startRuntimeGovernanceLoop()
 
 log.info("server started", { host: Config.host, port: Config.port })

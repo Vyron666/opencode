@@ -16,6 +16,7 @@ import {
   resolvePendingQuestion as resolvePendingQuestionInternal,
 } from "./runtime-registry"
 import { toElicitationContent } from "./runtime-types"
+import { stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
 
 export { getRuntime, listPendingPermissions, resolvePendingPermission, listPendingQuestions, subscribeRuntimeEvents }
 
@@ -120,6 +121,7 @@ export async function closeRuntime(sessionId: string) {
   const runtime = getRuntime(sessionId)
   if (!runtime) return false
   const session = await sessionService.getSession(sessionId)
+  stopRuntimeLeaseAutoRenew(sessionId)
   deleteRuntime(sessionId)
   clearPendingPermissionsBySession(sessionId)
   clearPendingQuestionsBySession(sessionId)

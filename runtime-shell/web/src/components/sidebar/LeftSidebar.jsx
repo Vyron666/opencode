@@ -21,7 +21,7 @@ export default function LeftSidebar() {
   const hasCurrentSession = Boolean(currentSessionId)
 
   return (
-    <aside className="min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden">
+    <aside className="min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden max-[1100px]:order-1 max-[1100px]:h-auto max-[1100px]:overflow-visible">
       <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
         <div className="flex gap-3 items-start">
           <div

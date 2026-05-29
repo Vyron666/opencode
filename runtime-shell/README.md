@@ -29,10 +29,11 @@ bun run dev
 
 ```bash
 cd runtime-shell
-docker compose up --build
+bun run docker:up
 ```
 
 访问 `http://localhost:3100`（runtime-shell），`opencode-worker` 仅在容器网络内暴露 `4096`。
+本地 worker 数量由 [config/local-workers.jsonc](/d:/开发工作/opencode/runtime-shell/config/local-workers.jsonc) 控制；修改 `count` 后重新执行 `bun run docker:up`，即可按配置拉起不同数量的 `opencode-worker` 节点。
 
 首次启动时，`runtime-shell` 会在仓库根目录的 `.opencode/opencode.jsonc` 中自动初始化运行时配置；
 该目录已通过 Docker 挂载持久化，前端保存的 `apiKey` 和 Provider 配置在容器重建后仍会保留。

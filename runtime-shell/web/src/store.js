@@ -4,6 +4,7 @@ import { createConversationState } from './components/chat/conversation-blocks'
 import { buildCapabilitiesFromSession, DEFAULT_CAPABILITIES, mergeCapabilities } from './store/capabilities'
 import { createInteractionActions } from './store/actions/interaction-actions'
 import { createSessionActions } from './store/actions/session-actions'
+import { clearCurrentSessionLocation } from './store/session-selection-support'
 import { createWorkspaceActions } from './store/actions/workspace-actions'
 import { createSseActions } from './store/sse/sse-runtime'
 import {
@@ -30,6 +31,7 @@ export const useStore = create((set, get) => ({
   logout: async () => {
     await api.logout()
     get().disconnectSSE()
+    clearCurrentSessionLocation()
     set(resetSessionState({ user: null, users: [], sessions: [], workspaces: [], isAuthenticated: false }))
   },
 

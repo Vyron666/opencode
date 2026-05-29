@@ -1,8 +1,9 @@
 import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
-import { AcpProcessClient } from "../acp-process-client"
+import { AcpProcessClient } from "../acp/acp-process-client"
 import { getCustomModels } from "../config"
 import { createLogger } from "../log"
 import { recordRuntimeFailure } from "../services/runtime-governance/runtime-failure-service"
+import { startRuntimeLeaseAutoRenew, stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
 import type { BusinessSession } from "../types"
 import { activateSessionRuntime, resetSessionRuntime } from "../services/session/session-lifecycle-service"
 import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
@@ -57,7 +58,9 @@ export async function bindRuntime(
 
   const runtime: RuntimeEntry = { client, transport: "real" }
   setRuntime(session.id, runtime)
+  startRuntimeLeaseAutoRenew(session.id)
   client.onExit((code, signal) => {
+    stopRuntimeLeaseAutoRenew(session.id)
     deleteRuntime(session.id)
     clearPendingPermissionsBySession(session.id)
     clearPendingQuestionsBySession(session.id)

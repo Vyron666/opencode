@@ -1,9 +1,8 @@
 import { closeRuntime, getRuntime } from "../../acp-runtime-manager"
-import { Config, getCustomModels, invalidateCustomModelsCache } from "../../config"
+import { getCustomModels, getCustomModelsFilePath, invalidateCustomModelsCache } from "../../config"
 import { listProviderConfigs, saveProviderConfig } from "../../provider-config"
 import type { User } from "../../types"
 import { authorizeSettingsAction } from "../access/authorization-service"
-import { buildAccessContext } from "../access/access-context-service"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
 import { markSessionCreated } from "../session/session-status-machine-service"
 import { auditService, sessionService } from "../store/store-singleton"
@@ -15,10 +14,9 @@ export async function listCustomModelsForUser(user: User) {
     action: "list",
   })
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
-  const context = await buildAccessContext(user)
   return {
     ok: true as const,
-    items: context.workspaceIds.size || context.sessionIds.size ? await getCustomModels() : [],
+    items: await getCustomModels(),
   }
 }
 
@@ -33,7 +31,7 @@ export async function saveCustomModelsForUser(input: {
     action: "save",
   })
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
-  const filePath = process.env.RUNTIME_SHELL_CUSTOM_MODELS_FILE || `${Config.dataFile}.custom-models.json`
+  const filePath = getCustomModelsFilePath()
   await Bun.write(filePath, JSON.stringify(input.models, null, 2))
   invalidateCustomModelsCache()
   const auditLogTask = auditService.appendAuditLog({
@@ -63,10 +61,9 @@ export async function listProviderConfigsForUser(user: User) {
     action: "list",
   })
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
-  const context = await buildAccessContext(user)
   return {
     ok: true as const,
-    items: context.workspaceIds.size || context.sessionIds.size ? await listProviderConfigs() : [],
+    items: await listProviderConfigs(),
   }
 }
 

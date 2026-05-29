@@ -85,8 +85,11 @@ function normalizeWorkers(inputWorkers: PersistedState["workers"], defaultWorker
       baseUrl: defaultWorker.baseUrl,
       status: defaultWorker.status,
       capacity: defaultWorker.capacity,
-      activeSessionCount: current.activeSessionCount,
-      lastHeartbeatAt: current.lastHeartbeatAt,
+      // 中文/English: local default workers are owned by the current runtime-shell
+      // process, so boot should reset their load/heartbeat instead of keeping stale
+      // values from a previous instance.
+      activeSessionCount: defaultWorker.activeSessionCount,
+      lastHeartbeatAt: defaultWorker.lastHeartbeatAt,
     }
   })
   const extraWorkers = inputWorkers.filter((worker) => !defaultsById.has(worker.id))
@@ -219,21 +222,19 @@ function buildDefaultWorkspaces(timestamp: string): Workspace[] {
 }
 
 function buildDefaultWorkers(timestamp: string): WorkerNode[] {
-  return [
-    {
-      id: "worker_local",
-      tenantId: DEFAULT_TENANT_ID,
-      organizationId: DEFAULT_ORGANIZATION_ID,
-      workerCode: "worker_local",
-      name: "opencode-worker",
-      baseUrl: Config.opencodeBaseUrl,
-      status: "ready",
-      // 中文/English: local development should tolerate a few concurrent sessions,
-      // otherwise one active session makes the whole shell feel "stuck" for other users.
-      capacity: 16,
-      activeSessionCount: 0,
-      lastHeartbeatAt: timestamp,
-      version: "local",
-    },
-  ]
+  return Config.localWorkers.map((worker) => ({
+    id: worker.id,
+    tenantId: DEFAULT_TENANT_ID,
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    workerCode: worker.workerCode,
+    name: worker.name,
+    baseUrl: worker.baseUrl,
+    status: "ready",
+    // 中文/English: local development should tolerate a few concurrent sessions,
+    // otherwise one active session makes the whole shell feel "stuck" for other users.
+    capacity: worker.capacity,
+    activeSessionCount: 0,
+    lastHeartbeatAt: timestamp,
+    version: worker.version || "local",
+  }))
 }

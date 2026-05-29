@@ -1,5 +1,6 @@
 import { Config } from "../../config"
 import { createLogger } from "../../log"
+import { closeRuntime } from "../../acp-runtime-manager"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
 import { sessionService, workerService } from "../store/store-singleton"
 import { markRuntimeBindingLost } from "./runtime-binding-service"
@@ -35,21 +36,27 @@ async function markHeartbeatExpiredWorkersOffline() {
   const sessions = await sessionService.listSessions()
   for (const worker of expiredWorkers) {
     if (!(await hasWorkerHeartbeat(worker.id))) continue
-    await workerService.touchWorker(worker.id, {
-      status: "offline",
-    })
-    await recordRuntimeFailure({
-      workerId: worker.id,
-      failureType: "worker_offline",
-      message: "worker heartbeat timed out",
-      detail: { lastHeartbeatAt: worker.lastHeartbeatAt },
-    })
+    if (worker.status !== "offline") {
+      await workerService.touchWorker(worker.id, {
+        status: "offline",
+      })
+      await recordRuntimeFailure({
+        workerId: worker.id,
+        failureType: "worker_offline",
+        message: "worker heartbeat timed out",
+        detail: { lastHeartbeatAt: worker.lastHeartbeatAt },
+      })
+    }
     const affectedSessions = sessions.filter(
       (session) =>
         session.workerId === worker.id &&
         (session.status === "active" || session.status === "waiting_input" || session.status === "opening"),
     )
     for (const session of affectedSessions) {
+      // 中文/English: once the worker heartbeat is judged offline, the stale runtime
+      // process must be closed too; otherwise reopen can accidentally reuse a detached
+      // in-memory runtime and return to active without rebuilding binding/lease state.
+      await closeRuntime(session.id)
       await markRuntimeBindingLost(session.id)
       await resetSessionRuntime(session.id, "orphaned")
       await recordRuntimeFailure({
@@ -66,6 +73,9 @@ async function cleanupExpiredRuntimeLeases() {
   const expiredLeases = await listExpiredRuntimeLeases()
   for (const lease of expiredLeases) {
     const session = await sessionService.getSession(lease.businessSessionId)
+    // 中文/English: lease expiry means the current runtime ownership is no longer
+    // trusted, so close any live runtime before clearing persisted ownership metadata.
+    await closeRuntime(lease.businessSessionId)
     await releaseRuntimeLease(lease.businessSessionId)
     await markRuntimeBindingLost(lease.businessSessionId)
     if (session && (session.status === "active" || session.status === "waiting_input" || session.status === "opening")) {

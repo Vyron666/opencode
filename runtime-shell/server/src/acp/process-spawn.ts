@@ -1,4 +1,6 @@
 import path from "node:path"
+import os from "node:os"
+import fs from "node:fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { createLogger } from "../log"
 import type { RuntimeClientOptions } from "./types"
@@ -6,6 +8,7 @@ import type { RuntimeClientOptions } from "./types"
 const log = createLogger("acp")
 
 export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWithoutNullStreams {
+  ensureLocalOpencodeDbMarker()
   const env = {
     ...process.env,
     // 中文/English: Docker 内也要保证子进程能解析 PATH 里的命令。
@@ -35,6 +38,16 @@ export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWith
     cwd: spawnCwd,
     env,
   })
+}
+
+function ensureLocalOpencodeDbMarker() {
+  const dataDir = path.join(os.homedir(), ".local", "share", "opencode")
+  const marker = path.join(dataDir, "opencode.db")
+  fs.mkdirSync(dataDir, { recursive: true })
+  if (fs.existsSync(marker)) return
+  // 中文/English: touch the default db marker before concurrent ACP boot so
+  // multiple first-open sessions do not race on the one-time json migration gate.
+  fs.closeSync(fs.openSync(marker, "a"))
 }
 
 export function logAcpStderr(proc: ChildProcessWithoutNullStreams) {
