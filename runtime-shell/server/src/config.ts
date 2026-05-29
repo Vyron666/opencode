@@ -12,6 +12,7 @@ export type LocalWorkerConfig = {
   workerCode: string
   name: string
   baseUrl: string
+  agentBaseUrl?: string
   capacity: number
   version?: string
 }
@@ -67,6 +68,12 @@ function parseLocalWorkers(raw: string | undefined) {
   return parsed.flatMap((item) => {
     if (!item || typeof item !== "object") return []
     const baseUrl = typeof item.baseUrl === "string" ? item.baseUrl.replace(/\/+$/, "") : ""
+    const agentBaseUrl =
+      typeof item.agentBaseUrl === "string" && item.agentBaseUrl
+        ? item.agentBaseUrl.replace(/\/+$/, "")
+        : baseUrl
+          ? baseUrl.replace(/:\d+$/, ":4097")
+          : ""
     const id = typeof item.id === "string" ? item.id : ""
     const workerCode = typeof item.workerCode === "string" ? item.workerCode : id
     const name = typeof item.name === "string" ? item.name : workerCode
@@ -77,6 +84,7 @@ function parseLocalWorkers(raw: string | undefined) {
       workerCode,
       name,
       baseUrl,
+      agentBaseUrl,
       capacity,
       version: typeof item.version === "string" ? item.version : undefined,
     } satisfies LocalWorkerConfig]
@@ -91,9 +99,14 @@ function readLocalWorkers() {
     workerCode: "worker_local",
     name: "opencode-worker",
     baseUrl: (process.env.OPENCODE_BASE_URL || "http://127.0.0.1:4096").replace(/\/+$/, ""),
+    agentBaseUrl: (process.env.RUNTIME_SHELL_WORKER_AGENT_BASE_URL || "http://127.0.0.1:4097").replace(/\/+$/, ""),
     capacity: 16,
     version: "local",
   }] satisfies LocalWorkerConfig[]
+}
+
+export function findLocalWorkerConfig(workerId: string) {
+  return Config.localWorkers.find((worker) => worker.id === workerId)
 }
 
 export const Config = {
@@ -108,6 +121,8 @@ export const Config = {
   opencodeBaseUrl: (process.env.OPENCODE_BASE_URL || "http://127.0.0.1:4096").replace(/\/+$/, ""),
   opencodeUsername: process.env.OPENCODE_SERVER_USERNAME || "opencode",
   opencodePassword: process.env.OPENCODE_SERVER_PASSWORD || "",
+  workerAgentToken: process.env.RUNTIME_SHELL_WORKER_AGENT_TOKEN || "change-me-worker-agent",
+  workerExecutionMode: process.env.RUNTIME_SHELL_WORKER_EXECUTION_MODE || "local",
   // 中文/English: keep a small explicit local worker list so scheduler and governance
   // can exercise multi-node behavior before remote execution is fully separated.
   localWorkers: readLocalWorkers(),

@@ -40,7 +40,7 @@ async function beatLocalWorker() {
           session.status === "cancelling" ||
           session.status === "closing"),
       ).length
-      if (!(await isLocalWorkerReachable(localWorker.baseUrl))) {
+      if (!(await isLocalWorkerReachable(localWorker))) {
         // 中文/English: when the real worker endpoint is down, do not refresh heartbeat
         // timestamps here, otherwise governance can never observe the node as stale/offline.
         await workerService.touchWorker(localWorker.id, {
@@ -63,16 +63,25 @@ async function beatLocalWorker() {
   )
 }
 
-async function isLocalWorkerReachable(baseUrl: string) {
+async function isLocalWorkerReachable(worker: { baseUrl: string; agentBaseUrl?: string }) {
   try {
-    const response = await fetch(`${baseUrl}/global/health`, {
+    const response = await fetch(`${worker.baseUrl}/global/health`, {
       headers: readLocalWorkerAuthHeaders(),
       signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
     })
-    return response.ok
+    if (!response.ok) return false
+    if (Config.workerExecutionMode !== "remote" || !worker.agentBaseUrl) return true
+    const agentResponse = await fetch(`${worker.agentBaseUrl}/healthz`, {
+      headers: {
+        "x-runtime-worker-token": Config.workerAgentToken,
+      },
+      signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
+    })
+    return agentResponse.ok
   } catch (error) {
     log.warn("local worker probe failed", {
-      baseUrl,
+      baseUrl: worker.baseUrl,
+      agentBaseUrl: worker.agentBaseUrl,
       error: error instanceof Error ? error.message : String(error),
     })
     return false

@@ -10,6 +10,7 @@ import { registerAuthRoutes } from "./http/routes/auth-routes"
 import { registerSystemRoutes } from "./http/routes/system-routes"
 import { registerSessionRoutes } from "./http/routes/session-routes"
 import { registerInteractionRoutes } from "./http/routes/interaction-routes"
+import { registerInternalRuntimeRoutes } from "./http/routes/internal-runtime-routes"
 
 const log = createLogger("http")
 const app = new Hono()
@@ -19,6 +20,7 @@ registerAuthRoutes(app)
 registerSystemRoutes(app)
 registerSessionRoutes(app)
 registerInteractionRoutes(app)
+registerInternalRuntimeRoutes(app)
 
 await runtimeStore.load()
 await ensureRuntimeConfigInitialized()

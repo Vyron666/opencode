@@ -168,12 +168,9 @@ export function createSessionActions(input) {
         (value) => value,
         createRequestFailureHandler(input, { pendingSessionAction: '' }, '创建会话失败'),
       )
-      await input.get().loadSessions().then(
-        (value) => value,
-        createRequestFailureHandler(input, { pendingSessionAction: '' }, '刷新会话列表失败'),
-      )
       input.set((state) =>
         input.resetConversationState({
+          sessions: upsertSessionSummary(state.sessions, session),
           currentSessionId: session.id,
           sessionSelectionVersion: state.sessionSelectionVersion + 1,
           // 中文/English: seed the newly created session into view first, then let
@@ -204,12 +201,13 @@ export function createSessionActions(input) {
       if (input.get().pendingSessionAction === 'activate') return
       input.set({ pendingSessionAction: 'activate' })
 
-      const detail = await input.get().loadSessionDetail().then(
-        (value) => value,
-        createRequestFailureHandler(input, { pendingSessionAction: '' }, '读取会话详情失败'),
-      )
+      const session =
+        readSelectedSessionSummary(input, currentSessionId) ||
+        (await input.get().loadSessionDetail().then(
+          (value) => value?.session,
+          createRequestFailureHandler(input, { pendingSessionAction: '' }, '读取会话详情失败'),
+        ))
       if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
-      const session = detail?.session
       if (!session) {
         input.set({ pendingSessionAction: '' })
         return
@@ -441,4 +439,16 @@ export function createSessionActions(input) {
 function isLatestSessionSelection(input, sessionId, sessionSelectionVersion) {
   const state = input.get()
   return state.currentSessionId === sessionId && state.sessionSelectionVersion === sessionSelectionVersion
+}
+
+function readSelectedSessionSummary(input, sessionId) {
+  const state = input.get()
+  if (state.sessionDetail?.session?.id === sessionId) return state.sessionDetail.session
+  return state.sessions.find((session) => session.id === sessionId) || null
+}
+
+function upsertSessionSummary(sessions, session) {
+  const next = Array.isArray(sessions) ? sessions.filter((item) => item.id !== session.id) : []
+  next.unshift(session)
+  return next
 }

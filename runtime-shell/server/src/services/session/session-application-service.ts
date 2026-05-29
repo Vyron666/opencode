@@ -9,7 +9,7 @@ import { resetSessionRuntime } from "./session-lifecycle-service"
 import { markSessionActive, markSessionClosing, markSessionOpening } from "./session-status-machine-service"
 import { buildSessionViewForUser } from "./session-summary-service"
 import { listWorkspaceSharesForWorkspace } from "./workspace-share-application-service"
-import { openSessionWithFallback } from "./session-runtime-service"
+import { openSessionWithFallback, preopenSessionRuntime } from "./session-runtime-service"
 import { assignWorkerForNewSession, ensureWorkerForSessionOpen } from "./session-worker-assignment-service"
 
 export async function listUserSessionOverview(user: User) {
@@ -73,6 +73,7 @@ export async function createSessionForUser(input: {
   })
   // 中文/English: session creation must not wait for audit durability before responding.
   void auditLogTask
+  preopenSessionRuntime(session)
 
   return {
     ok: true as const,

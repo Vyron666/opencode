@@ -42,10 +42,6 @@ export function markClosingSession(sessionId: string) {
   closingSessions.add(sessionId)
 }
 
-export function unmarkClosingSession(sessionId: string) {
-  closingSessions.delete(sessionId)
-}
-
 export function consumeClosingSession(sessionId: string) {
   if (!closingSessions.has(sessionId)) return false
   closingSessions.delete(sessionId)

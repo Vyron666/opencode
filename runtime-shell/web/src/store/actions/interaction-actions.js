@@ -22,10 +22,10 @@ export function createInteractionActions(input) {
         createRequestFailureHandler(input, resetPromptState, '消息发送失败'),
       )
 
-      // 中文/English: `accepted: true` only means the request reached runtime-shell.
-      // Wait for real upstream events before switching to running.
-      input.set({ isSubmitting: true, isRunning: false, isCancelling: false })
-      input.get().setFlash(attachments?.length ? `消息已发送，包含 ${attachments.length} 个附件` : '消息已发送')
+      // 中文/English: once runtime-shell accepted the turn, switch to running early
+      // so the user does not stare at a stale "submitting" state during cold-start gaps.
+      input.set({ isSubmitting: false, isRunning: true, isCancelling: false })
+      input.get().setFlash(attachments?.length ? `消息已发送，包含 ${attachments.length} 个附件，模型正在处理` : '消息已发送，模型正在处理')
       return true
     },
 

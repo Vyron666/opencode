@@ -2,6 +2,7 @@ import type { Hono } from "hono"
 import { cleanupRuntimeGovernanceForUser } from "../../services/runtime-governance/runtime-recovery-service"
 import {
   getRuntimeFailureDetailForUser,
+  getRuntimeDetailForUser,
   getRuntimeLeaseDetailForUser,
   getWorkerHeartbeatDetailForUser,
 } from "../../services/system/runtime-governance-query-service"
@@ -120,7 +121,38 @@ export function registerSystemRoutes(app: Hono) {
       }
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
-    return c.json(jsonOk({ worker: result.worker, heartbeats: result.heartbeats }, reqId))
+    return c.json(jsonOk({ worker: result.worker, heartbeats: result.heartbeats, remoteHeartbeat: result.remoteHeartbeat }, reqId))
+  })
+
+  app.get("/api/runtime-governance/runtime/detail", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const businessSessionId = c.req.query("businessSessionId")
+    if (!businessSessionId) {
+      return c.json(jsonError("businessSessionId is required", 400, reqId), 400)
+    }
+    const result = await getRuntimeDetailForUser({
+      user,
+      businessSessionId,
+    })
+    if (!result.ok) {
+      if (result.reason === "session_not_found") {
+        return c.json(jsonError("session not found", 404, reqId), 404)
+      }
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(
+      jsonOk({
+        session: result.session,
+        binding: result.binding,
+        lease: result.lease,
+        failures: result.failures,
+        remoteRuntime: result.remoteRuntime,
+        remoteLease: result.remoteLease,
+        remoteFailure: result.remoteFailure,
+      }, reqId),
+    )
   })
 
   app.get("/api/runtime-governance/lease/detail", async (c) => {
@@ -141,7 +173,12 @@ export function registerSystemRoutes(app: Hono) {
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
     if ("lease" in result) {
-      return c.json(jsonOk({ session: result.session, lease: result.lease }, reqId))
+      return c.json(jsonOk({
+        session: result.session,
+        lease: result.lease,
+        remoteLease: result.remoteLease,
+        remoteRuntime: result.remoteRuntime,
+      }, reqId))
     }
     return c.json(jsonOk({ leases: result.leases }, reqId))
   })
@@ -164,7 +201,12 @@ export function registerSystemRoutes(app: Hono) {
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
     if ("session" in result) {
-      return c.json(jsonOk({ session: result.session, failures: result.failures }, reqId))
+      return c.json(jsonOk({
+        session: result.session,
+        failures: result.failures,
+        remoteFailure: result.remoteFailure,
+        remoteRuntime: result.remoteRuntime,
+      }, reqId))
     }
     return c.json(jsonOk({ failures: result.failures }, reqId))
   })

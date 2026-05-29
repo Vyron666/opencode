@@ -6,10 +6,10 @@ import type {
   NewSessionResponse,
   ResumeSessionResponse,
 } from "@agentclientprotocol/sdk"
-import type { AcpProcessClient } from "../acp/acp-process-client"
+import type { ManagedRuntimeClient } from "./runtime-client"
 
 export type RuntimeEntry = {
-  client: AcpProcessClient
+  client: ManagedRuntimeClient
   // 中文/English: runtime-shell 只接真实 ACP runtime，不提供 mock transport。
   transport: "real"
 }

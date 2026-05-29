@@ -98,6 +98,7 @@ export async function submitPromptForUser(input: {
   businessSessionId: string
   parts: z.infer<typeof inputPartSchema>[]
 }) {
+  const requestStartedAt = Date.now()
   const result = await requireSessionAction({
     user: input.user,
     sessionId: input.businessSessionId,
@@ -109,6 +110,7 @@ export async function submitPromptForUser(input: {
     session: result.session,
   })
   if (!workspaceResult.ok) return workspaceResult
+  const hadLiveRuntime = Boolean(getRuntime(result.session.id))
   const runtime = getRuntime(result.session.id) ?? (await openRealRuntime(workspaceResult.session))
   if (!runtime || runtime.transport !== "real") {
     return { ok: false as const, reason: "runtime_not_active" }
@@ -117,6 +119,7 @@ export async function submitPromptForUser(input: {
 
   const liveSession = await requireLiveSession(result.session.id)
   await markSessionWaitingInput(liveSession.id)
+  const userEventCreatedAt = Date.now()
 
   // 中文/English: publish the user event before prompt starts so SSE shows the turn immediately.
   const userEventTask = publishRuntimeEvent(
@@ -125,9 +128,25 @@ export async function submitPromptForUser(input: {
       parts: input.parts,
     }),
   )
+  log.info("prompt dispatch starting", {
+    requestId: input.requestId,
+    businessSessionId: liveSession.id,
+    acpSessionId: runtime.client.getSessionId(),
+    workerId: liveSession.workerId,
+    hadLiveRuntime,
+    requestToDispatchMs: Date.now() - requestStartedAt,
+    dispatchToUserEventMs: userEventCreatedAt - requestStartedAt,
+  })
   const promptTask = runtime.client.prompt(withLocaleGuidance(input.parts))
   void Promise.resolve(promptTask).then(
     async (promptResult) => {
+      log.info("prompt call resolved", {
+        requestId: input.requestId,
+        businessSessionId: liveSession.id,
+        acpSessionId: runtime.client.getSessionId(),
+        workerId: liveSession.workerId,
+        requestToResolvedMs: Date.now() - requestStartedAt,
+      })
       await runtime.client.flushPendingEvents()
       const completedSession = await restoreActiveSessionIfRunning(liveSession.id)
       if (!completedSession) return
@@ -146,6 +165,14 @@ export async function submitPromptForUser(input: {
       })
     },
     async (error) => {
+      log.warn("prompt call rejected", {
+        requestId: input.requestId,
+        businessSessionId: liveSession.id,
+        acpSessionId: runtime.client.getSessionId(),
+        workerId: liveSession.workerId,
+        requestToRejectedMs: Date.now() - requestStartedAt,
+        message: error instanceof Error ? error.message : String(error),
+      })
       await runtime.client.flushPendingEvents()
       if (isPromptAborted(error)) {
         const cancelledSession = await restoreActiveSessionIfRunning(liveSession.id)
@@ -362,7 +389,9 @@ async function markSessionFailedIfRunning(sessionId: string) {
 
 function isPromptAborted(error: unknown) {
   if (!(error instanceof Error)) return false
-  return error.name === "MessageAbortedError" || /aborted|cancelled|canceled/i.test(error.message)
+  // 中文/English: closing a session can reject the in-flight prompt as
+  // "ACP runtime closed/exited"; treat that as a normal interruption, not failure.
+  return error.name === "MessageAbortedError" || /aborted|cancelled|canceled|runtime (closed|exited)/i.test(error.message)
 }
 
 async function restoreSessionBindingForHistory(session: BusinessSession) {

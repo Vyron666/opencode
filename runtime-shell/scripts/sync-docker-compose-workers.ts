@@ -55,8 +55,9 @@ function buildCompose(config: LocalWorkerComposeConfig) {
       return {
         id: readWorkerId(workerIndex),
         workerCode: readWorkerId(workerIndex),
-        name: `opencode-worker-${workerIndex}`,
+        name: readWorkerServiceName(workerIndex),
         baseUrl: `http://${readWorkerServiceName(workerIndex)}:4096`,
+        agentBaseUrl: `http://${readWorkerServiceName(workerIndex)}:4097`,
         capacity: config.capacity,
         version: `local-${workerIndex}`,
       }
@@ -109,6 +110,8 @@ ${dependsOn}
       RUNTIME_SHELL_DB_URL: postgresql://postgres:change-me@postgres:5432/runtime_shell
       RUNTIME_SHELL_DB_SSL_MODE: disable
       OPENCODE_BASE_URL: http://${readWorkerServiceName(1)}:4096
+      RUNTIME_SHELL_WORKER_EXECUTION_MODE: remote
+      RUNTIME_SHELL_WORKER_AGENT_TOKEN: change-me-worker-agent
       RUNTIME_SHELL_LOCAL_WORKERS: >-
         ${localWorkers}
       OPENCODE_SERVER_USERNAME: opencode
@@ -147,17 +150,24 @@ function buildWorkerService(workerIndex: number) {
       OPENCODE_DISABLE_MODELS_FETCH: "0"
       # 中文/English: keep QuestionTool enabled on every worker node so runtime-shell sees the same interaction surface.
       OPENCODE_ENABLE_QUESTION_TOOL: "1"
+      OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
+      OPENCODE_ACP_SPAWN_CWD: /workspace
+      OPENCODE_ACP_NEXT: "0"
+      RUNTIME_SHELL_WORKER_AGENT_PORT: "4097"
+      RUNTIME_SHELL_INTERNAL_BASE_URL: http://runtime-shell:3000
+      RUNTIME_SHELL_WORKER_AGENT_TOKEN: change-me-worker-agent
     # 中文/English: do not publish the worker port to host by default.
     # runtime-shell connects via the compose network (${`http://${serviceName}:4096`}),
     # avoiding "port already allocated" on developer machines.
     expose:
       - "4096"
+      - "4097"
     volumes:
       - ${readWorkerDataDir(workerIndex)}:/root/.local/share/opencode
       - ../.opencode/skills:/workspace/.opencode/skills:ro
       - ../workspaces:/workspace/workspaces
     working_dir: /workspace
-    command: ["serve", "--hostname", "0.0.0.0", "--port", "4096"]`
+    entrypoint: ["bash", "/workspace/runtime-shell/server/src/worker-agent/start-worker.sh"]`
 }
 
 function readWorkerServiceName(workerIndex: number) {

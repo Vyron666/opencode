@@ -17,6 +17,7 @@ COPY package.json bun.lock bunfig.toml turbo.json ./
 COPY .github/TEAM_MEMBERS ./.github/TEAM_MEMBERS
 COPY packages ./packages
 COPY patches ./patches
+COPY runtime-shell/server ./runtime-shell/server
 
 # 中文/English: install the workspace as-is and run opencode from source to avoid fragile single-binary packaging in Docker.
 # /////// runtime-shell customization start ///////

@@ -153,13 +153,15 @@ const ComposerSection = memo(function ComposerSection({ currentSessionId, showDe
   const sendPrompt = useStore((state) => state.sendPrompt)
   const updateMode = useStore((state) => state.updateMode)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
+  const pendingSessionAction = useStore((state) => state.pendingSessionAction)
   const phase = useConversationPhase()
   const capabilities = useSessionCapabilities()
   const { canUpdateMode, isSharedSession } = useViewerContext()
   const [attachments, setAttachments] = useState([])
   const [promptText, setPromptText] = useState('')
   const [selectedMode, setSelectedMode] = useState('')
-  const sendDisabled = !currentSessionId || phase.isBusy
+  const sessionPreparing = Boolean(pendingSessionAction)
+  const sendDisabled = !currentSessionId || phase.isBusy || sessionPreparing
 
   useEffect(() => {
     setSelectedMode(capabilities.modeId || capabilities.modes?.[0]?.id || '')
@@ -227,7 +229,14 @@ const ComposerSection = memo(function ComposerSection({ currentSessionId, showDe
           value={promptText}
           onChange={(event) => setPromptText(event.target.value)}
           rows={3}
-          placeholder={currentSessionId ? '\u8f93\u5165\u6d88\u606f...' : '\u8bf7\u5148\u6253\u5f00\u4e00\u4e2a\u4f1a\u8bdd'}
+          disabled={sessionPreparing}
+          placeholder={
+            !currentSessionId
+              ? '\u8bf7\u5148\u6253\u5f00\u4e00\u4e2a\u4f1a\u8bdd'
+              : sessionPreparing
+                ? '\u4f1a\u8bdd\u6b63\u5728\u6253\u5f00\u6216\u6062\u590d\uff0c\u7a0d\u540e\u5373\u53ef\u53d1\u9001'
+                : '\u8f93\u5165\u6d88\u606f...'
+          }
           className="w-full min-h-[88px] max-h-[220px] rounded-[12px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-sm outline-none resize-y focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
           style={{ lineHeight: '22px' }}
           onDragOver={(event) => {
@@ -290,7 +299,9 @@ const ComposerSection = memo(function ComposerSection({ currentSessionId, showDe
             disabled={sendDisabled}
             className="rounded-[10px] py-2 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed shrink-0 min-w-[84px]"
           >
-            {phase.id === 'submitting'
+            {sessionPreparing
+              ? '\u4f1a\u8bdd\u51c6\u5907\u4e2d...'
+              : phase.id === 'submitting'
               ? '\u53d1\u9001\u4e2d...'
               : phase.id === 'cancelling'
                 ? '\u53d6\u6d88\u4e2d...'

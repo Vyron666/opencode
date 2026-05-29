@@ -1,11 +1,13 @@
 import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
 import { AcpProcessClient } from "../acp/acp-process-client"
-import { getCustomModels } from "../config"
+import { Config, findLocalWorkerConfig, getCustomModels } from "../config"
 import { createLogger } from "../log"
 import { recordRuntimeFailure } from "../services/runtime-governance/runtime-failure-service"
 import { startRuntimeLeaseAutoRenew, stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
 import type { BusinessSession } from "../types"
 import { activateSessionRuntime, resetSessionRuntime } from "../services/session/session-lifecycle-service"
+import { RemoteRuntimeClient } from "./remote-runtime-client"
+import type { ManagedRuntimeClient } from "./runtime-client"
 import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
 import { createEvent, persistAndFanout, nextId } from "./runtime-events"
 import {
@@ -26,7 +28,7 @@ const UPSTREAM_QUIET_WINDOW_MS = 120
 
 export async function bindRuntime(
   session: BusinessSession,
-  client: AcpProcessClient,
+  client: ManagedRuntimeClient,
   response: SessionBootstrap,
   kind: "opened" | "loaded" | "resumed" | "forked",
 ) {
@@ -42,7 +44,7 @@ export async function bindRuntime(
     sessionId: session.id,
     binding: {
       acpSessionId: response.sessionId,
-      runtimeKey: nextId("runtime"),
+      runtimeKey: client instanceof RemoteRuntimeClient ? client.getRuntimeId() : nextId("runtime"),
       openedAt: new Date().toISOString(),
       transport: "real",
     },
@@ -140,6 +142,12 @@ export async function bindRuntime(
 }
 
 export function createClient(session: BusinessSession) {
+  const worker = findLocalWorkerConfig(session.workerId)
+  if (Config.workerExecutionMode === "remote" && worker?.agentBaseUrl) {
+    // 中文/English: when a worker exposes a runtime agent, route ACP lifecycle
+    // calls there so the worker process truly carries dialog and tool load.
+    return new RemoteRuntimeClient(session, worker)
+  }
   let upstreamEventVersion = 0
   let lastUpstreamEventAt = 0
 

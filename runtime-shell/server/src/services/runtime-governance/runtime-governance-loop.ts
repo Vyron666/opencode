@@ -56,7 +56,7 @@ async function markHeartbeatExpiredWorkersOffline() {
       // 中文/English: once the worker heartbeat is judged offline, the stale runtime
       // process must be closed too; otherwise reopen can accidentally reuse a detached
       // in-memory runtime and return to active without rebuilding binding/lease state.
-      await closeRuntime(session.id)
+      await closeRuntimeForGovernance(session.id, "worker_offline")
       await markRuntimeBindingLost(session.id)
       await resetSessionRuntime(session.id, "orphaned")
       await recordRuntimeFailure({
@@ -75,7 +75,7 @@ async function cleanupExpiredRuntimeLeases() {
     const session = await sessionService.getSession(lease.businessSessionId)
     // 中文/English: lease expiry means the current runtime ownership is no longer
     // trusted, so close any live runtime before clearing persisted ownership metadata.
-    await closeRuntime(lease.businessSessionId)
+    await closeRuntimeForGovernance(lease.businessSessionId, "lease_expired")
     await releaseRuntimeLease(lease.businessSessionId)
     await markRuntimeBindingLost(lease.businessSessionId)
     if (session && (session.status === "active" || session.status === "waiting_input" || session.status === "opening")) {
@@ -90,6 +90,18 @@ async function cleanupExpiredRuntimeLeases() {
         leaseOwner: lease.leaseOwner,
         leaseExpiresAt: lease.leaseExpiresAt,
       },
+    })
+  }
+}
+
+async function closeRuntimeForGovernance(sessionId: string, reason: "worker_offline" | "lease_expired") {
+  try {
+    await closeRuntime(sessionId)
+  } catch (error) {
+    log.warn("best effort runtime close failed during governance", {
+      businessSessionId: sessionId,
+      reason,
+      error: error instanceof Error ? error.message : String(error),
     })
   }
 }
