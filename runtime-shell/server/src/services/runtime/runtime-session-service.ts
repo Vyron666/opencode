@@ -398,8 +398,14 @@ async function restoreSessionBindingForHistory(session: BusinessSession) {
   if (session.binding?.acpSessionId) return session
   const latestBinding = await getLatestRuntimeBinding(session.id)
   if (!latestBinding?.acpSessionId || !latestBinding.runtimeKey) return session
+  if (session.workerId !== latestBinding.workerId) {
+    await sessionService.updateSession(session.id, {
+      workerId: latestBinding.workerId,
+    })
+  }
   return {
     ...session,
+    workerId: latestBinding.workerId,
     binding: {
       acpSessionId: latestBinding.acpSessionId,
       runtimeKey: latestBinding.runtimeKey,

@@ -4,12 +4,12 @@ import { Config, findLocalWorkerConfig, getCustomModels } from "../config"
 import { createLogger } from "../log"
 import { recordRuntimeFailure } from "../services/runtime-governance/runtime-failure-service"
 import { startRuntimeLeaseAutoRenew, stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
-import type { BusinessSession } from "../types"
 import { activateSessionRuntime, resetSessionRuntime } from "../services/session/session-lifecycle-service"
+import type { BusinessSession } from "../types"
 import { RemoteRuntimeClient } from "./remote-runtime-client"
-import type { ManagedRuntimeClient } from "./runtime-client"
 import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
-import { createEvent, persistAndFanout, nextId } from "./runtime-events"
+import type { ManagedRuntimeClient } from "./runtime-client"
+import { createEvent, nextId, persistAndFanout } from "./runtime-events"
 import {
   addPendingPermission,
   addPendingQuestion,
@@ -111,13 +111,13 @@ export async function bindRuntime(
   client.onQuestionRequested((question) => {
     addPendingQuestion(question, {
       resolve: (res) => {
-        const response: CreateElicitationResponse =
+        const permissionResponse: CreateElicitationResponse =
           res.action === "accept"
             ? { action: "accept", content: res.content ?? {} }
             : res.action === "decline"
               ? { action: "decline" }
               : { action: "cancel" }
-        const ok = client.resolveQuestion(question.requestId, response)
+        const ok = client.resolveQuestion(question.requestId, permissionResponse)
         if (!ok) return
         deletePendingQuestion(question.requestId)
       },

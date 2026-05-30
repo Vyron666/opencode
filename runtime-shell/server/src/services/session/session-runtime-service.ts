@@ -23,7 +23,7 @@ export async function openSessionWithFallback(session: BusinessSession) {
 }
 
 export function preopenSessionRuntime(session: BusinessSession) {
-  // 涓枃/English: preopen runs in background after create so the user's first explicit
+  // 中文/English: preopen runs in background after create so the user's first explicit
   // open/prompt can reuse the same pending runtime load instead of paying the full cold start.
   void openRealRuntime(session).catch((error) => {
     log.warn("session preopen failed", {
