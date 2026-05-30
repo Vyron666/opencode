@@ -16,6 +16,7 @@ export type RuntimeClientOptions = {
   onEvent: OnEvent
   workerId: string
   businessSessionId: string
+  configContent?: string
 }
 
 export type RuntimeClientHooks = {

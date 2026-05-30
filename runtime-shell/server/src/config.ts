@@ -1,12 +1,6 @@
 import path from "node:path"
 import { type ParseError, parse } from "jsonc-parser"
 
-export type CustomModel = {
-  modelId: string
-  name: string
-  providerId?: string
-}
-
 export type LocalWorkerConfig = {
   id: string
   workerCode: string
@@ -15,49 +9,6 @@ export type LocalWorkerConfig = {
   agentBaseUrl?: string
   capacity: number
   version?: string
-}
-
-function parseCustomModels(raw: string): CustomModel[] {
-  const errors: ParseError[] = []
-  const parsed = parse(raw, errors)
-  if (errors.length > 0 || !Array.isArray(parsed)) return []
-  return parsed.filter(
-    (item): item is CustomModel =>
-      typeof item === "object" && item !== null && typeof item.modelId === "string" && typeof item.name === "string",
-  )
-}
-
-async function loadCustomModelsFile(filePath: string): Promise<CustomModel[]> {
-  const file = Bun.file(filePath)
-  if (!(await file.exists())) return []
-  return parseCustomModels(await file.text())
-}
-
-let customModelsCache: CustomModel[] | null = null
-
-export function getCustomModelsFilePath() {
-  return process.env.RUNTIME_SHELL_CUSTOM_MODELS_FILE || `${Config.dataFile}.custom-models.json`
-}
-
-export async function getCustomModels(): Promise<CustomModel[]> {
-  if (customModelsCache !== null) return customModelsCache
-  const envRaw = process.env.RUNTIME_SHELL_CUSTOM_MODELS
-  if (envRaw) {
-    customModelsCache = parseCustomModels(envRaw)
-  } else {
-    customModelsCache = []
-  }
-  const filePath = getCustomModelsFilePath()
-  const fileModels = await loadCustomModelsFile(filePath)
-  const merged = new Map<string, CustomModel>()
-  customModelsCache.forEach((m) => merged.set(m.modelId, m))
-  fileModels.forEach((m) => merged.set(m.modelId, m))
-  customModelsCache = [...merged.values()]
-  return customModelsCache
-}
-
-export function invalidateCustomModelsCache() {
-  customModelsCache = null
 }
 
 function parseLocalWorkers(raw: string | undefined) {

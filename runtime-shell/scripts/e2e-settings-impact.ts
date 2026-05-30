@@ -34,27 +34,38 @@ await login(developerJar, developerUsername)
 const providerConfigs = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(adminJar, "/api/provider-config")
 assert(providerConfigs.status === 200 && providerConfigs.body.data.items.length > 0, "provider-config get failed")
 const providerConfig = providerConfigs.body.data.items[0]
-
-const customModelsBefore = await requestJson<ApiEnvelope<{ items: Array<{ modelId: string; name: string }> }>>(adminJar, "/api/custom-models")
-assert(customModelsBefore.status === 200, "custom-models get failed")
-
-const developerCustomModels = await requestJson<ApiEnvelope<{ items: unknown[] }>>(developerJar, "/api/custom-models")
 const developerProviderConfigs = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(developerJar, "/api/provider-config")
-assert(developerCustomModels.status === 200, "developer custom-models get should succeed")
 assert(developerProviderConfigs.status === 200, "developer provider-config get should succeed")
 
-const developerCustomModelSaveForbidden = await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/custom-models", {
-  method: "POST",
-  body: {
-    models: customModelsBefore.body.data.items,
-  },
-})
-const developerProviderSaveForbidden = await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/save", {
+const developerProviderConflictSave = await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/save", {
   method: "POST",
   body: providerConfig,
 })
-assert(developerCustomModelSaveForbidden.status === 403, "developer custom-model save should be forbidden")
-assert(developerProviderSaveForbidden.status === 403, "developer provider save should be forbidden")
+assert(developerProviderConflictSave.status === 409, "developer provider save should conflict with platform shared provider")
+
+const developerPrivateProviderId = `private-provider-${Date.now()}`
+const developerPrivateProviderSave = await requestJson<ApiEnvelope<{ success: boolean; providerId: string; reloadedSessionCount: number }>>(
+  developerJar,
+  "/api/provider-config/save",
+  {
+    method: "POST",
+    body: {
+      providerId: developerPrivateProviderId,
+      name: "Developer Private Provider",
+      api: "@ai-sdk/openai-compatible",
+      baseURL: "https://example.invalid/v1",
+      apiKey: "developer-private-key",
+      defaultModel: `${developerPrivateProviderId}/chat`,
+      models: [
+        {
+          id: "chat",
+          name: "Chat",
+        },
+      ],
+    },
+  },
+)
+assert(developerPrivateProviderSave.status === 200, "developer private provider save should succeed")
 
 const workspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(adminJar, "/api/workspace/create", {
   method: "POST",
@@ -135,35 +146,6 @@ const reopenActive = await requestJson<ApiEnvelope<{ id: string; status: string 
 })
 assert(reopenActive.status === 200 && reopenActive.body.data.status === "active", "reopen active after provider save failed")
 
-const tempCustomModelId = `temp-provider-${Date.now()}`
-const customModelsNext = [
-  ...customModelsBefore.body.data.items,
-  {
-    modelId: tempCustomModelId,
-    name: "Temp Provider Model",
-    providerId: providerConfig.providerId,
-  },
-]
-const customModelSave = await requestJson<ApiEnvelope<{ success: boolean; count: number }>>(adminJar, "/api/custom-models", {
-  method: "POST",
-  body: {
-    models: customModelsNext,
-  },
-})
-assert(customModelSave.status === 200, "custom model save failed")
-
-const customModelsAfter = await requestJson<ApiEnvelope<{ items: Array<{ modelId: string }> }>>(adminJar, "/api/custom-models")
-assert(customModelsAfter.status === 200, "custom models get after save failed")
-assert(customModelsAfter.body.data.items.some((item) => item.modelId === tempCustomModelId), "saved custom model should be visible")
-
-const restoreCustomModels = await requestJson<ApiEnvelope<{ success: boolean; count: number }>>(adminJar, "/api/custom-models", {
-  method: "POST",
-  body: {
-    models: customModelsBefore.body.data.items,
-  },
-})
-assert(restoreCustomModels.status === 200, "restore custom models failed")
-
 console.log(
   JSON.stringify({
     ok: true,
@@ -174,11 +156,9 @@ console.log(
     reloadedSessionCount: providerSave.body.data.reloadedSessionCount,
     activeStatusAfterSave: activeAfterSave.status,
     historyStatusAfterSave: historyAfterSave.body.data.session.status,
-    customModelCountBefore: customModelsBefore.body.data.items.length,
-    customModelCountAfterSave: customModelsAfter.body.data.items.length,
-    developerForbiddenStatuses: {
-      customModelsSave: developerCustomModelSaveForbidden.status,
-      providerSave: developerProviderSaveForbidden.status,
+    developerProviderStatuses: {
+      conflictSave: developerProviderConflictSave.status,
+      privateSave: developerPrivateProviderSave.status,
     },
   }),
 )

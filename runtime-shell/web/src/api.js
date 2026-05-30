@@ -149,21 +149,35 @@ export const api = {
   questionList: (businessSessionId) =>
     request(`/api/acp/session/question/list${businessSessionId ? `?businessSessionId=${encodeURIComponent(businessSessionId)}` : ''}`),
 
-  customModels: {
-    get: () => request('/api/custom-models'),
-    save: (models) =>
-      request('/api/custom-models', {
-        method: 'POST',
-        body: JSON.stringify({ models }),
-      }),
-  },
-
   providerConfig: {
     get: () => request('/api/provider-config'),
     save: (config) =>
       request('/api/provider-config/save', {
         method: 'POST',
         body: JSON.stringify(config),
+      }),
+  },
+  mcpConfig: {
+    get: () => request('/api/mcp-config'),
+    save: (servers) =>
+      request('/api/mcp-config/save', {
+        method: 'POST',
+        body: JSON.stringify({ servers }),
+      }),
+  },
+  skillConfig: {
+    get: () => request('/api/skill-config'),
+    save: (config) =>
+      request('/api/skill-config/save', {
+        method: 'POST',
+        body: JSON.stringify(config),
+      }),
+  },
+  configImpact: {
+    preview: (payload) =>
+      request('/api/config-impact/preview', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }),
   },
 }

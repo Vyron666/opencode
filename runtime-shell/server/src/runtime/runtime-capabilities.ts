@@ -1,5 +1,4 @@
 import type { NewSessionResponse } from "@agentclientprotocol/sdk"
-import { getCustomModels, type CustomModel } from "../config"
 import type { BusinessSession, SessionEvent } from "../types"
 
 export function extractUpstreamError(payload: Record<string, unknown>) {
@@ -123,32 +122,14 @@ export function deriveCapabilityPatch(event: SessionEvent) {
   }
 }
 
-export async function mergeConfigOptionsWithCustomModels(configOptions?: Array<Record<string, unknown>>) {
-  if (!configOptions) return configOptions
-  const customModels = await getCustomModels()
-  const modelOption = configOptions.find((item) => item.id === "model")
-  if (!modelOption || !Array.isArray(modelOption.options)) return configOptions
-  const existingIds = new Set((modelOption.options as Array<{ value: string }>).map((option) => option.value))
-  customModels.forEach((custom) => {
-    if (existingIds.has(custom.modelId)) return
-    existingIds.add(custom.modelId)
-    ;(modelOption.options as Array<{ value: string; name: string }>).push({
-      value: custom.modelId,
-      name: custom.name,
-    })
-  })
-  return configOptions
-}
-
 export async function normalizeBootstrap(session: BusinessSession, response: SessionBootstrapInput) {
-  const customModels = await getCustomModels()
   const configOptions = (response.configOptions ?? []).map((item) => item as Record<string, unknown>)
   return {
     sessionInfo: {
       title: session.title,
       cwd: session.workspacePath,
     },
-    models: mergeCustomModels(response.models ? (response.models as Record<string, unknown>) : undefined, customModels),
+    models: response.models ? (response.models as Record<string, unknown>) : undefined,
     modes: response.modes ? (response.modes as Record<string, unknown>) : undefined,
     configOptions,
     modeId:
@@ -179,25 +160,4 @@ function extractContentText(payload: Record<string, unknown>) {
   const block = content as Record<string, unknown>
   if (block.type !== "text") return
   return typeof block.text === "string" ? block.text : undefined
-}
-
-function mergeCustomModels(acpModels: Record<string, unknown> | undefined, customModels: CustomModel[]) {
-  const existing = acpModels ?? {}
-  const available = Array.isArray(existing.availableModels)
-    ? [...(existing.availableModels as Array<{ modelId: string; name: string }>)]
-    : []
-  const existingIds = new Set(available.map((model) => model.modelId))
-  customModels.forEach((custom) => {
-    if (existingIds.has(custom.modelId)) return
-    existingIds.add(custom.modelId)
-    available.push({
-      modelId: custom.modelId,
-      name: custom.name,
-    })
-  })
-  return {
-    ...existing,
-    availableModels: available,
-    currentModelId: existing.currentModelId || customModels[0]?.modelId,
-  }
 }

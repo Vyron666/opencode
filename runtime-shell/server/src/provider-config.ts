@@ -24,6 +24,11 @@ export type RuntimeShellProviderConfig = {
   models: RuntimeShellProviderModel[]
 }
 
+export type RuntimeShellStoredProviderConfig = RuntimeShellProviderConfig & {
+  // 中文/English: persisted only for runtime injection, never returned to the client.
+  apiKey?: string
+}
+
 type WritableConfig = {
   $schema?: string
   model?: string

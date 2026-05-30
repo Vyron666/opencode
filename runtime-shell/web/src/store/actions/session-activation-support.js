@@ -19,7 +19,7 @@ export async function activateCurrentSession(input) {
     return
   }
 
-  if (session.status === 'completed') {
+  if (session.status === 'completed' && session.binding?.acpSessionId) {
     await input.api.loadSession(currentSessionId).then(
       () => undefined,
       createRequestFailureHandler(input, {}, '加载历史失败'),

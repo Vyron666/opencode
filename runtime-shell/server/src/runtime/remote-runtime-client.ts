@@ -28,13 +28,15 @@ type RemoteRuntimeBootstrap = {
 export class RemoteRuntimeClient implements ManagedRuntimeClient {
   private worker: LocalWorkerConfig
   private session: BusinessSession
+  private configContent?: string
   private remoteRuntimeId = ""
   private remoteSessionId = ""
   private activePromptCount = 0
 
-  constructor(session: BusinessSession, worker: LocalWorkerConfig) {
+  constructor(session: BusinessSession, worker: LocalWorkerConfig, configContent?: string) {
     this.session = session
     this.worker = worker
+    this.configContent = configContent
   }
 
   onPermissionRequested(_handler: (permission: PendingPermission) => void) {}
@@ -46,6 +48,7 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
       businessSessionId: this.session.id,
       workerId: this.session.workerId,
       workspacePath: cwd,
+      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {
@@ -62,6 +65,7 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
       workerId: this.session.workerId,
       workspacePath: cwd,
       acpSessionId: sessionId,
+      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {
@@ -77,6 +81,7 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
       workerId: this.session.workerId,
       workspacePath: cwd,
       acpSessionId: sessionId,
+      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {
@@ -92,6 +97,7 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
       workerId: this.session.workerId,
       workspacePath: cwd,
       sourceAcpSessionId: sessionId,
+      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {

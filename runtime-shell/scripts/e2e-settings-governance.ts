@@ -20,9 +20,6 @@ const providerConfigs = await requestJson<ApiEnvelope<{ items: Array<{ providerI
 assert(providerConfigs.status === 200, "admin provider-config failed")
 assert(providerConfigs.body.data.items.length > 0, "admin provider-config should not be empty on clean bootstrap")
 
-const customModels = await requestJson<ApiEnvelope<{ items: unknown[] }>>(adminJar, "/api/custom-models")
-assert(customModels.status === 200, "admin custom-models failed")
-
 const workspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(adminJar, "/api/workspace/create", {
   method: "POST",
   body: {
@@ -78,7 +75,6 @@ console.log(
     ok: true,
     baseUrl,
     providerCount: providerConfigs.body.data.items.length,
-    customModelCount: customModels.body.data.items.length,
     developerStatuses: {
       workerList: developerWorkerList.status,
       heartbeatDetail: developerHeartbeatDetail.status,

@@ -311,7 +311,7 @@
 2. `workspace`
 3. `workspace_share_binding`
 4. `provider_config`
-5. `custom_model`
+5. `provider_config`
 6. `worker_node`
 7. `audit_log`
 
@@ -360,7 +360,7 @@
 1. `business_session`
 2. `workspace`
 3. `provider_config`
-4. `custom_model`
+4. `provider_config`
 5. `worker_node`
 6. `audit_log`
 7. `auth_session`
@@ -1439,3 +1439,17 @@ Repo 不负责：
 3. 越权访问有明确拒绝结果
 4. 审计能定位操作者、资源、动作、影响范围
 5. 文档与实现边界一致，不出现架构设计和代码实际行为相互背离
+
+## 10. P3 当前实现口径（2026-05-30）
+
+1. `P3` 当前严格对齐 `P1/P2` 的角色与执行面，只落两层：`platform_shared` 与 `user_private`。
+2. `admin` 可管理平台共享 `provider / mcp / skill` 配置，平台共享配置对全部用户可见。
+3. `developer` 可管理仅自己可见的 `provider / mcp / skill` 私有配置；私有配置只做追加，不覆盖平台共享同名配置。
+4. 用户私有 `provider` 仅允许新增，不允许与平台共享 `providerId` 重名；重名返回 `409`。
+5. `mcp` 私有配置与平台共享配置按 server name 做冲突校验，重名返回 `409`。
+6. `skill` 当前按 `paths/urls` 去重追加合并，不提供用户私有覆盖平台共享的语义。
+7. 用户私有 `provider / skill / mcp` 必须通过会话 owner 的 `OPENCODE_CONFIG_CONTENT` 注入 ACP / worker 子进程后真实生效，而不是只写入配置存储。
+8. `P3-C` 当前已落最小闭环：后端提供统一的 `config impact preview` 预览能力，前端在 `provider / mcp / skill` 保存前展示预计影响的活跃会话数量。
+9. 当前角色模型下，`admin` 管理平台共享 `provider / mcp / skill` 时直接生效，不走审批。
+10. 已保留最小审批底座（表、repo、service、接口）作为后续扩展能力，但当前主配置链路不触发审批流。
+11. 当前剩余主要为增强项：更细粒度影响分析、审批能力按角色开关启用、以及更完整的审计展示。

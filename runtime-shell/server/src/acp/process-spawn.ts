@@ -23,6 +23,7 @@ export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWith
     OPENCODE_ACP_NEXT: process.env.OPENCODE_ACP_NEXT || "0",
     // 中文/English: 必须在子进程启动前声明 ACP 身份，避免误走 cli 分支。
     OPENCODE_CLIENT: "acp",
+    ...(options.configContent ? { OPENCODE_CONFIG_CONTENT: options.configContent } : {}),
   }
   const entry = process.env.OPENCODE_ACP_ENTRY || path.resolve(import.meta.dir, "../../../packages/opencode/src/index.ts")
   const spawnCwd = process.env.OPENCODE_ACP_SPAWN_CWD || options.cwd

@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from './store'
 import LoginScreen from './components/LoginScreen.jsx'
 import MainLayout from './components/MainLayout.jsx'
+import { readBootSessionTitle } from './store/session-selection-support'
 
 let authBootstrapPromise = null
 const SESSION_LIST_REFRESH_INTERVAL_MS = 2000
@@ -12,6 +13,8 @@ export default function App() {
   const loadSessions = useStore((state) => state.loadSessions)
   const setFlash = useStore((state) => state.setFlash)
   const syncCurrentSessionFromLocation = useStore((state) => state.syncCurrentSessionFromLocation)
+  const [authBootstrapping, setAuthBootstrapping] = useState(true)
+  const bootSessionTitle = readBootSessionTitle()
 
   useEffect(() => {
     // 中文/English: dedupe the initial auth bootstrap so React StrictMode
@@ -27,6 +30,7 @@ export default function App() {
       })
       .finally(() => {
         authBootstrapPromise = null
+        setAuthBootstrapping(false)
       })
   }, [checkAuth, loadSessions, setFlash])
 
@@ -77,7 +81,14 @@ export default function App() {
 
   return (
     <div className="h-dvh w-full overflow-hidden">
-      {isAuthenticated ? (
+      {authBootstrapping ? (
+        <div className="h-dvh grid place-items-center px-6 text-center">
+          <div className="grid gap-2 text-[var(--text-muted)]">
+            <div className="text-sm font-semibold text-[var(--text)]">{bootSessionTitle || '正在恢复会话'}</div>
+            <div className="text-xs">{'正在读取登录状态与最近会话，请稍候。'}</div>
+          </div>
+        </div>
+      ) : isAuthenticated ? (
         <>
           <MainLayout />
         </>

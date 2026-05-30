@@ -204,6 +204,11 @@ server/src
 1. Provider 配置与 custom models 修改必须走应用服务。
 2. 配置变更需要产生审计记录。
 3. 配置变更影响当前 session 时，重载策略必须由服务层统一执行。
+4. 当前阶段配置治理只落两层：`platform_shared` 与 `user_private`。
+5. `admin` 管理平台共享配置，`developer` 仅管理自己的私有配置。
+6. 用户私有配置只允许追加，不允许覆盖平台共享同名配置。
+7. `provider`、`mcp`、`skill` 当前支持平台共享与用户私有；其中用户私有 provider 仅允许新增，不允许覆盖平台共享同名 provider。
+8. 用户私有 `skill/mcp` 必须通过会话级 `OPENCODE_CONFIG_CONTENT` 注入 ACP / worker 进程后真实生效，不能只做持久化展示。
 
 后续企业化要求：
 

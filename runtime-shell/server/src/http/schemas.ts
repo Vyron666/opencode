@@ -9,6 +9,8 @@ export const createSessionSchema = z.object({
   title: z.string().min(1),
   projectId: z.string().min(1).default("default"),
   workspaceId: z.string().min(1),
+  // 中文/English: only create-and-enter requests should reserve worker/runtime capacity up front.
+  warmup: z.boolean().optional().default(false),
 })
 
 export const sessionIdSchema = z.object({
@@ -152,6 +154,41 @@ export const providerConfigSchema = z.object({
   apiKey: z.string().optional(),
   defaultModel: z.string().min(1),
   models: z.array(providerModelSchema).min(1),
+})
+
+export const skillConfigSchema = z.object({
+  paths: z.array(z.string().min(1)).optional().default([]),
+  urls: z.array(z.string().min(1)).optional().default([]),
+})
+
+const localMcpSchema = z.object({
+  type: z.literal("local"),
+  enabled: z.boolean().optional(),
+  command: z.array(z.string().min(1)).min(1),
+  timeout: z.number().int().positive().optional(),
+})
+
+const remoteMcpSchema = z.object({
+  type: z.literal("remote"),
+  enabled: z.boolean().optional(),
+  url: z.string().min(1),
+  headers: z.record(z.string(), z.string()).optional(),
+  timeout: z.number().int().positive().optional(),
+})
+
+export const mcpConfigSchema = z.object({
+  servers: z.record(z.string().min(1), z.union([localMcpSchema, remoteMcpSchema])),
+})
+
+export const configImpactPreviewSchema = z.object({
+  namespace: z.enum(["provider", "mcp", "skill"]),
+  targetId: z.string().optional(),
+})
+
+export const configApprovalReviewSchema = z.object({
+  approvalId: z.string().min(1),
+  decision: z.enum(["approved", "rejected"]),
+  comment: z.string().optional(),
 })
 
 export const workerRegisterSchema = z.object({

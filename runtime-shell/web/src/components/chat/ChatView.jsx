@@ -9,7 +9,15 @@ import { Field, Select, secondaryButtonClassName, useSessionCapabilities, useVie
 export default function ChatView() {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const flash = useStore((state) => state.flash)
-  const sessionTitle = useStore((state) => state.sessionDetail?.session?.title || '')
+  const sessionTitle = useStore((state) =>
+    state.sessionDetail?.session?.title ||
+    // 中文/English: after reload we may restore the selected session from the list
+    // before its full detail finishes loading, so keep the header bound to the
+    // selected summary title instead of flashing back to "未选择会话".
+    (state.currentSessionId
+      ? state.sessions.find((session) => session.id === state.currentSessionId)?.title || ''
+      : ''),
+  )
   const [showDebug, setShowDebug] = useState(false)
 
   return (

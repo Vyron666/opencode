@@ -49,8 +49,11 @@ export function CreateWorkspacePanel() {
       onSubmit={(event) => {
         event.preventDefault()
         if (!name.trim() || !projectId) return
-        void createWorkspace(name, projectId).then(() => {
-          setName(DEFAULT_WORKSPACE_NAME)
+        const submittedName = name.trim()
+        void createWorkspace(submittedName, projectId).then(() => {
+          // 中文/English: only clear the field if the user has not already started
+          // typing the next workspace name while the previous create request was finishing.
+          setName((current) => (current === submittedName ? DEFAULT_WORKSPACE_NAME : current))
         })
       }}
       className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
@@ -84,7 +87,14 @@ export function CreateSessionPanel() {
   const [title, setTitle] = useState(DEFAULT_TITLE)
   const [workspaceId, setWorkspaceId] = useState('')
   const hasWorkspaces = workspaces.length > 0
-  const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId) || null
+  const effectiveWorkspaceId =
+    (preferredWorkspaceId && workspaces.some((workspace) => workspace.id === preferredWorkspaceId) && preferredWorkspaceId) ||
+    (workspaces.some((workspace) => workspace.id === workspaceId) && workspaceId) ||
+    workspaces[0]?.id ||
+    ''
+  // 中文/English: resolve the effective workspace from render state so users can create
+  // a session immediately after creating a workspace, without waiting for the sync effect.
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === effectiveWorkspaceId) || null
   const canSubmit = Boolean(title.trim() && selectedWorkspace) && !pendingSessionAction && !pendingWorkspaceAction
 
   useEffect(() => {
@@ -108,8 +118,11 @@ export function CreateSessionPanel() {
       onSubmit={(event) => {
         event.preventDefault()
         if (!selectedWorkspace || !title.trim()) return
-        void createSession(title, selectedWorkspace.projectId, selectedWorkspace.id).then(() => {
-          setTitle(DEFAULT_TITLE)
+        const submittedTitle = title.trim()
+        void createSession(submittedTitle, selectedWorkspace.projectId, selectedWorkspace.id).then(() => {
+          // 中文/English: avoid resetting a freshly typed next title when the previous
+          // create-and-enter request resolves a little later.
+          setTitle((current) => (current === submittedTitle ? DEFAULT_TITLE : current))
         })
       }}
       className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
@@ -120,7 +133,7 @@ export function CreateSessionPanel() {
       </Field>
       <Field label={'\u5de5\u4f5c\u533a'}>
         <Select
-          value={workspaceId}
+          value={effectiveWorkspaceId}
           onChange={setWorkspaceId}
           options={workspaces.map((workspace) => ({
             id: workspace.id,

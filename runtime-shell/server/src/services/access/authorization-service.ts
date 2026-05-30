@@ -102,7 +102,7 @@ export function authorizeSystemWorkersAccess(user: User) {
 
 export function authorizeSettingsAction(input: {
   user: User
-  resource: "custom_model" | "provider_config"
+  resource: "provider_config" | "mcp_config" | "skill_config"
   action: SettingsAction
 }) {
   if (input.action === "list") {
@@ -110,6 +110,9 @@ export function authorizeSettingsAction(input: {
     return { ok: false as const, reason: "forbidden" }
   }
   if (input.user.role === "admin") return { ok: true as const }
+  if (input.user.role === "developer" && (input.resource === "provider_config" || input.resource === "mcp_config" || input.resource === "skill_config")) {
+    return { ok: true as const }
+  }
   return { ok: false as const, reason: "forbidden" }
 }
 

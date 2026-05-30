@@ -19,10 +19,12 @@ export async function loadSessionSummaries(input) {
 
   if (!currentSessionId || hasCurrentSession) {
     if (currentSessionId) {
-      writeStoredCurrentSessionId(input.get().user?.id, currentSessionId)
+      const selectedSession = nextSessions.find((session) => session.id === currentSessionId)
+      writeStoredCurrentSessionId(input.get().user?.id, currentSessionId, selectedSession?.title || '')
       writeCurrentSessionIdToLocation(currentSessionId, 'replace')
     } else if (restoredSessionId) {
-      writeStoredCurrentSessionId(input.get().user?.id, restoredSessionId)
+      const selectedSession = nextSessions.find((session) => session.id === restoredSessionId)
+      writeStoredCurrentSessionId(input.get().user?.id, restoredSessionId, selectedSession?.title || '')
       writeCurrentSessionIdToLocation(restoredSessionId, 'replace')
     }
     input.set((state) => ({

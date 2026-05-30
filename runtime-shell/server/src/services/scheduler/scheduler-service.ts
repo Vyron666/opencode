@@ -1,11 +1,18 @@
 import { Config } from "../../config"
 import type { BusinessSession, User, WorkerNode } from "../../types"
 import { sessionService, workerService } from "../store/store-singleton"
+import { refreshLocalWorkersNow } from "../worker/local-worker-heartbeat-loop"
 
 const CREATED_SESSION_RESERVATION_MS = 30000
 
 export async function selectWorkerForNewSession(user: User) {
-  const workers = await workerService.listReadyWorkersForUser(user)
+  let workers = await workerService.listReadyWorkersForUser(user)
+  if (!workers.length && Config.localWorkers.length) {
+    // 中文/English: runtime-shell can start slightly earlier than local workers after a rebuild.
+    // Refresh reachability on demand so the first create-and-enter request does not fail on this short gap.
+    await refreshLocalWorkersNow()
+    workers = await workerService.listReadyWorkersForUser(user)
+  }
   if (!workers.length) return
   const sessions = await sessionService.listSessions()
   return workers

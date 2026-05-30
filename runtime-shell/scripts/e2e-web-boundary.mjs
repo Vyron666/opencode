@@ -27,12 +27,12 @@ try {
 
   const sessionTitleA = `Boundary A ${Date.now()}`
   const sessionIdA = await createSessionFromSidebar(page, sessionTitleA)
-  await waitForSessionDetail(page, sessionIdA, (session) => session?.status === "active")
+  await waitForSessionDetail(page, sessionIdA, (session) => session?.status === "active", 30000)
   result.steps.push("session A create and open ok")
 
   const sessionTitleB = `Boundary B ${Date.now()}`
   const sessionIdB = await createSessionFromSidebar(page, sessionTitleB)
-  await waitForSessionDetail(page, sessionIdB, (session) => session?.status === "active")
+  await waitForSessionDetail(page, sessionIdB, (session) => session?.status === "active", 30000)
   result.steps.push("session B create and open ok")
   result.assertions.latestSessionUrlBound = page.url().includes(`session=${encodeURIComponent(sessionIdB)}`)
   assert(result.assertions.latestSessionUrlBound, "latest session should sync to URL")
@@ -40,19 +40,34 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" })
   await page.waitForTimeout(1200)
   const bodyAfterReload = await page.locator("body").innerText()
-  result.assertions.reloadKeepsLatestSessionVisible = bodyAfterReload.includes(sessionTitleB)
-  assert(result.assertions.reloadKeepsLatestSessionVisible, "reload should keep latest session visible")
+  result.assertions.reloadKeepsLatestSessionVisible =
+    bodyAfterReload.includes(sessionTitleB) || bodyAfterReload.includes("正在恢复会话")
+  assert(
+    result.assertions.reloadKeepsLatestSessionVisible,
+    "reload should keep latest session visible or show recovery state",
+  )
 
-  await page.goBack({ waitUntil: "domcontentloaded" }).catch(() => {})
+  await waitFor(async () => {
+    const text = await page.locator("body").innerText()
+    return text.includes(sessionTitleB)
+  }, "reload should eventually show latest session title", 12000)
+
+  await page.evaluate(() => window.history.back())
   await page.waitForTimeout(1200)
-  await waitFor(() => page.url().includes(`session=${encodeURIComponent(sessionIdA)}`), "back should update session URL")
+  await waitFor(
+    () => page.url().includes(`session=${encodeURIComponent(sessionIdA)}`),
+    "back should update session URL",
+  )
   const detailAfterBack = await waitForSessionDetail(page, sessionIdA, (session) => session?.id === sessionIdA)
   result.assertions.backNavigatesToPreviousSession = detailAfterBack?.id === sessionIdA
   assert(result.assertions.backNavigatesToPreviousSession, "back should navigate to previous session")
 
-  await page.goForward({ waitUntil: "domcontentloaded" }).catch(() => {})
+  await page.evaluate(() => window.history.forward())
   await page.waitForTimeout(1200)
-  await waitFor(() => page.url().includes(`session=${encodeURIComponent(sessionIdB)}`), "forward should update session URL")
+  await waitFor(
+    () => page.url().includes(`session=${encodeURIComponent(sessionIdB)}`),
+    "forward should update session URL",
+  )
   const detailAfterForward = await waitForSessionDetail(page, sessionIdB, (session) => session?.id === sessionIdB)
   result.assertions.forwardNavigatesToLatestSession = detailAfterForward?.id === sessionIdB
   assert(result.assertions.forwardNavigatesToLatestSession, "forward should navigate to latest session")
@@ -122,13 +137,13 @@ async function openCreateTab(page) {
   await page.waitForTimeout(300)
 }
 
-async function waitForSessionDetail(page, sessionId, predicate) {
+async function waitForSessionDetail(page, sessionId, predicate, timeoutMs = 15000) {
   let latest = null
   await waitFor(async () => {
     const detail = await api(page, `/api/session/detail?businessSessionId=${encodeURIComponent(sessionId)}`)
     latest = detail.data.session || null
     return Boolean(predicate(latest))
-  }, `session detail did not satisfy predicate for ${sessionId}`, 15000)
+  }, `session detail did not satisfy predicate for ${sessionId}`, timeoutMs)
   return latest
 }
 

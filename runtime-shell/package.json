@@ -19,6 +19,8 @@
     "e2e:settings-impact": "bun scripts/e2e-settings-impact.ts",
     "e2e:web-history": "node scripts/e2e-web-history-capabilities.mjs",
     "e2e:web-mobile": "node scripts/e2e-web-mobile.mjs",
+    "e2e:web-slow": "node scripts/e2e-web-slow-network.mjs",
+    "e2e:web-list-churn": "node scripts/e2e-web-list-churn.mjs",
     "e2e:worker-routing": "bun scripts/e2e-worker-routing.ts",
     "e2e:settings-governance": "bun scripts/e2e-settings-governance.ts",
     "e2e:governance": "bun scripts/e2e-runtime-governance-soak.ts",

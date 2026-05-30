@@ -3,6 +3,8 @@ import type { BusinessSession, SessionEvent } from "../types"
 import { bindRuntime, createClient } from "./runtime-binding"
 import { persistAndFanout } from "./runtime-events"
 import type { RuntimeEntry } from "./runtime-types"
+import { buildSessionConfigOverride } from "../services/configuration/configuration-service"
+import { userService } from "../services/store/store-singleton"
 import {
   clearPendingPermissionsBySession,
   clearPendingQuestionsBySession,
@@ -34,7 +36,7 @@ export async function openRealRuntime(session: BusinessSession) {
   if (existing) return existing
   const pending = pendingRuntimeLoads.get(session.id)
   if (pending) return pending
-  const client = createClient(session)
+  const client = await createClientWithConfig(session)
   const task = client.newSession(session.workspacePath).then((created) =>
     bindRuntime(session, client, {
       sessionId: created.sessionId,
@@ -54,7 +56,7 @@ export async function loadRealRuntime(session: BusinessSession) {
   if (pending) return pending
   const sessionId = session.binding?.acpSessionId
   if (!sessionId) throw new Error("acp session is not bound")
-  const client = createClient(session)
+  const client = await createClientWithConfig(session)
   const task = client.loadSession(session.workspacePath, sessionId).then((loaded) =>
     bindRuntime(session, client, {
       sessionId,
@@ -74,7 +76,7 @@ export async function resumeRealRuntime(session: BusinessSession) {
   if (pending) return pending
   const sessionId = session.binding?.acpSessionId
   if (!sessionId) throw new Error("acp session is not bound")
-  const client = createClient(session)
+  const client = await createClientWithConfig(session)
   const task = client.resumeSession(session.workspacePath, sessionId).then((resumed) =>
     bindRuntime(session, client, {
       sessionId,
@@ -91,7 +93,7 @@ export async function forkRealRuntime(source: BusinessSession, target: BusinessS
   const sourceRuntime = getRuntime(source.id)
   const sourceSessionId = sourceRuntime?.client.getSessionId() || source.binding?.acpSessionId
   if (!sourceSessionId) throw new Error("source session is not bound")
-  const client = createClient(target)
+  const client = await createClientWithConfig(target)
   const forked = await client.forkSession(target.workspacePath, sourceSessionId)
   return bindRuntime(target, client, {
     sessionId: forked.sessionId,
@@ -99,6 +101,17 @@ export async function forkRealRuntime(source: BusinessSession, target: BusinessS
     models: forked.models,
     modes: forked.modes,
   }, "forked")
+}
+
+async function createClientWithConfig(session: BusinessSession) {
+  const owner = await userService.getUser(session.createdBy)
+  if (!owner) return createClient(session)
+  const override = await buildSessionConfigOverride(owner)
+  const configContent = JSON.stringify({
+    $schema: "https://opencode.ai/config.json",
+    ...override,
+  })
+  return createClient(session, configContent)
 }
 
 export async function cancelRuntimePrompt(sessionId: string) {

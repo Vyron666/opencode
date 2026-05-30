@@ -43,9 +43,10 @@ try {
   assert(result.assertions.mobileSessionActivated, "mobile should create and activate session")
   result.steps.push("mobile session create ok")
 
-  const modeForm = page.locator("main form").filter({ hasText: "切换模式" }).first()
-  await waitFor(async () => (await modeForm.locator("select").count()) > 0, "mobile mode selector should exist")
-  const modeSelect = modeForm.locator("select").first()
+  // 中文/English: mobile composer keeps one prompt-mode selector in the main
+  // area, so bind directly to the control instead of brittle localized text.
+  const modeSelect = page.locator("main select").first()
+  await waitFor(async () => await modeSelect.isVisible(), "mobile mode selector should exist")
   await waitFor(async () => (await modeSelect.locator("option").count()) >= 2, "mobile mode options should be available")
   result.assertions.mobilePromptModeVisible = (await modeSelect.locator("option").count()) >= 2
   assert(result.assertions.mobilePromptModeVisible, "mobile should still expose prompt mode selector")

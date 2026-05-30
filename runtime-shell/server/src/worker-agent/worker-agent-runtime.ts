@@ -49,6 +49,7 @@ export function createRuntimeHandlers(input: {
       businessSessionId,
       workspacePath,
       workerId,
+      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
     const response = await entry.client.newSession(workspacePath)
     updateSnapshot(entry, response)
@@ -69,6 +70,7 @@ export function createRuntimeHandlers(input: {
       businessSessionId,
       workspacePath,
       workerId,
+      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
     const response = await entry.client.loadSession(workspacePath, acpSessionId)
     updateSnapshot(entry, response)
@@ -89,6 +91,7 @@ export function createRuntimeHandlers(input: {
       businessSessionId,
       workspacePath,
       workerId,
+      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
     const response = await entry.client.resumeSession(workspacePath, acpSessionId)
     updateSnapshot(entry, response)
@@ -107,6 +110,7 @@ export function createRuntimeHandlers(input: {
       businessSessionId,
       workspacePath,
       workerId,
+      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
     const response = await entry.client.forkSession(workspacePath, sourceAcpSessionId)
     updateSnapshot(entry, response)

@@ -21,6 +21,10 @@ export function startLocalWorkerHeartbeatLoop() {
   }, readHeartbeatIntervalMs())
 }
 
+export async function refreshLocalWorkersNow() {
+  await beatLocalWorker()
+}
+
 function readHeartbeatIntervalMs() {
   return Math.min(Math.max(Math.floor(Config.workerHeartbeatTimeoutMs / 3), 1000), 10000)
 }

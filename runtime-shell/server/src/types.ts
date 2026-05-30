@@ -101,6 +101,88 @@ export type WorkspaceShareBinding = {
   updatedBy: string
 }
 
+export type ConfigScopeLevel = "platform" | "tenant" | "organization" | "project" | "workspace" | "user" | "session"
+
+export type ConfigNamespace = "provider" | "mcp" | "skill" | "runtime"
+
+export type ConfigChangeType = "create" | "update" | "delete"
+
+export type ConfigSource = "platform_shared" | "user_private"
+
+export type ConfigItem = {
+  id: string
+  tenantId: string
+  organizationId: string
+  projectId?: string
+  workspaceId?: string
+  businessSessionId?: string
+  scopeLevel: ConfigScopeLevel
+  scopeId: string
+  namespace: ConfigNamespace
+  configKey: string
+  valueJson: unknown
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+
+export type ConfigChangeLog = {
+  id: string
+  tenantId: string
+  organizationId: string
+  projectId?: string
+  workspaceId?: string
+  businessSessionId?: string
+  requestId?: string
+  scopeLevel: ConfigScopeLevel
+  scopeId: string
+  namespace: ConfigNamespace
+  configKey: string
+  changeType: ConfigChangeType
+  previousVersion?: number
+  nextVersion: number
+  summaryJson: Record<string, unknown>
+  createdAt: string
+  createdBy: string
+}
+
+export type ConfigApprovalStatus = "pending" | "approved" | "rejected"
+
+export type ConfigApprovalRequest = {
+  id: string
+  tenantId: string
+  organizationId: string
+  requestId?: string
+  namespace: ConfigNamespace
+  configKey: string
+  scopeLevel: ConfigScopeLevel
+  scopeId: string
+  status: ConfigApprovalStatus
+  summaryJson: Record<string, unknown>
+  payloadJson: Record<string, unknown>
+  createdAt: string
+  createdBy: string
+  reviewedAt?: string
+  reviewedBy?: string
+  reviewComment?: string
+}
+
+export type UserMcpConfig = {
+  type: "local" | "remote"
+  enabled?: boolean
+  command?: string[]
+  url?: string
+  headers?: Record<string, string>
+  timeout?: number
+}
+
+export type UserSkillConfig = {
+  paths?: string[]
+  urls?: string[]
+}
+
 export type SessionVisibility = "admin" | "owner" | "workspace_share" | "scoped"
 
 export type WorkspaceAccessResult =
@@ -142,8 +224,10 @@ export type AuditAction =
   | "session.close"
   | "session.prompt"
   | "session.cancel"
-  | "custom_model.save"
   | "provider.save"
+  | "config.approval.create"
+  | "config.approval.approve"
+  | "config.approval.reject"
 
 export type AuditResourceType =
   | "auth_session"
@@ -151,7 +235,7 @@ export type AuditResourceType =
   | "workspace_share_binding"
   | "business_session"
   | "provider_config"
-  | "custom_model"
+  | "config_approval_request"
 
 export type AuditLog = {
   id: string

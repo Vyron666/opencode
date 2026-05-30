@@ -28,7 +28,8 @@ export function createSessionActions(input) {
   return {
     setCurrentSession: (id) => {
       input.get().disconnectSSE()
-      writeStoredCurrentSessionId(input.get().user?.id, id)
+      const selectedSession = input.get().sessions.find((session) => session.id === id)
+      writeStoredCurrentSessionId(input.get().user?.id, id, selectedSession?.title || '')
       writeCurrentSessionIdToLocation(id, 'push')
       input.set((state) =>
         input.resetConversationState({
@@ -43,7 +44,8 @@ export function createSessionActions(input) {
       const nextSessionId = readLocationCurrentSessionId(input.get().sessions)
       if (nextSessionId === currentSessionId) return
       input.get().disconnectSSE()
-      writeStoredCurrentSessionId(input.get().user?.id, nextSessionId)
+      const selectedSession = input.get().sessions.find((session) => session.id === nextSessionId)
+      writeStoredCurrentSessionId(input.get().user?.id, nextSessionId, selectedSession?.title || '')
       input.set((state) =>
         input.resetConversationState({
           currentSessionId: nextSessionId,

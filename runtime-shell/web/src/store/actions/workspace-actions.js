@@ -12,6 +12,7 @@ export function createWorkspaceActions(input) {
         // 中文/English: push the freshly created workspace into local state first so
         // the adjacent create-session form can immediately target it without waiting for polling.
         workspaces: state.workspaces.some((item) => item.id === workspace.id) ? state.workspaces : [...state.workspaces, workspace],
+        pendingWorkspaceAction: '',
         preferredWorkspaceId: workspace.id || '',
       }))
       await input.get().loadSessions().then(

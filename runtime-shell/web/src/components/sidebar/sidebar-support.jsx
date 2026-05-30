@@ -116,6 +116,8 @@ export function useViewerContext() {
       canUpdateConfig,
       canManageRuntimeSettings: canUpdateMode || canUpdateModel || canUpdateConfig,
       canManagePlatformSettings: Boolean(isAdmin),
+      canManageProviderSettings: Boolean(isAdmin || user?.role === 'developer'),
+      canViewSystemWorkers: Boolean(isAdmin),
       // 中文/English: sharing is scoped at workspace level, so the UI should read the
       // capability through workspace wording consistently.
       canShareWorkspace: Boolean(session?.capabilities?.shareWorkspace),

@@ -32,6 +32,7 @@ export async function createSessionForUser(input: {
   title: string
   projectId: string
   workspaceId: string
+  warmup?: boolean
 }) {
   const workspaceResult = await ensureWorkspaceForUser({
     user: input.user,
@@ -40,20 +41,22 @@ export async function createSessionForUser(input: {
   })
   if (!workspaceResult.ok) return workspaceResult
 
-  const worker = await assignWorkerForNewSession(input.user)
-  if (!worker) return { ok: false as const, reason: "worker_not_found" }
+  const worker = input.warmup ? await assignWorkerForNewSession(input.user) : undefined
+  if (input.warmup && !worker) return { ok: false as const, reason: "worker_not_found" }
 
   const session = await sessionService.createSession({
     title: input.title,
     projectId: input.projectId,
     workspace: workspaceResult.workspace,
     user: input.user,
-    workerId: worker.id,
+    workerId: worker?.id || "",
   })
-  await createRuntimeBinding({
-    businessSessionId: session.id,
-    workerId: worker.id,
-  })
+  if (worker) {
+    await createRuntimeBinding({
+      businessSessionId: session.id,
+      workerId: worker.id,
+    })
+  }
 
   const auditLogTask = auditService.appendAuditLog({
     tenantId: input.user.tenantId,
@@ -68,12 +71,15 @@ export async function createSessionForUser(input: {
       title: session.title,
       workspaceId: workspaceResult.workspace.id,
       workspacePath: workspaceResult.workspace.rootPath,
-      workerId: worker.id,
+      workerId: worker?.id || null,
+      warmup: Boolean(input.warmup),
     },
   })
   // 中文/English: session creation must not wait for audit durability before responding.
   void auditLogTask
-  preopenSessionRuntime(session)
+  if (input.warmup) {
+    preopenSessionRuntime(session)
+  }
 
   return {
     ok: true as const,

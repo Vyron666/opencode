@@ -7,7 +7,7 @@ import { createRequestFailureHandler } from './interaction-action-support'
 
 export async function createSessionAndActivate(input, title, projectId, workspaceId) {
   input.set({ pendingSessionAction: 'create' })
-  const session = await input.api.createSession({ title, projectId, workspaceId }).then(
+  const session = await input.api.createSession({ title, projectId, workspaceId, warmup: true }).then(
     (value) => value,
     createRequestFailureHandler(input, { pendingSessionAction: '' }, '创建会话失败'),
   )
@@ -29,7 +29,7 @@ export async function createSessionAndActivate(input, title, projectId, workspac
       capabilities: buildCapabilitiesFromSession(session),
     }),
   )
-  writeStoredCurrentSessionId(input.get().user?.id, session.id)
+  writeStoredCurrentSessionId(input.get().user?.id, session.id, session.title || '')
   writeCurrentSessionIdToLocation(session.id, 'push')
   await input.get().activateSession().then(
     (value) => value,
@@ -73,7 +73,7 @@ export async function forkCurrentSessionAndSelect(input, title) {
     (value) => value,
     createRequestFailureHandler(input, { pendingSessionAction: '' }, '刷新会话列表失败'),
   )
-  writeStoredCurrentSessionId(input.get().user?.id, forked.id)
+  writeStoredCurrentSessionId(input.get().user?.id, forked.id, forked.title || '')
   writeCurrentSessionIdToLocation(forked.id, 'push')
   input.set((state) => ({
     currentSessionId: forked.id,

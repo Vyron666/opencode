@@ -16,6 +16,7 @@ export function createRuntimeEntry(input: {
   businessSessionId: string
   workspacePath: string
   workerId: string
+  configContent?: string
 }) {
   const remoteRuntimeId = `rrt_${crypto.randomUUID().replace(/-/g, "")}`
   const entry: RuntimeEntry = {
@@ -28,6 +29,7 @@ export function createRuntimeEntry(input: {
         cwd: input.workspacePath,
         businessSessionId: input.businessSessionId,
         workerId: input.workerId,
+        configContent: input.configContent,
         onEvent: async (event) => {
           await pushEvent({
             runtimeShellBaseUrl: input.runtimeShellBaseUrl,

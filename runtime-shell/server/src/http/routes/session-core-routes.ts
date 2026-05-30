@@ -33,6 +33,7 @@ export function registerSessionCoreRoutes(app: Hono) {
       title: body.data.title,
       projectId: body.data.projectId,
       workspaceId: body.data.workspaceId,
+      warmup: body.data.warmup,
     })
     if (!result.ok) {
       if (result.reason === "worker_not_found") {

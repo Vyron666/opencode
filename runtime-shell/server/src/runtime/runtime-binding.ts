@@ -1,6 +1,6 @@
 import type { CreateElicitationResponse } from "@agentclientprotocol/sdk"
 import { AcpProcessClient } from "../acp/acp-process-client"
-import { Config, findLocalWorkerConfig, getCustomModels } from "../config"
+import { Config, findLocalWorkerConfig } from "../config"
 import { createLogger } from "../log"
 import { recordRuntimeFailure } from "../services/runtime-governance/runtime-failure-service"
 import { startRuntimeLeaseAutoRenew, stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
@@ -32,14 +32,6 @@ export async function bindRuntime(
   response: SessionBootstrap,
   kind: "opened" | "loaded" | "resumed" | "forked",
 ) {
-  const customModels = await getCustomModels()
-  if (customModels.length) {
-    log.info("custom models loaded", {
-      count: customModels.length,
-      models: customModels.map((model) => model.modelId),
-    })
-  }
-
   const updated = await activateSessionRuntime({
     sessionId: session.id,
     binding: {
@@ -141,12 +133,12 @@ export async function bindRuntime(
   return runtime
 }
 
-export function createClient(session: BusinessSession) {
+export function createClient(session: BusinessSession, configContent?: string) {
   const worker = findLocalWorkerConfig(session.workerId)
   if (Config.workerExecutionMode === "remote" && worker?.agentBaseUrl) {
     // 中文/English: when a worker exposes a runtime agent, route ACP lifecycle
     // calls there so the worker process truly carries dialog and tool load.
-    return new RemoteRuntimeClient(session, worker)
+    return new RemoteRuntimeClient(session, worker, configContent)
   }
   let upstreamEventVersion = 0
   let lastUpstreamEventAt = 0
@@ -170,6 +162,7 @@ export function createClient(session: BusinessSession) {
       cwd: session.workspacePath,
       businessSessionId: session.id,
       workerId: session.workerId,
+      configContent,
       onEvent: (event) => {
         upstreamEventVersion += 1
         lastUpstreamEventAt = Date.now()
