@@ -183,6 +183,31 @@ export type UserSkillConfig = {
   urls?: string[]
 }
 
+export type SourcedSkillConfigItem = {
+  type: "path" | "url"
+  value: string
+  source: ConfigSource
+}
+
+export type SkillPackageScope = "platform_shared" | "user_private"
+
+export type SkillPackageRecord = {
+  id: string
+  tenantId: string
+  organizationId: string
+  userId?: string
+  scope: SkillPackageScope
+  skillName: string
+  displayName: string
+  description?: string
+  token: string
+  relativeDir: string
+  skillRootDir: string
+  sourceFilename: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type SessionVisibility = "admin" | "owner" | "workspace_share" | "scoped"
 
 export type WorkspaceAccessResult =
@@ -452,4 +477,5 @@ export type PersistedState = {
   sessions: BusinessSession[]
   events: SessionEvent[]
   auditLogs: AuditLog[]
+  skillPackages?: SkillPackageRecord[]
 }

@@ -137,11 +137,11 @@ export default function LeftSidebar() {
           {sessions.map((session) => {
             const isActive = currentSessionId === session.id
             const dotColor =
-              session.status === 'active' || session.status === 'running'
+              session.status === 'active' || session.status === 'waiting_input' || session.status === 'cancelling'
                 ? '#5a9e7c'
-                : session.status === 'pending' || session.status === 'created'
+                : session.status === 'opening' || session.status === 'created'
                   ? '#d4a05a'
-                  : session.status === 'completed' || session.status === 'closed'
+                  : session.status === 'completed'
                     ? '#7a6e60'
                     : '#c44a3a'
 

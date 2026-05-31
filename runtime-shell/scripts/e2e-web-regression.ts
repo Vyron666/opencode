@@ -1,7 +1,14 @@
 import { RuntimeShellClient } from "../server/src/acp/runtime-shell-client.ts"
 import { createUpstreamDrainController } from "../server/src/runtime/upstream-drain.ts"
-import { buildConversationState, finalizeConversationBlocks } from "../web/src/components/chat/conversation-blocks.js"
+import {
+  buildConversationState,
+  createConversationState,
+  finalizeConversationBlocks,
+  finalizeConversationView,
+} from "../web/src/components/chat/conversation-blocks.js"
 import { createInteractionActions } from "../web/src/store/actions/interaction-actions.js"
+import { loadCurrentSessionDetail } from "../web/src/store/actions/session-detail-sync-support.js"
+import { mergeSessionDetail } from "../web/src/store/session-events.js"
 import {
   deriveConversationPhase,
   deriveRunningState,
@@ -72,6 +79,33 @@ try {
 
     await verifySessionListPollDoesNotReloadDetailForChunkOnlyProgress()
     result.assertions.session_list_poll_does_not_reload_detail_for_chunk_only_progress = true
+
+    await verifySessionListPollReloadsDetailWhenBusyStateDiverges()
+    result.assertions.session_list_poll_reloads_detail_when_busy_state_diverges = true
+
+    verifySessionDetailStatusTracksTurnLifecycle()
+    result.assertions.session_detail_status_tracks_turn_lifecycle = true
+
+    await verifySessionDetailReloadKeepsVisibleQuestionRequest()
+    result.assertions.session_detail_reload_keeps_visible_question_request = true
+
+    await verifySessionDetailReloadKeepsRespondingQuestionState()
+    result.assertions.session_detail_reload_keeps_responding_question_state = true
+
+    await verifySessionDetailReloadKeepsRespondingPermissionState()
+    result.assertions.session_detail_reload_keeps_responding_permission_state = true
+
+    verifyConversationViewReconcilesMissingPermissionBlock()
+    result.assertions.conversation_view_reconciles_missing_permission_block = true
+
+    verifyConversationViewReconcilesRespondingQuestionBlock()
+    result.assertions.conversation_view_reconciles_responding_question_block = true
+
+    verifyDebugConversationViewReconcilesMissingQuestionBlock()
+    result.assertions.debug_conversation_view_reconciles_missing_question_block = true
+
+    await verifyAttachmentLocalStatusKeepsVisiblePermissionBlock()
+    result.assertions.attachment_local_status_keeps_visible_permission_block = true
   }
 
   result.ok = true
@@ -214,8 +248,18 @@ async function verifyCancel409ConvergesToIdle() {
 }
 
 async function verifyQuestionSubmissionRemovesPending() {
+  const questionEvent = createEvent("evt-question-1", "question_requested", {
+    requestId: "q1",
+    message: "Need answer",
+  })
+  const questionEvent2 = createEvent("evt-question-2", "question_requested", {
+    requestId: "q2",
+    message: "Need another answer",
+  })
   const state = createState({
     currentSessionId: "bs_1",
+    eventBuffer: [questionEvent, questionEvent2],
+    conversationState: buildConversationState([questionEvent, questionEvent2], false),
     pendingQuestions: [{ requestId: "q1" }, { requestId: "q2" }],
   })
   const actions = createInteractionActions(
@@ -228,7 +272,7 @@ async function verifyQuestionSubmissionRemovesPending() {
 
   assertJsonEqual(
     state.pendingQuestions,
-    [{ requestId: "q2" }],
+    [{ requestId: "q2", message: "Need another answer" }],
     "question submission should remove only the answered pending question",
   )
   assert(state.respondingQuestionIds.has("q1"), "question submission should track the responding request id")
@@ -237,8 +281,18 @@ async function verifyQuestionSubmissionRemovesPending() {
 }
 
 async function verifyPermissionSubmissionRemovesPending() {
+  const permissionEvent = createEvent("evt-permission-1", "permission_requested", {
+    requestId: "p1",
+    toolName: "read",
+  })
+  const permissionEvent2 = createEvent("evt-permission-2", "permission_requested", {
+    requestId: "p2",
+    toolName: "write",
+  })
   const state = createState({
     currentSessionId: "bs_1",
+    eventBuffer: [permissionEvent, permissionEvent2],
+    conversationState: buildConversationState([permissionEvent, permissionEvent2], false),
     pendingPermissions: [{ requestId: "p1" }, { requestId: "p2" }],
   })
   const actions = createInteractionActions(
@@ -251,7 +305,7 @@ async function verifyPermissionSubmissionRemovesPending() {
 
   assertJsonEqual(
     state.pendingPermissions,
-    [{ requestId: "p2" }],
+    [{ requestId: "p2", toolName: "write" }],
     "permission submission should remove only the handled pending permission",
   )
   assert(state.respondingPermissionIds.has("p1"), "permission submission should track the responding request id")
@@ -356,7 +410,7 @@ async function verifyPermissionResolutionRegistersBeforeExposure() {
       cwd: "/workspace",
       businessSessionId: "bs_1",
       workerId: "worker_local",
-      onEvent: async (event) => {
+      onEvent: async (event: { eventType: string }) => {
         events.push(event.eventType)
       },
     },
@@ -407,7 +461,7 @@ async function verifyQuestionResolutionRegistersBeforeExposure() {
       cwd: "/workspace",
       businessSessionId: "bs_1",
       workerId: "worker_local",
-      onEvent: async (event) => {
+      onEvent: async (event: { eventType: string }) => {
         events.push(event.eventType)
       },
     },
@@ -547,6 +601,16 @@ async function verifySessionListPollDoesNotReloadDetailForChunkOnlyProgress() {
           pendingQuestions: [],
         },
       ],
+      eventBuffer: [createEvent("evt-user-1", "user_message_chunk", { text: "hello" })],
+      isSubmitting: false,
+      isRunning: true,
+      isCancelling: false,
+      pendingPermissions: [],
+      pendingQuestions: [],
+      respondingPermissionIds: new Set(),
+      respondingQuestionIds: new Set(),
+      isConnected: true,
+      activeSSESessionId: "bs_1",
       loadSessionDetail: async () => {
         detailReloads += 1
       },
@@ -561,10 +625,335 @@ async function verifySessionListPollDoesNotReloadDetailForChunkOnlyProgress() {
   assert(detailReloads === 0, "chunk-only eventCount progress should not force a detail reload during streaming")
 }
 
+async function verifySessionListPollReloadsDetailWhenBusyStateDiverges() {
+  let detailReloads = 0
+  const input = {
+    api: {
+      sessionList: async () => ({
+        items: [
+          {
+            id: "bs_1",
+            title: "Session 1",
+            status: "active",
+            eventCount: 5,
+            capabilityState: { modelId: "deepseek/deepseek-v4-flash" },
+            pendingPermissions: [],
+            pendingQuestions: [],
+          },
+        ],
+        workspaces: [],
+      }),
+    },
+    get: () => ({
+      currentSessionId: "bs_1",
+      user: { id: "u_1" },
+      sessions: [
+        {
+          id: "bs_1",
+          title: "Session 1",
+          status: "active",
+          eventCount: 4,
+          capabilityState: { modelId: "deepseek/deepseek-v4-flash" },
+          pendingPermissions: [],
+          pendingQuestions: [],
+        },
+      ],
+      eventBuffer: [
+        createEvent("evt-user-1", "user_message_chunk", { text: "hello" }),
+        createEvent("evt-thought-1", "agent_thought_chunk", { text: "thinking" }),
+        createEvent("evt-tool-1", "tool_call", { toolCallId: "call_1", status: "pending", title: "task" }),
+      ],
+      isSubmitting: false,
+      isRunning: true,
+      isCancelling: false,
+      pendingPermissions: [],
+      pendingQuestions: [],
+      respondingPermissionIds: new Set(),
+      respondingQuestionIds: new Set(),
+      isConnected: true,
+      activeSSESessionId: "bs_1",
+      loadSessionDetail: async () => {
+        detailReloads += 1
+      },
+      disconnectSSE: () => {},
+    }),
+    set: () => {},
+    resetConversationState: (patch: Record<string, unknown>) => patch,
+  }
+
+  await loadSessionSummaries(input as never)
+
+  assert(detailReloads === 1, "session-list polling should realign detail when summary and local busy state diverge")
+}
+
+function verifySessionDetailStatusTracksTurnLifecycle() {
+  let detail = {
+    session: {
+      id: "bs_1",
+      status: "active",
+    },
+  }
+
+  detail = mergeSessionDetail(detail, createEvent("evt-user-1", "user_message_chunk", { text: "hello" }))
+  assert(detail.session.status === "waiting_input", "user turn start should mark the live session as waiting_input")
+
+  detail = mergeSessionDetail(detail, createEvent("evt-question-1", "question_requested", { requestId: "q_1" }))
+  assert(detail.session.status === "active", "interactive pause should expose the session as active and awaiting input")
+
+  detail = mergeSessionDetail(detail, createEvent("evt-question-2", "question_resolved", { requestId: "q_1" }))
+  assert(detail.session.status === "waiting_input", "resolved interaction should return the session to upstream-running state")
+
+  detail = mergeSessionDetail(detail, createEvent("evt-stop-1", "turn_completed", { stopReason: "end_turn" }))
+  assert(detail.session.status === "active", "turn completion should settle the session back to active idle state")
+}
+
+async function verifySessionDetailReloadKeepsVisibleQuestionRequest() {
+  const questionEvent = createEvent("evt-question-1", "question_requested", {
+    requestId: "q_1",
+    message: "Need answer",
+  })
+  const state = {
+    currentSessionId: "bs_1",
+    sessionSelectionVersion: 1,
+    user: { id: "u_1" },
+    eventBuffer: [questionEvent],
+    sessions: [],
+    workspaces: [],
+    seenEventIds: new Set(["evt-question-1"]),
+    pendingPermissions: [],
+    pendingQuestions: [{ requestId: "q_1", message: "Need answer" }],
+    respondingPermissionIds: new Set(),
+    respondingQuestionIds: new Set(),
+    disconnectSSE: () => {},
+  } as Record<string, any>
+  const input = createDetailInput(state, {
+    sessionDetail: async () => ({
+      session: {
+        id: "bs_1",
+        status: "active",
+        pendingPermissions: [],
+        pendingQuestions: [],
+      },
+      // 中文/English: simulate a slightly older detail response that has not yet
+      // persisted the question event while the local live state already has it.
+      events: [],
+    }),
+  })
+
+  const data = await loadCurrentSessionDetail(input as never)
+
+  assert(
+    data.events.some((event: { eventType?: string }) => event.eventType === "question_requested"),
+    "detail reload should keep the live question event",
+  )
+  assert(state.pendingQuestions.length === 1, "detail reload should keep the visible pending question")
+  assert(state.conversationBlocks.some((block: ConversationBlock) => block.type === "question"), "detail reload should keep the question block visible")
+}
+
+async function verifySessionDetailReloadKeepsRespondingQuestionState() {
+  const questionEvent = createEvent("evt-question-1", "question_requested", {
+    requestId: "q_1",
+    message: "Need answer",
+  })
+  const state = {
+    currentSessionId: "bs_1",
+    sessionSelectionVersion: 1,
+    user: { id: "u_1" },
+    eventBuffer: [questionEvent],
+    sessions: [],
+    workspaces: [],
+    seenEventIds: new Set(["evt-question-1"]),
+    pendingPermissions: [],
+    pendingQuestions: [],
+    respondingPermissionIds: new Set(),
+    respondingQuestionIds: new Set(["q_1"]),
+    disconnectSSE: () => {},
+  } as Record<string, any>
+  const input = createDetailInput(state, {
+    sessionDetail: async () => ({
+      session: {
+        id: "bs_1",
+        status: "active",
+        pendingPermissions: [],
+        pendingQuestions: [{ requestId: "q_1", message: "Need answer" }],
+      },
+      events: [questionEvent],
+    }),
+  })
+
+  await loadCurrentSessionDetail(input as never)
+
+  assert(state.respondingQuestionIds.has("q_1"), "detail reload should keep the local responding question state")
+  assert(state.pendingQuestions.length === 0, "detail reload should not re-open a question that is already responding locally")
+}
+
+async function verifySessionDetailReloadKeepsRespondingPermissionState() {
+  const permissionEvent = createEvent("evt-permission-1", "permission_requested", {
+    requestId: "p_1",
+    toolName: "read",
+  })
+  const state = {
+    currentSessionId: "bs_1",
+    sessionSelectionVersion: 1,
+    user: { id: "u_1" },
+    eventBuffer: [permissionEvent],
+    sessions: [],
+    workspaces: [],
+    seenEventIds: new Set(["evt-permission-1"]),
+    pendingPermissions: [],
+    pendingQuestions: [],
+    respondingPermissionIds: new Set(["p_1"]),
+    respondingQuestionIds: new Set(),
+    disconnectSSE: () => {},
+  } as Record<string, any>
+  const input = createDetailInput(state, {
+    sessionDetail: async () => ({
+      session: {
+        id: "bs_1",
+        status: "active",
+        pendingPermissions: [{ requestId: "p_1", toolName: "read" }],
+        pendingQuestions: [],
+      },
+      events: [permissionEvent],
+    }),
+  })
+
+  await loadCurrentSessionDetail(input as never)
+
+  assert(state.respondingPermissionIds.has("p_1"), "detail reload should keep the local responding permission state")
+  assert(state.pendingPermissions.length === 0, "detail reload should not re-open a permission that is already responding locally")
+}
+
+function verifyConversationViewReconcilesMissingPermissionBlock() {
+  const permissionEvent = createEvent("evt-permission-1", "permission_requested", {
+    requestId: "p_1",
+    toolName: "read",
+    options: [{ optionId: "allow", kind: "allow", name: "Allow" }],
+  })
+  const conversationState = createConversationState()
+  const view = finalizeConversationView({
+    conversationState,
+    isRunning: false,
+    eventBuffer: [permissionEvent],
+    pendingPermissions: [{ requestId: "p_1", toolName: "read" }],
+    pendingQuestions: [],
+    respondingPermissionIds: new Set(),
+    respondingQuestionIds: new Set(),
+  })
+
+  assert(
+    view.conversationBlocks.some((block: ConversationBlock) => block.type === "permission" && block.data?.requestId === "p_1"),
+    "conversation view should synthesize a visible permission block when waiting state outpaces rendered blocks",
+  )
+  assert(
+    view.conversationVersion > conversationState.latestVersion,
+    "conversation view should bump version when it synthesizes a missing interaction block",
+  )
+}
+
+function verifyConversationViewReconcilesRespondingQuestionBlock() {
+  const questionEvent = createEvent("evt-question-1", "question_requested", {
+    requestId: "q_1",
+    message: "Need answer",
+  })
+  const conversationState = createConversationState()
+  const view = finalizeConversationView({
+    conversationState,
+    isRunning: false,
+    eventBuffer: [questionEvent],
+    pendingPermissions: [],
+    pendingQuestions: [],
+    respondingPermissionIds: new Set(),
+    respondingQuestionIds: new Set(["q_1"]),
+  })
+
+  assert(
+    view.conversationBlocks.some((block: ConversationBlock) => block.type === "question" && block.data?.requestId === "q_1"),
+    "conversation view should keep a visible question block while the local response is still awaiting upstream confirmation",
+  )
+}
+
+function verifyDebugConversationViewReconcilesMissingQuestionBlock() {
+  const questionEvent = createEvent("evt-question-1", "question_requested", {
+    requestId: "q_1",
+    message: "Need answer",
+  })
+  const conversationState = buildConversationState([questionEvent], true)
+  const view = finalizeConversationView({
+    conversationState,
+    isRunning: false,
+    eventBuffer: [questionEvent],
+    pendingPermissions: [],
+    pendingQuestions: [{ requestId: "q_1", message: "Need answer" }],
+    respondingPermissionIds: new Set(),
+    respondingQuestionIds: new Set(),
+  })
+
+  assert(
+    view.conversationBlocks.some((block: ConversationBlock) => block.type === "question" && block.data?.requestId === "q_1"),
+    "debug conversation replay should still reconcile a visible question block through the unified interaction view",
+  )
+}
+
+async function verifyAttachmentLocalStatusKeepsVisiblePermissionBlock() {
+  const permissionEvent = createEvent("evt-permission-1", "permission_requested", {
+    requestId: "p_1",
+    toolName: "read",
+  })
+  const state = {
+    currentSessionId: "bs_1",
+    eventBuffer: [permissionEvent],
+    eventBufferVersion: 1,
+    seenEventIds: new Set(["evt-permission-1"]),
+    conversationState: buildConversationState([permissionEvent], false),
+    conversationBlocks: finalizeConversationView({
+      conversationState: buildConversationState([permissionEvent], false),
+      isRunning: false,
+      eventBuffer: [permissionEvent],
+      pendingPermissions: [{ requestId: "p_1", toolName: "read" }],
+      pendingQuestions: [],
+      respondingPermissionIds: new Set(),
+      respondingQuestionIds: new Set(),
+    }).conversationBlocks,
+    conversationVersion: 1,
+    pendingPermissions: [{ requestId: "p_1", toolName: "read" }],
+    pendingQuestions: [],
+    respondingPermissionIds: new Set(),
+    respondingQuestionIds: new Set(),
+    isSubmitting: false,
+    isRunning: false,
+    awaitingTurnRestart: false,
+    isCancelling: false,
+    flash: "",
+  } as Record<string, any>
+  const actions = createInteractionActions(
+    createInput(state as State, {
+      sendInput: async (_businessSessionId: string, parts: unknown[]) => {
+        assert(Array.isArray(parts) && parts.length >= 2, "attachment prompt should include text and attachment payloads")
+        return { success: true }
+      },
+    }) as never,
+  )
+
+  const file = {
+    name: "note.txt",
+    type: "text/plain",
+    text: async () => "hello",
+  }
+
+  await actions.sendPrompt("with attachment", [file] as never)
+
+  assert(
+    state.conversationBlocks.some((block: ConversationBlock) => block.type === "permission" && block.data?.requestId === "p_1"),
+    "attachment-local status feedback should not bypass the unified interaction view or hide an open permission block",
+  )
+}
+
 function createInput(state: State, apiOverrides: Partial<Input["api"]>): Input {
   return {
     api: {
       cancelSessionPrompt: async () => ({ success: true }),
+      sendInput: async () => ({ success: true }),
       permissionRespond: async () => ({ success: true }),
       questionRespond: async () => ({ success: true }),
       ...apiOverrides,
@@ -575,16 +964,40 @@ function createInput(state: State, apiOverrides: Partial<Input["api"]>): Input {
         state.flash = message
       },
     }),
-    set: (patch) => {
+    set: (patch: Partial<State> | ((state: State) => Partial<State>)) => {
       const next = typeof patch === "function" ? patch(state) : patch
       Object.assign(state, next)
     },
   }
 }
 
+function createDetailInput(state: Record<string, any>, apiOverrides: Record<string, unknown>) {
+  return {
+    api: {
+      sessionDetail: async () => ({
+        session: null,
+        events: [],
+      }),
+      ...apiOverrides,
+    },
+    get: () => state,
+    set: (patch: Record<string, unknown> | ((state: Record<string, any>) => Record<string, unknown>)) => {
+      const next = typeof patch === "function" ? patch(state) : patch
+      Object.assign(state, next)
+    },
+    resetConversationState: (patch: Record<string, unknown>) => patch,
+  }
+}
+
 function createState(overrides: Partial<State>): State {
   return {
     currentSessionId: "",
+    eventBuffer: [],
+    eventBufferVersion: 0,
+    seenEventIds: new Set(),
+    conversationState: createConversationState(),
+    conversationBlocks: [],
+    conversationVersion: 0,
     pendingPermissions: [],
     pendingQuestions: [],
     respondingPermissionIds: new Set(),
@@ -614,6 +1027,12 @@ function assertJsonEqual(actual: unknown, expected: unknown, message: string) {
 
 type State = {
   currentSessionId: string
+  eventBuffer: Array<Record<string, unknown>>
+  eventBufferVersion: number
+  seenEventIds: Set<string>
+  conversationState: ReturnType<typeof createConversationState>
+  conversationBlocks: ConversationBlock[]
+  conversationVersion: number
   pendingPermissions: Array<{ requestId?: string; id?: string }>
   pendingQuestions: Array<{ requestId?: string; id?: string }>
   respondingPermissionIds: Set<string>
@@ -628,6 +1047,7 @@ type State = {
 type Input = {
   api: {
     cancelSessionPrompt: (businessSessionId: string) => Promise<unknown>
+    sendInput: (businessSessionId: string, parts: unknown[]) => Promise<unknown>
     permissionRespond: (
       businessSessionId: string,
       requestId: string,

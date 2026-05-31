@@ -1,6 +1,6 @@
 import {
   buildConversationState,
-  finalizeConversationBlocks,
+  finalizeConversationView,
 } from '../../components/chat/conversation-blocks'
 import {
   buildCapabilitiesFromSession,
@@ -13,6 +13,10 @@ import {
   writeCurrentSessionIdToLocation,
   writeStoredCurrentSessionId,
 } from '../session-selection-support'
+import {
+  convergeInteractionState,
+  mergeSessionEvents,
+} from '../session-events'
 
 export async function loadCurrentSessionDetail(input) {
   const currentSessionId = input.get().currentSessionId
@@ -42,8 +46,12 @@ export async function loadCurrentSessionDetail(input) {
     throw error
   })
   if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
+  const currentState = input.get()
   const session = data.session || null
-  const eventBuffer = Array.isArray(data.events) ? data.events : []
+  const eventBuffer = mergeSessionEvents(
+    currentState.currentSessionId === currentSessionId ? currentState.eventBuffer : [],
+    Array.isArray(data.events) ? data.events : [],
+  )
   const conversationState = buildConversationState(eventBuffer, false)
   const seenEventIds = new Set(
     eventBuffer
@@ -51,19 +59,50 @@ export async function loadCurrentSessionDetail(input) {
       .filter((eventId) => typeof eventId === 'string'),
   )
   const runtimeFlags = deriveRuntimeFlagsFromEvents(eventBuffer)
+  const interactionState = convergeInteractionState({
+    eventBuffer,
+    pendingPermissions: currentState.currentSessionId === currentSessionId ? currentState.pendingPermissions : [],
+    pendingQuestions: currentState.currentSessionId === currentSessionId ? currentState.pendingQuestions : [],
+    nextPendingPermissions: session?.pendingPermissions ?? [],
+    nextPendingQuestions: session?.pendingQuestions ?? [],
+    respondingPermissionIds: currentState.currentSessionId === currentSessionId ? currentState.respondingPermissionIds : new Set(),
+    respondingQuestionIds: currentState.currentSessionId === currentSessionId ? currentState.respondingQuestionIds : new Set(),
+  })
+  const pendingPermissions = interactionState.pendingPermissions
+  const pendingQuestions = interactionState.pendingQuestions
+  const respondingPermissionIds = interactionState.respondingPermissionIds
+  const respondingQuestionIds = interactionState.respondingQuestionIds
   const eventCapabilities = eventBuffer.reduce((capabilities, event) => {
     const patch = deriveCapPatch(event)
     return patch ? mergeCapabilities(capabilities, patch) : capabilities
   }, buildCapabilitiesFromSession(session))
+  const nextSessionDetail = {
+    ...data,
+    session: session
+      ? {
+          ...session,
+          pendingPermissions,
+          pendingQuestions,
+        }
+      : session,
+    events: eventBuffer,
+  }
 
   input.set({
-    sessionDetail: data,
+    sessionDetail: nextSessionDetail,
     eventBuffer,
     eventBufferVersion: eventBuffer.length,
     seenEventIds,
     conversationState,
-    conversationBlocks: finalizeConversationBlocks(conversationState, runtimeFlags.isRunning),
-    conversationVersion: conversationState.latestVersion,
+    ...finalizeConversationView({
+      conversationState,
+      isRunning: runtimeFlags.isRunning,
+      eventBuffer,
+      pendingPermissions,
+      pendingQuestions,
+      respondingPermissionIds,
+      respondingQuestionIds,
+    }),
     // 中文/English: a reloaded session detail is the source of truth; once the
     // persisted event history has been replayed we must clear any optimistic
     // local sending state even if SSE missed the terminal event live.
@@ -71,11 +110,11 @@ export async function loadCurrentSessionDetail(input) {
     isRunning: runtimeFlags.isRunning,
     awaitingTurnRestart: runtimeFlags.awaitingTurnRestart,
     isCancelling: false,
-    pendingPermissions: session?.pendingPermissions ?? [],
-    pendingQuestions: session?.pendingQuestions ?? [],
-    respondingPermissionIds: new Set(),
-    respondingQuestionIds: new Set(),
+    pendingPermissions,
+    pendingQuestions,
+    respondingPermissionIds,
+    respondingQuestionIds,
     capabilities: eventCapabilities,
   })
-  return data
+  return nextSessionDetail
 }

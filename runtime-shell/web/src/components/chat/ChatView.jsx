@@ -1,9 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
-import { buildConversationBlocks } from './conversation-blocks'
+import { buildConversationState, finalizeConversationView } from './conversation-blocks'
 import { ChatBlockItem } from './chat-blocks'
 import { deriveConversationPhase } from '../../store/runtime-phase'
 import { subscribeAssistantStreamActivity } from '../../store/sse/assistant-stream-channel'
+import { convergeInteractionState } from '../../store/session-events'
 import { Field, Select, secondaryButtonClassName, useSessionCapabilities, useViewerContext } from '../sidebar/sidebar-support'
 
 export default function ChatView() {
@@ -343,7 +344,37 @@ function DebugConversationTimeline() {
   const eventBuffer = useStore((state) => state.eventBuffer)
   const eventBufferVersion = useStore((state) => state.eventBufferVersion)
   const isRunning = useStore((state) => state.isRunning)
-  const blocks = useMemo(() => buildConversationBlocks(eventBuffer, true, isRunning), [eventBuffer, eventBufferVersion, isRunning])
+  const pendingPermissions = useStore((state) => state.pendingPermissions)
+  const pendingQuestions = useStore((state) => state.pendingQuestions)
+  const respondingPermissionIds = useStore((state) => state.respondingPermissionIds)
+  const respondingQuestionIds = useStore((state) => state.respondingQuestionIds)
+  const blocks = useMemo(() => {
+    const conversationState = buildConversationState(eventBuffer, true)
+    const interactionState = convergeInteractionState({
+      eventBuffer,
+      pendingPermissions,
+      pendingQuestions,
+      respondingPermissionIds,
+      respondingQuestionIds,
+    })
+    return finalizeConversationView({
+      conversationState,
+      isRunning,
+      eventBuffer,
+      pendingPermissions: interactionState.pendingPermissions,
+      pendingQuestions: interactionState.pendingQuestions,
+      respondingPermissionIds: interactionState.respondingPermissionIds,
+      respondingQuestionIds: interactionState.respondingQuestionIds,
+    }).conversationBlocks
+  }, [
+    eventBuffer,
+    eventBufferVersion,
+    isRunning,
+    pendingPermissions,
+    pendingQuestions,
+    respondingPermissionIds,
+    respondingQuestionIds,
+  ])
 
   if (blocks.length === 0) return <EmptyConversation currentSessionId={useStore.getState().currentSessionId} />
 

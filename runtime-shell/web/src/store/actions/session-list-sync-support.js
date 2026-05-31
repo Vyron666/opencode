@@ -15,17 +15,18 @@ export async function loadSessionSummaries(input) {
     // cannot roll back a newer create/select/open transition.
     return Array.isArray(data.items) ? data.items : []
   }
-  const currentSessionId = input.get().currentSessionId
+  const currentState = input.get()
+  const currentSessionId = currentState.currentSessionId
   const nextSessions = Array.isArray(data.items) ? data.items : []
   const nextWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : []
   const currentSessionSummary = currentSessionId
     ? nextSessions.find((session) => session.id === currentSessionId) || null
     : null
   const previousSessionSummary = currentSessionId
-    ? input.get().sessions.find((session) => session.id === currentSessionId) || null
+    ? currentState.sessions.find((session) => session.id === currentSessionId) || null
     : null
   const restoredSessionId = !currentSessionId
-    ? readLocationCurrentSessionId(nextSessions) || readStoredCurrentSessionId(input.get().user?.id, nextSessions)
+    ? readLocationCurrentSessionId(nextSessions) || readStoredCurrentSessionId(currentState.user?.id, nextSessions)
     : ''
   const hasCurrentSession = currentSessionId
     ? nextSessions.some((session) => session.id === currentSessionId)
@@ -34,11 +35,11 @@ export async function loadSessionSummaries(input) {
   if (!currentSessionId || hasCurrentSession) {
     if (currentSessionId) {
       const selectedSession = nextSessions.find((session) => session.id === currentSessionId)
-      writeStoredCurrentSessionId(input.get().user?.id, currentSessionId, selectedSession?.title || '')
+      writeStoredCurrentSessionId(currentState.user?.id, currentSessionId, selectedSession?.title || '')
       writeCurrentSessionIdToLocation(currentSessionId, 'replace')
     } else if (restoredSessionId) {
       const selectedSession = nextSessions.find((session) => session.id === restoredSessionId)
-      writeStoredCurrentSessionId(input.get().user?.id, restoredSessionId, selectedSession?.title || '')
+      writeStoredCurrentSessionId(currentState.user?.id, restoredSessionId, selectedSession?.title || '')
       writeCurrentSessionIdToLocation(restoredSessionId, 'replace')
     }
     input.set((state) => ({
@@ -50,7 +51,7 @@ export async function loadSessionSummaries(input) {
           ? state.sessionSelectionVersion + 1
           : state.sessionSelectionVersion,
     }))
-    if (shouldRefreshCurrentSessionDetail(currentSessionId, previousSessionSummary, currentSessionSummary)) {
+    if (shouldRefreshCurrentSessionDetail(currentState, currentSessionId, previousSessionSummary, currentSessionSummary)) {
       void input.get().loadSessionDetail().catch(() => undefined)
     }
     return nextSessions
@@ -59,7 +60,7 @@ export async function loadSessionSummaries(input) {
   // 中文/English: if the current session is no longer visible after refresh,
   // clear client-side runtime state so the UI does not keep operating on a stale session.
   input.get().disconnectSSE()
-  writeStoredCurrentSessionId(input.get().user?.id, '')
+  writeStoredCurrentSessionId(currentState.user?.id, '')
   writeCurrentSessionIdToLocation('', 'replace')
   input.set((state) =>
     input.resetConversationState({
@@ -72,10 +73,10 @@ export async function loadSessionSummaries(input) {
   return nextSessions
 }
 
-function shouldRefreshCurrentSessionDetail(currentSessionId, previousSessionSummary, currentSessionSummary) {
+function shouldRefreshCurrentSessionDetail(currentState, currentSessionId, previousSessionSummary, currentSessionSummary) {
   if (!currentSessionId || !currentSessionSummary) return false
   if (!previousSessionSummary) return true
-  return (
+  if (
     // 中文/English: do not reload detail on every eventCount tick. SSE already
     // streams normal answer chunks live, and a poll-time detail replay here can
     // rebuild the same assistant block mid-stream and cause visible flicker.
@@ -83,5 +84,46 @@ function shouldRefreshCurrentSessionDetail(currentSessionId, previousSessionSumm
     previousSessionSummary.capabilityState?.modelId !== currentSessionSummary.capabilityState?.modelId ||
     previousSessionSummary.pendingPermissions?.length !== currentSessionSummary.pendingPermissions?.length ||
     previousSessionSummary.pendingQuestions?.length !== currentSessionSummary.pendingQuestions?.length
+  ) {
+    return true
+  }
+  if (readSessionEventCount(currentSessionSummary) === readSessionEventCount(previousSessionSummary)) return false
+  return shouldConvergeCurrentSessionDetail(currentState, currentSessionSummary)
+}
+
+function shouldConvergeCurrentSessionDetail(currentState, currentSessionSummary) {
+  if (readSessionEventCount(currentSessionSummary) <= countPersistedEvents(currentState.eventBuffer)) return false
+  const localBusy = readLocalBusyState(currentState)
+  const summaryBusy = readSummaryBusyState(currentSessionSummary)
+  if (localBusy !== summaryBusy) return true
+  // 中文/English: when the selected session is no longer following a healthy live SSE
+  // stream, the polled session summary must take over and realign the detail state.
+  return !currentState.isConnected || currentState.activeSSESessionId !== currentSessionSummary.id
+}
+
+function readSessionEventCount(sessionSummary) {
+  return Number.isFinite(sessionSummary?.eventCount) ? sessionSummary.eventCount : 0
+}
+
+function countPersistedEvents(eventBuffer) {
+  if (!Array.isArray(eventBuffer)) return 0
+  return eventBuffer.filter((event) => typeof event?.eventType === 'string' && !event.eventType.endsWith('_local')).length
+}
+
+function readLocalBusyState(currentState) {
+  return (
+    currentState.isSubmitting === true ||
+    currentState.isRunning === true ||
+    currentState.isCancelling === true ||
+    currentState.pendingPermissions?.length > 0 ||
+    currentState.pendingQuestions?.length > 0 ||
+    currentState.respondingPermissionIds?.size > 0 ||
+    currentState.respondingQuestionIds?.size > 0
   )
+}
+
+function readSummaryBusyState(sessionSummary) {
+  if (!sessionSummary) return false
+  if (sessionSummary.pendingPermissions?.length > 0 || sessionSummary.pendingQuestions?.length > 0) return true
+  return ['opening', 'waiting_input', 'cancelling'].includes(sessionSummary.status)
 }

@@ -6,11 +6,12 @@ import {
   listProviderConfigsForUser,
   listSkillConfigForUser,
   previewConfigImpactForUser,
+  removeSkillConfigItemForUser,
   saveMcpConfigsForUser,
   saveProviderConfigForUser,
   saveSkillConfigForUser,
 } from "../../services/settings/settings-service"
-import { configApprovalReviewSchema, configHistoryListSchema, configImpactPreviewSchema, mcpConfigSchema, providerConfigSchema, skillConfigSchema } from "../schemas"
+import { configApprovalReviewSchema, configHistoryListSchema, configImpactPreviewSchema, mcpConfigSchema, providerConfigSchema, skillConfigRemoveItemSchema, skillConfigSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
@@ -67,7 +68,7 @@ export function registerSessionSettingsRoutes(app: Hono) {
     if (!result.ok) {
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
-    return c.json(jsonOk(result.config, reqId))
+    return c.json(jsonOk({ ...result.config, items: result.items }, reqId))
   })
 
   app.post("/api/skill-config/save", async (c) => {
@@ -87,6 +88,26 @@ export function registerSessionSettingsRoutes(app: Hono) {
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
     return c.json(jsonOk({ success: result.success, approvalRequired: result.approvalRequired, approval: result.approval }, reqId))
+  })
+
+  app.post("/api/skill-config/remove-item", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = skillConfigRemoveItemSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid skill config remove payload", 400, reqId, body.error.flatten()), 400)
+    }
+    const result = await removeSkillConfigItemForUser({
+      user,
+      requestId: reqId,
+      type: body.data.type,
+      value: body.data.value,
+    })
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({ success: true }, reqId))
   })
 
   app.post("/api/provider-config/save", async (c) => {

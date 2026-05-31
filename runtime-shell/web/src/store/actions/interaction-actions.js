@@ -1,10 +1,10 @@
-﻿import {
+import {
   appendConversationEvent,
-  finalizeConversationBlocks,
+  finalizeConversationView,
 } from '../../components/chat/conversation-blocks'
 import { createRequestFailureHandler } from './interaction-action-support'
 import { fileToBase64 } from '../file-parts'
-import { createLocalEvent } from '../session-events'
+import { convergeInteractionState, createLocalEvent } from '../session-events'
 
 export function createInteractionActions(input) {
   return {
@@ -60,13 +60,34 @@ export function createInteractionActions(input) {
       const currentSessionId = input.get().currentSessionId
       if (!currentSessionId || !requestId) return
       const previousPendingPermissions = input.get().pendingPermissions
-      input.set((state) => ({
-        respondingPermissionIds: new Set(state.respondingPermissionIds).add(requestId),
-        pendingPermissions: state.pendingPermissions.filter((item) => (item.requestId || item.id) !== requestId),
-        isSubmitting: false,
-        awaitingTurnRestart: false,
-        isCancelling: false,
-      }))
+      input.set((state) => {
+        const interactionState = convergeInteractionState({
+          eventBuffer: state.eventBuffer,
+          pendingPermissions: state.pendingPermissions.filter((item) => (item.requestId || item.id) !== requestId),
+          pendingQuestions: state.pendingQuestions,
+          respondingPermissionIds: new Set(state.respondingPermissionIds).add(requestId),
+          respondingQuestionIds: state.respondingQuestionIds,
+        })
+
+        return {
+          ...finalizeConversationView({
+            conversationState: state.conversationState,
+            conversationBlocks: state.conversationBlocks,
+            conversationVersion: state.conversationVersion,
+            isRunning: state.isRunning,
+            eventBuffer: state.eventBuffer,
+            pendingPermissions: interactionState.pendingPermissions,
+            pendingQuestions: interactionState.pendingQuestions,
+            respondingPermissionIds: interactionState.respondingPermissionIds,
+            respondingQuestionIds: interactionState.respondingQuestionIds,
+          }),
+          respondingPermissionIds: interactionState.respondingPermissionIds,
+          pendingPermissions: interactionState.pendingPermissions,
+          isSubmitting: false,
+          awaitingTurnRestart: false,
+          isCancelling: false,
+        }
+      })
       await input.api.permissionRespond(currentSessionId, requestId, approved, optionId).then(
         () => undefined,
         createRequestFailureHandler(
@@ -75,11 +96,29 @@ export function createInteractionActions(input) {
           '权限提交失败',
           () =>
             input.set((state) => {
-              const respondingPermissionIds = new Set(state.respondingPermissionIds)
-              respondingPermissionIds.delete(requestId)
-              return {
-                respondingPermissionIds,
+              const interactionState = convergeInteractionState({
+                eventBuffer: state.eventBuffer,
                 pendingPermissions: previousPendingPermissions,
+                pendingQuestions: state.pendingQuestions,
+                respondingPermissionIds: new Set(
+                  [...state.respondingPermissionIds].filter((currentRequestId) => currentRequestId !== requestId),
+                ),
+                respondingQuestionIds: state.respondingQuestionIds,
+              })
+              return {
+                ...finalizeConversationView({
+                  conversationState: state.conversationState,
+                  conversationBlocks: state.conversationBlocks,
+                  conversationVersion: state.conversationVersion,
+                  isRunning: state.isRunning,
+                  eventBuffer: state.eventBuffer,
+                  pendingPermissions: interactionState.pendingPermissions,
+                  pendingQuestions: interactionState.pendingQuestions,
+                  respondingPermissionIds: interactionState.respondingPermissionIds,
+                  respondingQuestionIds: interactionState.respondingQuestionIds,
+                }),
+                respondingPermissionIds: interactionState.respondingPermissionIds,
+                pendingPermissions: interactionState.pendingPermissions,
               }
             }),
         ),
@@ -90,13 +129,34 @@ export function createInteractionActions(input) {
       const currentSessionId = input.get().currentSessionId
       if (!currentSessionId || !requestId) return
       const previousPendingQuestions = input.get().pendingQuestions
-      input.set((state) => ({
-        respondingQuestionIds: new Set(state.respondingQuestionIds).add(requestId),
-        pendingQuestions: state.pendingQuestions.filter((item) => (item.requestId || item.id) !== requestId),
-        isSubmitting: false,
-        awaitingTurnRestart: false,
-        isCancelling: false,
-      }))
+      input.set((state) => {
+        const interactionState = convergeInteractionState({
+          eventBuffer: state.eventBuffer,
+          pendingPermissions: state.pendingPermissions,
+          pendingQuestions: state.pendingQuestions.filter((item) => (item.requestId || item.id) !== requestId),
+          respondingPermissionIds: state.respondingPermissionIds,
+          respondingQuestionIds: new Set(state.respondingQuestionIds).add(requestId),
+        })
+
+        return {
+          ...finalizeConversationView({
+            conversationState: state.conversationState,
+            conversationBlocks: state.conversationBlocks,
+            conversationVersion: state.conversationVersion,
+            isRunning: state.isRunning,
+            eventBuffer: state.eventBuffer,
+            pendingPermissions: interactionState.pendingPermissions,
+            pendingQuestions: interactionState.pendingQuestions,
+            respondingPermissionIds: interactionState.respondingPermissionIds,
+            respondingQuestionIds: interactionState.respondingQuestionIds,
+          }),
+          respondingQuestionIds: interactionState.respondingQuestionIds,
+          pendingQuestions: interactionState.pendingQuestions,
+          isSubmitting: false,
+          awaitingTurnRestart: false,
+          isCancelling: false,
+        }
+      })
       await input.api.questionRespond(currentSessionId, requestId, action, content).then(
         () => undefined,
         createRequestFailureHandler(
@@ -105,11 +165,29 @@ export function createInteractionActions(input) {
           '问题提交失败',
           () =>
             input.set((state) => {
-              const respondingQuestionIds = new Set(state.respondingQuestionIds)
-              respondingQuestionIds.delete(requestId)
-              return {
-                respondingQuestionIds,
+              const interactionState = convergeInteractionState({
+                eventBuffer: state.eventBuffer,
+                pendingPermissions: state.pendingPermissions,
                 pendingQuestions: previousPendingQuestions,
+                respondingPermissionIds: state.respondingPermissionIds,
+                respondingQuestionIds: new Set(
+                  [...state.respondingQuestionIds].filter((currentRequestId) => currentRequestId !== requestId),
+                ),
+              })
+              return {
+                ...finalizeConversationView({
+                  conversationState: state.conversationState,
+                  conversationBlocks: state.conversationBlocks,
+                  conversationVersion: state.conversationVersion,
+                  isRunning: state.isRunning,
+                  eventBuffer: state.eventBuffer,
+                  pendingPermissions: interactionState.pendingPermissions,
+                  pendingQuestions: interactionState.pendingQuestions,
+                  respondingPermissionIds: interactionState.respondingPermissionIds,
+                  respondingQuestionIds: interactionState.respondingQuestionIds,
+                }),
+                respondingQuestionIds: interactionState.respondingQuestionIds,
+                pendingQuestions: interactionState.pendingQuestions,
               }
             }),
         ),
@@ -151,13 +229,29 @@ async function buildPromptParts(text, attachments, businessSessionId, set) {
         state.eventBuffer.push(event)
         appendConversationEvent(state.conversationState, event, false)
       })
+      const interactionState = convergeInteractionState({
+        eventBuffer: state.eventBuffer,
+        pendingPermissions: state.pendingPermissions,
+        pendingQuestions: state.pendingQuestions,
+        respondingPermissionIds: state.respondingPermissionIds,
+        respondingQuestionIds: state.respondingQuestionIds,
+      })
       return {
         eventBuffer: state.eventBuffer,
         eventBufferVersion: state.eventBufferVersion + attachmentFeedback.length,
         seenEventIds: state.seenEventIds,
         conversationState: state.conversationState,
-        conversationBlocks: finalizeConversationBlocks(state.conversationState, state.isRunning),
-        conversationVersion: state.conversationState.latestVersion,
+        ...finalizeConversationView({
+          conversationState: state.conversationState,
+          conversationBlocks: state.conversationBlocks,
+          conversationVersion: state.conversationVersion,
+          isRunning: state.isRunning,
+          eventBuffer: state.eventBuffer,
+          pendingPermissions: interactionState.pendingPermissions,
+          pendingQuestions: interactionState.pendingQuestions,
+          respondingPermissionIds: interactionState.respondingPermissionIds,
+          respondingQuestionIds: interactionState.respondingQuestionIds,
+        }),
       }
     })
   }

@@ -25,7 +25,7 @@ export function createEvent(
 export async function persistAndFanout(event: SessionEvent) {
   publishToSubscribers(event)
   const previousWrite = pendingSessionEventWrites.get(event.businessSessionId) || Promise.resolve()
-  const nextWrite = previousWrite.then(async () => {
+  const nextWrite = previousWrite.catch(() => undefined).then(async () => {
     const session = await sessionService.getSession(event.businessSessionId)
     const capabilityPatch = deriveCapabilityPatch(event)
     let sessionPatch: Partial<BusinessSession> | undefined
@@ -55,6 +55,12 @@ export async function persistAndFanout(event: SessionEvent) {
       pendingSessionEventWrites.delete(event.businessSessionId)
     }
   }
+}
+
+export async function waitForSessionEventWrites(sessionId: string) {
+  const pendingWrite = pendingSessionEventWrites.get(sessionId)
+  if (!pendingWrite) return
+  await pendingWrite.catch(() => undefined)
 }
 
 export function nextId(prefix: string) {

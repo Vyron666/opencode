@@ -16,6 +16,7 @@ import {
 import { stopRuntimeLeaseAutoRenew } from "../../services/runtime-governance/runtime-lease-renewal-service"
 import { resetSessionRuntime } from "../../services/session/session-lifecycle-service"
 import { recordRuntimeFailure } from "../../services/runtime-governance/runtime-failure-service"
+import { sessionService } from "../../services/store/store-singleton"
 
 type RuntimeEventPushBody = {
   event: SessionEvent
@@ -138,6 +139,7 @@ export function registerInternalRuntimeRoutes(app: Hono) {
       })
     }
 
+    await syncSessionStatusForSyntheticEvent(body.event)
     await persistAndFanout(body.event)
     return c.json(jsonOk({ success: true }, reqId))
   })
@@ -185,4 +187,36 @@ async function resolveRemoteQuestion(
     }),
   })
   return response.ok
+}
+
+async function syncSessionStatusForSyntheticEvent(event: SessionEvent) {
+  const nextStatus = readSyntheticSessionStatus(event)
+  if (!nextStatus) return
+  // 中文/English: internal event-push is our browser-test harness, so it must
+  // mirror the real runtime lifecycle transitions instead of leaving summary status stale.
+  await sessionService.updateSession(event.businessSessionId, {
+    status: nextStatus,
+  })
+}
+
+function readSyntheticSessionStatus(event: SessionEvent) {
+  if (event.eventType === "user_message_chunk" || event.eventType === "agent_message_chunk" || event.eventType === "agent_thought_chunk") {
+    return "waiting_input" as const
+  }
+  if (event.eventType === "permission_requested" || event.eventType === "question_requested") {
+    return "active" as const
+  }
+  if (event.eventType === "permission_resolved" || event.eventType === "question_resolved") {
+    return "waiting_input" as const
+  }
+  if (event.eventType === "turn_completed") {
+    return "active" as const
+  }
+  if (event.eventType === "session_closed") {
+    return "completed" as const
+  }
+  if (event.eventType === "session_failed") {
+    return "failed" as const
+  }
+  return null
 }

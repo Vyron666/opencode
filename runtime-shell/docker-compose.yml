@@ -131,6 +131,8 @@ services:
     environment:
       RUNTIME_SHELL_HOST: 0.0.0.0
       RUNTIME_SHELL_PORT: 3000
+      # 中文/English: package URLs must point at the host-facing port so browser/API clients can fetch uploaded Skills.
+      RUNTIME_SHELL_PUBLIC_BASE_URL: http://127.0.0.1:3100
       RUNTIME_SHELL_ADMIN_USERNAME: admin
       RUNTIME_SHELL_ADMIN_PASSWORD: change-me
       RUNTIME_SHELL_SESSION_COOKIE: runtime_shell_session

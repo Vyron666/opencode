@@ -1,3 +1,5 @@
+import { readOpenInteractionItems } from '../../store/session-events'
+
 function createStatusBlock(key, message) {
   return {
     key,
@@ -290,6 +292,25 @@ export function finalizeConversationBlocks(state, isRunning) {
   }, [])
 }
 
+export function finalizeConversationView(input) {
+  if (!input.conversationState?.blocks) {
+    return {
+      conversationBlocks: Array.isArray(input.conversationBlocks) ? input.conversationBlocks : [],
+      conversationVersion: Number.isFinite(input.conversationVersion) ? input.conversationVersion : 0,
+    }
+  }
+  const blocks = finalizeConversationBlocks(input.conversationState, input.isRunning)
+  const reconciledBlocks = reconcileConversationInteractionBlocks(blocks, input)
+
+  return {
+    conversationBlocks: reconciledBlocks,
+    conversationVersion:
+      reconciledBlocks === blocks
+        ? input.conversationState.latestVersion
+        : input.conversationState.latestVersion + 1,
+  }
+}
+
 export function buildConversationBlocks(events, showDebug, isRunning) {
   return finalizeConversationBlocks(buildConversationState(events, showDebug), isRunning)
 }
@@ -496,4 +517,64 @@ function readSessionErrorText(payload) {
 
 function isDebugEvent(eventType) {
   return ['turn_completed', 'usage_update', 'available_commands_update', 'config_option_update', 'current_mode_update', 'session_info_update', 'upstream_update'].includes(eventType)
+}
+
+function reconcileConversationInteractionBlocks(blocks, input) {
+  const pendingPermissionById = new Map(
+    (Array.isArray(input.pendingPermissions) ? input.pendingPermissions : [])
+      .map((item) => [item?.requestId || item?.id, item])
+      .filter(([requestId]) => Boolean(requestId)),
+  )
+  const pendingQuestionById = new Map(
+    (Array.isArray(input.pendingQuestions) ? input.pendingQuestions : [])
+      .map((item) => [item?.requestId || item?.id, item])
+      .filter(([requestId]) => Boolean(requestId)),
+  )
+  const openPermissionItems = readOpenInteractionItems(
+    input.eventBuffer,
+    'permission_requested',
+    'permission_resolved',
+  )
+  const openQuestionItems = readOpenInteractionItems(
+    input.eventBuffer,
+    'question_requested',
+    'question_resolved',
+  )
+  const existingPermissionIds = new Set(
+    blocks
+      .filter((block) => block?.type === 'permission')
+      .map((block) => block?.data?.requestId || block?.data?.id)
+      .filter(Boolean),
+  )
+  const existingQuestionIds = new Set(
+    blocks
+      .filter((block) => block?.type === 'question')
+      .map((block) => block?.data?.requestId || block?.data?.id)
+      .filter(Boolean),
+  )
+  const missingPermissionBlocks = [...openPermissionItems.entries()].flatMap(([requestId, item]) => {
+    if (existingPermissionIds.has(requestId)) return []
+    return [{
+      key: `interaction:permission:${requestId}`,
+      type: 'permission',
+      data: pendingPermissionById.get(requestId) || item,
+    }]
+  })
+  const missingQuestionBlocks = [...openQuestionItems.entries()].flatMap(([requestId, item]) => {
+    if (existingQuestionIds.has(requestId)) return []
+    return [{
+      key: `interaction:question:${requestId}`,
+      type: 'question',
+      data: pendingQuestionById.get(requestId) || item,
+    }]
+  })
+
+  if (missingPermissionBlocks.length === 0 && missingQuestionBlocks.length === 0) return blocks
+  // 中文/English: interaction waiting state and visible cards must converge from
+  // the same open-request set, even if live/detail/local writes briefly interleave.
+  return [
+    ...blocks,
+    ...missingPermissionBlocks,
+    ...missingQuestionBlocks,
+  ]
 }

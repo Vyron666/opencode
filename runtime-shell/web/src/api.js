@@ -5,11 +5,15 @@ async function request(url, options = {}) {
   const controller = new AbortController()
   const { timeoutMs, ...requestOptions } = options
   const timer = setTimeout(() => controller.abort(), timeoutMs || REQUEST_TIMEOUT_MS)
+  const headers =
+    requestOptions.body instanceof FormData
+      ? { ...requestOptions.headers }
+      : { 'content-type': 'application/json', ...requestOptions.headers }
 
   try {
     const response = await fetch(`${BASE}${url}`, {
       credentials: 'include',
-      headers: { 'content-type': 'application/json', ...requestOptions.headers },
+      headers,
       ...requestOptions,
       signal: controller.signal,
     })
@@ -171,6 +175,32 @@ export const api = {
       request('/api/skill-config/save', {
         method: 'POST',
         body: JSON.stringify(config),
+      }),
+    removeItem: (type, value) =>
+      request('/api/skill-config/remove-item', {
+        method: 'POST',
+        body: JSON.stringify({ type, value }),
+      }),
+  },
+  skillPackage: {
+    list: () => request('/api/skill-package/list'),
+    upload: (file) => {
+      const body = new FormData()
+      body.append('file', file)
+      return request('/api/skill-package/upload', {
+        method: 'POST',
+        body,
+      })
+    },
+    remove: (packageId) =>
+      request('/api/skill-package/delete', {
+        method: 'POST',
+        body: JSON.stringify({ packageId }),
+      }),
+    rename: (packageId, displayName) =>
+      request('/api/skill-package/rename', {
+        method: 'POST',
+        body: JSON.stringify({ packageId, displayName }),
       }),
   },
   configImpact: {

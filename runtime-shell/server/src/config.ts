@@ -63,11 +63,13 @@ export function findLocalWorkerConfig(workerId: string) {
 export const Config = {
   host: process.env.RUNTIME_SHELL_HOST || "0.0.0.0",
   port: Number(process.env.RUNTIME_SHELL_PORT || "3000"),
+  publicBaseUrl: (process.env.RUNTIME_SHELL_PUBLIC_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, ""),
   adminUsername: process.env.RUNTIME_SHELL_ADMIN_USERNAME || "admin",
   adminPassword: process.env.RUNTIME_SHELL_ADMIN_PASSWORD || "change-me",
   sessionCookie: process.env.RUNTIME_SHELL_SESSION_COOKIE || "runtime_shell_session",
   sessionSecret: process.env.RUNTIME_SHELL_SESSION_SECRET || "change-me",
   dataFile: path.resolve(process.cwd(), process.env.RUNTIME_SHELL_DATA_FILE || "./data/runtime-shell.json"),
+  storageDir: path.resolve(process.cwd(), process.env.RUNTIME_SHELL_STORAGE_DIR || "./data/storage"),
   workspaceRootDir: path.resolve(process.env.RUNTIME_SHELL_WORKSPACE_ROOT_DIR || "/workspace/workspaces"),
   opencodeBaseUrl: (process.env.OPENCODE_BASE_URL || "http://127.0.0.1:4096").replace(/\/+$/, ""),
   opencodeUsername: process.env.OPENCODE_SERVER_USERNAME || "opencode",

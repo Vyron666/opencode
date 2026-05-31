@@ -161,6 +161,20 @@ export const skillConfigSchema = z.object({
   urls: z.array(z.string().min(1)).optional().default([]),
 })
 
+export const skillPackageDeleteSchema = z.object({
+  packageId: z.string().min(1),
+})
+
+export const skillPackageRenameSchema = z.object({
+  packageId: z.string().min(1),
+  displayName: z.string().trim().min(1).max(80),
+})
+
+export const skillConfigRemoveItemSchema = z.object({
+  type: z.enum(["path", "url"]),
+  value: z.string().min(1),
+})
+
 const localMcpSchema = z.object({
   type: z.literal("local"),
   enabled: z.boolean().optional(),

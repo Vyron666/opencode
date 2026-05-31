@@ -1,6 +1,6 @@
 import {
   appendConversationEvent,
-  finalizeConversationBlocks,
+  finalizeConversationView,
 } from '../../components/chat/conversation-blocks'
 import { publishAssistantChunk } from './assistant-stream-channel'
 import { deriveCapPatch, mergeCapabilities } from '../capabilities'
@@ -9,11 +9,7 @@ import {
   shouldStartRunning,
   shouldStopSending,
 } from '../runtime-phase'
-import {
-  mergeSessionDetail,
-  reducePendingPermissions,
-  reducePendingQuestions,
-} from '../session-events'
+import { convergeInteractionState, mergeSessionDetail } from '../session-events'
 
 let eventSourceInstance = null
 let reconnectTimer = null
@@ -72,10 +68,6 @@ export function createSseActions(input) {
               : undefined
             ////////////// runtime-shell customization end //////////////
 
-            pendingPermissions = reducePendingPermissions(pendingPermissions, event)
-            pendingQuestions = reducePendingQuestions(pendingQuestions, event)
-            respondingPermissionIds = resolveRespondingPermissionIds(respondingPermissionIds, event)
-            respondingQuestionIds = resolveRespondingQuestionIds(respondingQuestionIds, event)
             const capabilityPatch = deriveCapPatch(event)
             capabilities = capabilityPatch ? mergeCapabilities(capabilities, capabilityPatch) : capabilities
             const nextRuntimeFlags = deriveRuntimeFlags(
@@ -121,17 +113,36 @@ export function createSseActions(input) {
             state.sessionDetail = mergeSessionDetail(state.sessionDetail, event)
           })
 
+          const interactionState = convergeInteractionState({
+            eventBuffer: state.eventBuffer,
+            pendingPermissions,
+            pendingQuestions,
+            respondingPermissionIds,
+            respondingQuestionIds,
+          })
+          pendingPermissions = interactionState.pendingPermissions
+          pendingQuestions = interactionState.pendingQuestions
+          respondingPermissionIds = interactionState.respondingPermissionIds
+          respondingQuestionIds = interactionState.respondingQuestionIds
+          const conversationView = shouldRefreshConversationBlocks
+            ? finalizeConversationView({
+                conversationState: state.conversationState,
+                isRunning,
+                eventBuffer: state.eventBuffer,
+                pendingPermissions,
+                pendingQuestions,
+                respondingPermissionIds,
+                respondingQuestionIds,
+              })
+            : null
+
           return {
             eventBuffer: state.eventBuffer,
             eventBufferVersion: state.eventBufferVersion + nextEvents.length,
             seenEventIds: state.seenEventIds,
             conversationState: state.conversationState,
-            conversationBlocks: shouldRefreshConversationBlocks
-              ? finalizeConversationBlocks(state.conversationState, isRunning)
-              : state.conversationBlocks,
-            conversationVersion: shouldRefreshConversationBlocks
-              ? state.conversationState.latestVersion
-              : state.conversationVersion,
+            conversationBlocks: conversationView ? conversationView.conversationBlocks : state.conversationBlocks,
+            conversationVersion: conversationView ? conversationView.conversationVersion : state.conversationVersion,
             sessionDetail: state.sessionDetail,
             pendingPermissions,
             pendingQuestions,
@@ -200,22 +211,4 @@ export function shouldStreamAssistantChunk(input) {
   if (!input.latestAssistantBlock || input.latestAssistantIndex === undefined) return false
   if (!input.renderedBlock) return false
   return input.renderedBlock.key === input.latestAssistantBlock.key && input.renderedBlock.streaming === true
-}
-
-function resolveRespondingPermissionIds(current, event) {
-  if (event.eventType !== 'permission_resolved') return current
-  const requestId = event.payload?.requestId
-  if (!requestId) return current
-  const next = new Set(current)
-  next.delete(requestId)
-  return next
-}
-
-function resolveRespondingQuestionIds(current, event) {
-  if (event.eventType !== 'question_resolved') return current
-  const requestId = event.payload?.requestId
-  if (!requestId) return current
-  const next = new Set(current)
-  next.delete(requestId)
-  return next
 }

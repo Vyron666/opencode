@@ -2,11 +2,16 @@ import { listPendingPermissions, listPendingQuestions } from "../../acp-runtime-
 import * as RuntimeFailureLogRepo from "../../repos/runtime-failure-log-repo"
 import * as RuntimeLeaseRepo from "../../repos/runtime-lease-repo"
 import * as SessionRuntimeBindingRepo from "../../repos/session-runtime-binding-repo"
+import { waitForSessionEventWrites } from "../../runtime/runtime-events"
 import { workspaceShareService } from "../store/store-singleton"
 import { sessionService } from "../store/store-singleton"
-import type { BusinessSession, User } from "../../types"
+import type { BusinessSession, PendingPermission, PendingQuestion, SessionEvent, SessionEventType, User } from "../../types"
 
-export async function buildSessionViewForUser(user: User, session: BusinessSession) {
+export async function buildSessionViewForUser(user: User, session: BusinessSession, persistedEvents?: SessionEvent[]) {
+  await waitForSessionEventWrites(session.id)
+  const sessionEvents = Array.isArray(persistedEvents) ? persistedEvents : sessionService.listEvents(session.id)
+  const openPermissionIds = readOpenInteractionIds(sessionEvents, "permission_requested", "permission_resolved")
+  const openQuestionIds = readOpenInteractionIds(sessionEvents, "question_requested", "question_resolved")
   const [binding, lease, failures, workspaceShare] = await Promise.all([
     SessionRuntimeBindingRepo.findActiveBindingBySessionId(session.id),
     RuntimeLeaseRepo.findLeaseBySessionId(session.id),
@@ -25,9 +30,12 @@ export async function buildSessionViewForUser(user: User, session: BusinessSessi
 
   return {
     ...session,
-    eventCount: sessionService.listEvents(session.id).length,
-    pendingPermissions: listPendingPermissions(session.id),
-    pendingQuestions: listPendingQuestions(session.id),
+    eventCount: sessionEvents.length,
+    // 中文/English: keep summary/detail pending state aligned with the persisted
+    // event history so polling cannot report "waiting" before the matching
+    // interaction event is actually available to rebuild the chat blocks.
+    pendingPermissions: filterVisiblePendingItems(listPendingPermissions(session.id), openPermissionIds),
+    pendingQuestions: filterVisiblePendingItems(listPendingQuestions(session.id), openQuestionIds),
     visibility: isAdmin ? "admin" : isOwner ? "owner" : isWorkspaceShared ? "workspace_share" : "scoped",
     capabilities: {
       open: true,
@@ -55,6 +63,24 @@ export async function buildSessionViewForUser(user: User, session: BusinessSessi
       message: readRuntimeHintMessage(session.status, binding?.bindingStatus, Boolean(lease), lastFailure?.message),
     },
   }
+}
+
+function readOpenInteractionIds(
+  events: SessionEvent[],
+  requestedEventType: SessionEventType,
+  resolvedEventType: SessionEventType,
+) {
+  return events.reduce((openIds, event) => {
+    const requestId = event?.payload?.requestId
+    if (!requestId || typeof requestId !== "string") return openIds
+    if (event.eventType === requestedEventType) openIds.add(requestId)
+    if (event.eventType === resolvedEventType) openIds.delete(requestId)
+    return openIds
+  }, new Set<string>())
+}
+
+function filterVisiblePendingItems(items: Array<PendingPermission | PendingQuestion>, openIds: Set<string>) {
+  return items.filter((item) => openIds.has(item.requestId))
 }
 
 function readRuntimeHintMessage(

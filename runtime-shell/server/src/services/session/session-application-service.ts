@@ -1,4 +1,5 @@
 import { closeRuntime } from "../../acp-runtime-manager"
+import { waitForSessionEventWrites } from "../../runtime/runtime-events"
 import type { User } from "../../types"
 import { buildAccessContext } from "../access/access-context-service"
 import { createRuntimeBinding } from "../runtime-governance/runtime-binding-service"
@@ -97,11 +98,13 @@ export async function getSessionDetailForUser(input: {
     action: "read",
   })
   if (!result.ok) return result
+  await waitForSessionEventWrites(result.session.id)
+  const events = sessionService.listEvents(result.session.id)
   const shares = await listWorkspaceSharesForWorkspace(result.session.workspaceId)
   return {
     ok: true as const,
-    session: await buildSessionViewForUser(input.user, result.session),
-    events: sessionService.listEvents(result.session.id),
+    session: await buildSessionViewForUser(input.user, result.session, events),
+    events,
     shares,
   }
 }

@@ -1,6 +1,6 @@
 import { listProviderConfigs, type RuntimeShellProviderConfig, type RuntimeShellStoredProviderConfig } from "../../provider-config"
 import * as ConfigRepo from "../../repos/config-repo"
-import type { ConfigNamespace, ConfigScopeLevel, ConfigSource, User, UserMcpConfig, UserSkillConfig } from "../../types"
+import type { ConfigNamespace, ConfigScopeLevel, ConfigSource, SourcedSkillConfigItem, User, UserMcpConfig, UserSkillConfig } from "../../types"
 
 export type SourcedProviderConfig = RuntimeShellProviderConfig & {
   source: ConfigSource
@@ -160,6 +160,42 @@ export async function getVisibleSkillConfig(user: User) {
     paths: [...new Set([...(platformSkills.paths ?? []), ...(privateSkills.paths ?? [])])],
     urls: [...new Set([...(platformSkills.urls ?? []), ...(privateSkills.urls ?? [])])],
   }
+}
+
+export async function listVisibleSkillConfigItems(user: User) {
+  const [platformSkills, privateSkills] = await Promise.all([
+    getPlatformSkillConfig(user),
+    getUserPrivateSkillConfig(user),
+  ])
+  const platformPathSet = new Set(platformSkills.paths ?? [])
+  const platformUrlSet = new Set(platformSkills.urls ?? [])
+
+  return [
+    ...(platformSkills.paths ?? []).map((value) => ({
+      type: "path",
+      value,
+      source: "platform_shared",
+    } satisfies SourcedSkillConfigItem)),
+    ...(platformSkills.urls ?? []).map((value) => ({
+      type: "url",
+      value,
+      source: "platform_shared",
+    } satisfies SourcedSkillConfigItem)),
+    ...(privateSkills.paths ?? [])
+      .filter((value) => !platformPathSet.has(value))
+      .map((value) => ({
+        type: "path",
+        value,
+        source: "user_private",
+      } satisfies SourcedSkillConfigItem)),
+    ...(privateSkills.urls ?? [])
+      .filter((value) => !platformUrlSet.has(value))
+      .map((value) => ({
+        type: "url",
+        value,
+        source: "user_private",
+      } satisfies SourcedSkillConfigItem)),
+  ]
 }
 
 export async function getPlatformSkillConfig(user: User) {

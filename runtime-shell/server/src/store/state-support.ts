@@ -45,6 +45,7 @@ export const defaultState = (): PersistedState => {
     sessions: [],
     events: [],
     auditLogs: [],
+    skillPackages: [],
   }
 }
 
@@ -66,6 +67,7 @@ export function normalizeState(input: PersistedState): PersistedState {
     sessions: Array.isArray(input.sessions) ? input.sessions : defaults.sessions,
     events: Array.isArray(input.events) ? input.events : defaults.events,
     auditLogs: Array.isArray(input.auditLogs) ? input.auditLogs : defaults.auditLogs,
+    skillPackages: Array.isArray(input.skillPackages) ? input.skillPackages : defaults.skillPackages,
   }
 }
 
