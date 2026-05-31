@@ -21,6 +21,26 @@ type ConfigItemRow = {
   updated_by: string
 }
 
+type ConfigChangeLogRow = {
+  id: string
+  tenant_id: string
+  organization_id: string
+  project_id: string | null
+  workspace_id: string | null
+  business_session_id: string | null
+  request_id: string | null
+  scope_level: ConfigScopeLevel
+  scope_id: string
+  namespace: ConfigNamespace
+  config_key: string
+  change_type: ConfigChangeLog["changeType"]
+  previous_version: number | null
+  next_version: number
+  summary_json: string
+  created_at: string
+  created_by: string
+}
+
 function toConfigItem(row: ConfigItemRow): ConfigItem {
   return {
     id: row.id,
@@ -39,6 +59,28 @@ function toConfigItem(row: ConfigItemRow): ConfigItem {
     createdBy: row.created_by,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
+  }
+}
+
+function toConfigChangeLog(row: ConfigChangeLogRow): ConfigChangeLog {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    organizationId: row.organization_id,
+    projectId: row.project_id || undefined,
+    workspaceId: row.workspace_id || undefined,
+    businessSessionId: row.business_session_id || undefined,
+    requestId: row.request_id || undefined,
+    scopeLevel: row.scope_level,
+    scopeId: row.scope_id,
+    namespace: row.namespace,
+    configKey: row.config_key,
+    changeType: row.change_type,
+    previousVersion: row.previous_version ?? undefined,
+    nextVersion: Number(row.next_version),
+    summaryJson: safeParseJson(row.summary_json) ?? {},
+    createdAt: row.created_at,
+    createdBy: row.created_by,
   }
 }
 
@@ -322,6 +364,63 @@ export async function appendConfigChangeLog(input: {
   )
 }
 
+export async function listConfigChangeLogs(input: {
+  tenantId: string
+  organizationId: string
+  scopeLevel?: ConfigScopeLevel
+  scopeId?: string
+  namespace?: ConfigNamespace
+  limit: number
+}) {
+  const db = getRuntimeDatabaseClient()
+  const filters = [
+    "tenant_id = ?",
+    "organization_id = ?",
+  ]
+  const args: Array<string | number> = [input.tenantId, input.organizationId]
+  if (input.scopeLevel) {
+    filters.push("scope_level = ?")
+    args.push(input.scopeLevel)
+  }
+  if (input.scopeId) {
+    filters.push("scope_id = ?")
+    args.push(input.scopeId)
+  }
+  if (input.namespace) {
+    filters.push("namespace = ?")
+    args.push(input.namespace)
+  }
+  args.push(input.limit)
+  const rows = await db.queryRows<ConfigChangeLogRow>(
+    `
+      SELECT
+        id,
+        tenant_id,
+        organization_id,
+        project_id,
+        workspace_id,
+        business_session_id,
+        request_id,
+        scope_level,
+        scope_id,
+        namespace,
+        config_key,
+        change_type,
+        previous_version,
+        next_version,
+        summary_json,
+        created_at,
+        created_by
+      FROM config_change_log
+      WHERE ${filters.join("\n        AND ")}
+      ORDER BY created_at DESC
+      LIMIT ?
+    `,
+    args,
+  )
+  return rows.map(toConfigChangeLog)
+}
+
 function safeParseJson(raw: string) {
   try {
     return JSON.parse(raw)
@@ -329,4 +428,3 @@ function safeParseJson(raw: string) {
     return null
   }
 }
-

@@ -5,7 +5,7 @@
       "name": "DeepSeek",
       "api": "@ai-sdk/openai-compatible",
       "options": {
-        "apiKey": "sk-e09ab88534fb45c7950c7366dab34677",
+        "apiKey": "sk-4dd55d2355c8421dbd7679df157f8bd7",
         "baseURL": "https://api.deepseek.com/v1"
       },
       "models": {

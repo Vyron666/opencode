@@ -1,4 +1,5 @@
 import type { Hono } from "hono"
+import { listConfigHistory } from "../../services/config-history/config-history-service"
 import { listConfigApprovals, reviewConfigApproval } from "../../services/config-approval/config-approval-service"
 import {
   listMcpConfigsForUser,
@@ -9,7 +10,7 @@ import {
   saveProviderConfigForUser,
   saveSkillConfigForUser,
 } from "../../services/settings/settings-service"
-import { configApprovalReviewSchema, configImpactPreviewSchema, mcpConfigSchema, providerConfigSchema, skillConfigSchema } from "../schemas"
+import { configApprovalReviewSchema, configHistoryListSchema, configImpactPreviewSchema, mcpConfigSchema, providerConfigSchema, skillConfigSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
@@ -139,6 +140,28 @@ export function registerSessionSettingsRoutes(app: Hono) {
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
     return c.json(jsonOk(result.preview, reqId))
+  })
+
+  app.get("/api/config-history/list", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const query = configHistoryListSchema.safeParse({
+      namespace: c.req.query("namespace") || undefined,
+      limit: c.req.query("limit") || undefined,
+    })
+    if (!query.success) {
+      return c.json(jsonError("invalid config history query", 400, reqId, query.error.flatten()), 400)
+    }
+    const result = await listConfigHistory({
+      user,
+      namespace: query.data.namespace,
+      limit: query.data.limit,
+    })
+    if (!result.ok) {
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({ items: result.items }, reqId))
   })
 
   app.get("/api/config-approval/list", async (c) => {

@@ -48,6 +48,9 @@ export class RuntimeShellClient implements Client {
       createdAt: new Date().toISOString(),
     }
 
+    // 中文/English: register the pending resolver before exposing the request to
+    // the UI so a fast user click cannot resolve "too early" and get lost.
+    const resolutionTask = this.hooks.waitForPermission(requestId)
     this.hooks.onPermissionRequested(permission)
     await this.options.onEvent(createLocalEvent(this.options, this.acpSessionId, "permission_requested", {
       requestId,
@@ -56,7 +59,7 @@ export class RuntimeShellClient implements Client {
       rawInput: params.toolCall.rawInput,
     }, permission.createdAt))
 
-    const resolution = await this.hooks.waitForPermission(requestId)
+    const resolution = await resolutionTask
     await this.options.onEvent(createLocalEvent(this.options, this.acpSessionId, "permission_resolved", {
       requestId,
       outcome: resolution.outcome,
@@ -92,6 +95,9 @@ export class RuntimeShellClient implements Client {
       createdAt,
     }
 
+    // 中文/English: pre-register the pending question so submit-on-render flows
+    // cannot outrun the promise hookup and leave the turn hanging forever.
+    const resolutionTask = this.hooks.waitForQuestion(requestId)
     this.hooks.onQuestionRequested(question)
     await this.options.onEvent(createLocalEvent(this.options, this.acpSessionId, "question_requested", {
       requestId,
@@ -100,7 +106,7 @@ export class RuntimeShellClient implements Client {
       meta: params._meta ?? null,
     }, createdAt))
 
-    const resolution = await this.hooks.waitForQuestion(requestId)
+    const resolution = await resolutionTask
     await this.options.onEvent(createLocalEvent(this.options, this.acpSessionId, "question_resolved", {
       requestId,
       action: resolution.action,

@@ -1,4 +1,8 @@
-import { buildInitialLegacyAnswers, buildLegacyQuestionAnswers } from './question-form-support'
+import {
+  buildInitialLegacyAnswers,
+  buildLegacyQuestionContent,
+  hasEmptyLegacyQuestionAnswer,
+} from './question-form-support'
 
 export function QuestionLegacyForm(input) {
   return (
@@ -103,10 +107,10 @@ export function QuestionLegacyForm(input) {
           onClick={() =>
             input.respondQuestion(input.requestId, 'accept', {
               // 中文/English: opencode Question tool expects `answers` aligned to the original prompt order.
-              answers: buildLegacyQuestionAnswers(input.prompts, input.legacyAnswers, input.legacyCustomAnswers),
+              ...buildLegacyQuestionContent(input.prompts, input.legacyAnswers, input.legacyCustomAnswers),
             })
           }
-          disabled={input.submitting}
+          disabled={input.submitting || hasEmptyLegacyQuestionAnswer(input.prompts, input.legacyAnswers, input.legacyCustomAnswers)}
           className="text-xs px-3 py-1 rounded-[8px] bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {input.submitting ? '提交中...' : '提交'}

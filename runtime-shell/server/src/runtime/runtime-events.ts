@@ -43,7 +43,9 @@ export async function persistAndFanout(event: SessionEvent) {
       }
     }
     await sessionService.stageSessionEvent(event, sessionPatch)
-    await stateService.save()
+    // 中文/English: keep event ordering in memory, but let disk flush coalesce in
+    // the background so high-frequency chunks do not hold turn completion open.
+    stateService.saveEventually()
   })
   pendingSessionEventWrites.set(event.businessSessionId, nextWrite)
   try {

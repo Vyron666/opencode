@@ -16,6 +16,8 @@ export function createConversationState() {
     assistantBlocks: new Map(),
     thinkingBlocks: new Map(),
     toolBlocks: new Map(),
+    planBlocks: new Map(),
+    todoPlanBlocks: new Map(),
     handledAssistantEvents: new Map(),
     handledThinkingEvents: new Map(),
     currentTurnId: 'turn-initial',
@@ -122,13 +124,45 @@ export function appendConversationEvent(state, event, showDebug = false) {
   if (event.eventType === 'plan') {
     const plan = readPlanBlock(event.payload)
     if (!plan) return state
-    if (plan.kind === 'todo') return state
-    pushBlock(state, {
-      key: event.eventId || `plan-${state.blocks.length}`,
+    const turnId = ensureTurn(state)
+    if (plan.kind === 'todo') {
+      const blockKey = `${turnId}:todo-plan`
+      const nextBlock = {
+        key: blockKey,
+        type: 'todo',
+        turnId,
+        title: '',
+        kind: 'todo',
+        status: 'in_progress',
+        todos: plan.entries.map((entry) => ({
+          status: entry.status,
+          content: entry.text,
+        })),
+      }
+      if (state.todoPlanBlocks.has(blockKey)) {
+        state.todoPlanBlocks.set(blockKey, nextBlock)
+        replaceBlock(state, nextBlock)
+        return state
+      }
+      state.todoPlanBlocks.set(blockKey, nextBlock)
+      pushBlock(state, nextBlock)
+      return state
+    }
+    const blockKey = `${turnId}:plan`
+    const nextBlock = {
+      key: blockKey,
       type: 'plan',
+      turnId,
       message: plan.message,
       entries: plan.entries,
-    })
+    }
+    if (state.planBlocks.has(blockKey)) {
+      state.planBlocks.set(blockKey, nextBlock)
+      replaceBlock(state, nextBlock)
+      return state
+    }
+    state.planBlocks.set(blockKey, nextBlock)
+    pushBlock(state, nextBlock)
     return state
   }
 

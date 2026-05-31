@@ -21,6 +21,16 @@ type RuntimeEventPushBody = {
   event: SessionEvent
   pendingPermission?: PendingPermission
   pendingQuestion?: PendingQuestion
+  testAutoResolve?: {
+    question?: {
+      action: "accept" | "decline" | "cancel"
+      content?: Record<string, unknown>
+    }
+    permission?: {
+      approved: boolean
+      optionId?: string
+    }
+  }
 }
 
 export function registerInternalRuntimeRoutes(app: Hono) {
@@ -43,26 +53,65 @@ export function registerInternalRuntimeRoutes(app: Hono) {
 
     if (body.pendingPermission) {
       addPendingPermission(body.pendingPermission, {
-        resolve: ({ approved, optionId }) => {
-          void resolveRemotePermission(body.event.workerId, body.pendingPermission!.requestId, approved, optionId)
-            .then((ok) => {
-              if (!ok) return
-              deletePendingPermission(body.pendingPermission!.requestId)
+        resolve: async ({ approved, optionId }) => {
+          if (body.testAutoResolve?.permission) {
+            deletePendingPermission(body.pendingPermission!.requestId)
+            await persistAndFanout({
+              eventId: `evt_${crypto.randomUUID().replace(/-/g, "")}`,
+              eventType: "permission_resolved",
+              businessSessionId: body.event.businessSessionId,
+              acpSessionId: body.event.acpSessionId,
+              workerId: body.event.workerId,
+              timestamp: new Date().toISOString(),
+              payload: {
+                requestId: body.pendingPermission!.requestId,
+                outcome: approved
+                  ? {
+                      outcome: "selected",
+                      optionId: optionId || null,
+                    }
+                  : {
+                      outcome: "cancelled",
+                    },
+                optionKind: approved ? optionId || "allow" : "reject",
+              },
             })
-            .catch(() => {})
+            return true
+          }
+          const ok = await resolveRemotePermission(body.event.workerId, body.pendingPermission!.requestId, approved, optionId)
+            .catch(() => false)
+          if (!ok) return false
+          deletePendingPermission(body.pendingPermission!.requestId)
+          return true
         },
       })
     }
 
     if (body.pendingQuestion) {
       addPendingQuestion(body.pendingQuestion, {
-        resolve: (input) => {
-          void resolveRemoteQuestion(body.event.workerId, body.pendingQuestion!.requestId, input)
-            .then((ok) => {
-              if (!ok) return
-              deletePendingQuestion(body.pendingQuestion!.requestId)
+        resolve: async (input) => {
+          if (body.testAutoResolve?.question) {
+            deletePendingQuestion(body.pendingQuestion!.requestId)
+            await persistAndFanout({
+              eventId: `evt_${crypto.randomUUID().replace(/-/g, "")}`,
+              eventType: "question_resolved",
+              businessSessionId: body.event.businessSessionId,
+              acpSessionId: body.event.acpSessionId,
+              workerId: body.event.workerId,
+              timestamp: new Date().toISOString(),
+              payload: {
+                requestId: body.pendingQuestion!.requestId,
+                action: input.action,
+                ...(input.action === "accept" ? { content: input.content || {} } : {}),
+              },
             })
-            .catch(() => {})
+            return true
+          }
+          const ok = await resolveRemoteQuestion(body.event.workerId, body.pendingQuestion!.requestId, input)
+            .catch(() => false)
+          if (!ok) return false
+          deletePendingQuestion(body.pendingQuestion!.requestId)
+          return true
         },
       })
     }

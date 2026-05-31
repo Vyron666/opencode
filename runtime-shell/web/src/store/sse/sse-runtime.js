@@ -5,7 +5,7 @@ import {
 import { publishAssistantChunk } from './assistant-stream-channel'
 import { deriveCapPatch, mergeCapabilities } from '../capabilities'
 import {
-  deriveRunningState,
+  deriveRuntimeFlags,
   shouldStartRunning,
   shouldStopSending,
 } from '../runtime-phase'
@@ -50,6 +50,7 @@ export function createSseActions(input) {
           let capabilities = state.capabilities
           let isSubmitting = state.isSubmitting
           let isRunning = state.isRunning
+          let awaitingTurnRestart = state.awaitingTurnRestart
           let isCancelling = state.isCancelling
           let shouldRefreshConversationBlocks = false
 
@@ -77,17 +78,22 @@ export function createSseActions(input) {
             respondingQuestionIds = resolveRespondingQuestionIds(respondingQuestionIds, event)
             const capabilityPatch = deriveCapPatch(event)
             capabilities = capabilityPatch ? mergeCapabilities(capabilities, capabilityPatch) : capabilities
-            const nextRunning = deriveRunningState(isRunning, event)
-            const runningChanged = nextRunning !== isRunning
+            const nextRuntimeFlags = deriveRuntimeFlags(
+              { isRunning, awaitingTurnRestart },
+              event,
+            )
+            const runningChanged = nextRuntimeFlags.isRunning !== isRunning
             const structureChanged =
               state.conversationState.blocks.length !== previousConversationBlockCount ||
               state.conversationState.lastAssistantKey !== previousLastAssistantKey
-            const canStreamAssistantChunk =
-              !runningChanged &&
-              !structureChanged &&
-              latestAssistantBlock &&
-              latestAssistantIndex !== undefined &&
-              state.conversationBlocks[latestAssistantIndex]?.key === latestAssistantBlock.key
+            const canStreamAssistantChunk = shouldStreamAssistantChunk({
+              isRunning,
+              runningChanged,
+              structureChanged,
+              latestAssistantBlock,
+              latestAssistantIndex,
+              renderedBlock: latestAssistantIndex === undefined ? null : state.conversationBlocks[latestAssistantIndex],
+            })
 
             if (canStreamAssistantChunk && latestAssistantBlock.latestChunk) {
               publishAssistantChunk(
@@ -102,8 +108,15 @@ export function createSseActions(input) {
               runningChanged ||
               structureChanged ||
               !canStreamAssistantChunk
-            isRunning = nextRunning
-            isSubmitting = shouldStartRunning(event) || shouldStopSending(event) ? false : isSubmitting
+            isRunning = nextRuntimeFlags.isRunning
+            awaitingTurnRestart = nextRuntimeFlags.awaitingTurnRestart
+            // 中文/English: even a "quiet" turn can jump straight from the user
+            // prompt to `turn_completed`, so terminal restart flags must also clear
+            // the optimistic submitting state instead of waiting for visible chunks.
+            isSubmitting =
+              shouldStartRunning(event) || shouldStopSending(event) || nextRuntimeFlags.awaitingTurnRestart
+                ? false
+                : isSubmitting
             isCancelling = shouldStopSending(event) ? false : isCancelling
             state.sessionDetail = mergeSessionDetail(state.sessionDetail, event)
           })
@@ -127,6 +140,7 @@ export function createSseActions(input) {
             capabilities,
             isSubmitting,
             isRunning,
+            awaitingTurnRestart,
             isCancelling,
             isConnected: true,
             reconnectAttempt: 0,
@@ -178,6 +192,14 @@ export function createSseActions(input) {
       input.set({ isConnected: false, activeSSESessionId: '' })
     },
   }
+}
+
+export function shouldStreamAssistantChunk(input) {
+  if (!input.isRunning) return false
+  if (input.runningChanged || input.structureChanged) return false
+  if (!input.latestAssistantBlock || input.latestAssistantIndex === undefined) return false
+  if (!input.renderedBlock) return false
+  return input.renderedBlock.key === input.latestAssistantBlock.key && input.renderedBlock.streaming === true
 }
 
 function resolveRespondingPermissionIds(current, event) {

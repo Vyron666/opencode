@@ -7,7 +7,7 @@ import {
   deriveCapPatch,
   mergeCapabilities,
 } from '../capabilities'
-import { deriveRunningStateFromEvents } from '../runtime-phase'
+import { deriveRuntimeFlagsFromEvents } from '../runtime-phase'
 import { isLatestSessionSelection } from './session-activation-support'
 import {
   writeCurrentSessionIdToLocation,
@@ -50,7 +50,7 @@ export async function loadCurrentSessionDetail(input) {
       .map((event) => event?.eventId)
       .filter((eventId) => typeof eventId === 'string'),
   )
-  const isRunning = deriveRunningStateFromEvents(eventBuffer)
+  const runtimeFlags = deriveRuntimeFlagsFromEvents(eventBuffer)
   const eventCapabilities = eventBuffer.reduce((capabilities, event) => {
     const patch = deriveCapPatch(event)
     return patch ? mergeCapabilities(capabilities, patch) : capabilities
@@ -62,10 +62,14 @@ export async function loadCurrentSessionDetail(input) {
     eventBufferVersion: eventBuffer.length,
     seenEventIds,
     conversationState,
-    conversationBlocks: finalizeConversationBlocks(conversationState, isRunning),
+    conversationBlocks: finalizeConversationBlocks(conversationState, runtimeFlags.isRunning),
     conversationVersion: conversationState.latestVersion,
+    // 中文/English: a reloaded session detail is the source of truth; once the
+    // persisted event history has been replayed we must clear any optimistic
+    // local sending state even if SSE missed the terminal event live.
     isSubmitting: false,
-    isRunning,
+    isRunning: runtimeFlags.isRunning,
+    awaitingTurnRestart: runtimeFlags.awaitingTurnRestart,
     isCancelling: false,
     pendingPermissions: session?.pendingPermissions ?? [],
     pendingQuestions: session?.pendingQuestions ?? [],

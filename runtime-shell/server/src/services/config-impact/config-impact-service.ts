@@ -23,8 +23,7 @@ export async function previewPlatformProviderImpact(input: {
       session.tenantId === input.tenantId &&
       session.organizationId === input.organizationId &&
       session.status === "active" &&
-      Boolean(getRuntime(session.id)) &&
-      sessionUsesProvider(session, input.providerId),
+      Boolean(getRuntime(session.id)),
   )
   return {
     affectedSessionIds: activeSessions.map((session) => session.id),
@@ -46,8 +45,7 @@ export async function previewUserPrivateProviderImpact(input: {
       session.organizationId === input.organizationId &&
       session.createdBy === input.userId &&
       session.status === "active" &&
-      Boolean(getRuntime(session.id)) &&
-      sessionUsesProvider(session, input.providerId),
+      Boolean(getRuntime(session.id)),
   )
   return {
     affectedSessionIds: activeSessions.map((session) => session.id),
@@ -99,8 +97,8 @@ export async function previewConfigImpact(input: {
   const subject = input.namespace === "mcp" ? "MCP 配置" : "Skill 配置"
   const summary =
     input.user.role === "admin"
-      ? `平台共享${subject}会影响当前租户内全部活跃会话`
-      : `私有${subject}会影响当前用户自己的活跃会话`
+      ? `平台共享${subject}按当前作用域估算，会影响当前租户内全部活跃会话`
+      : `私有${subject}按当前作用域估算，会影响当前用户自己的活跃会话`
 
   return {
     namespace: input.namespace,
@@ -112,13 +110,6 @@ export async function previewConfigImpact(input: {
     affectedWorkerIds: [...new Set(activeSessions.map((session) => session.workerId).filter(Boolean))],
   } satisfies ConfigImpactPreview
 }
-
-function sessionUsesProvider(session: BusinessSession, providerId: string) {
-  const currentModelId = readCurrentModelId(session)
-  if (!currentModelId) return false
-  return currentModelId.startsWith(`${providerId}/`)
-}
-
 function sessionMatchesConfigImpactScope(session: BusinessSession, user: User) {
   if (
     session.tenantId !== user.tenantId ||
@@ -130,16 +121,4 @@ function sessionMatchesConfigImpactScope(session: BusinessSession, user: User) {
   }
   if (user.role === "admin") return true
   return session.createdBy === user.id
-}
-
-function readCurrentModelId(session: BusinessSession) {
-  const directModelId = session.capabilityState?.modelId
-  if (typeof directModelId === "string" && directModelId) return directModelId
-  const currentModelId = session.capabilityState?.models?.currentModelId
-  if (typeof currentModelId === "string" && currentModelId) return currentModelId
-  const modelOption = session.capabilityState?.configOptions?.find((item) => item.id === "model")
-  if (typeof modelOption?.currentValue === "string" && modelOption.currentValue) {
-    return modelOption.currentValue
-  }
-  return ""
 }

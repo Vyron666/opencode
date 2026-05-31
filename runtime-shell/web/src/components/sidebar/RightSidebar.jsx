@@ -4,7 +4,7 @@ import { EventStreamPanel, PlanPanel } from './event-panels'
 import { MetricsPanel, PermissionPanel, QuestionPanel, SessionDetailPanel } from './inspect-panels'
 import { WorkspaceSharePanel } from './workspace-share-panel'
 import { ModelSettingPanel, ConfigSettingPanel } from './runtime-settings-panels'
-import { McpConfigPanel, ProviderConfigPanel, SkillConfigPanel, WorkerOverviewPanel } from './admin-settings-panels'
+import { ConfigHistoryPanel, McpConfigPanel, ProviderConfigPanel, SkillConfigPanel, WorkerOverviewPanel } from './admin-settings-panels'
 import { TABS } from './sidebar-support'
 
 export default function RightSidebar() {
@@ -79,6 +79,7 @@ const SettingsTabContent = memo(function SettingsTabContent() {
       <ProviderConfigPanel />
       <McpConfigPanel />
       <SkillConfigPanel />
+      <ConfigHistoryPanel />
     </div>
   )
 })

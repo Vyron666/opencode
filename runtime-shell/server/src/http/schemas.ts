@@ -185,6 +185,11 @@ export const configImpactPreviewSchema = z.object({
   targetId: z.string().optional(),
 })
 
+export const configHistoryListSchema = z.object({
+  namespace: z.enum(["provider", "mcp", "skill"]).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+})
+
 export const configApprovalReviewSchema = z.object({
   approvalId: z.string().min(1),
   decision: z.enum(["approved", "rejected"]),

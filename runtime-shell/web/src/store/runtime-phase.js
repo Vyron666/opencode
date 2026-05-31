@@ -1,10 +1,13 @@
-const RUN_STOP_EVENT_TYPES = [
+const TERMINAL_STOP_EVENT_TYPES = [
   'turn_completed',
   'session_failed',
   'worker_disconnected',
+  'session_closed',
+]
+
+const PAUSE_EVENT_TYPES = [
   'permission_requested',
   'question_requested',
-  'session_closed',
 ]
 
 const RUN_START_EVENT_TYPES = [
@@ -13,33 +16,77 @@ const RUN_START_EVENT_TYPES = [
   'tool_call',
   'tool_call_update',
   'plan',
-  'permission_requested',
-  'question_requested',
 ]
 
+const TURN_RESTART_EVENT_TYPES = [
+  'user_message_chunk',
+  'permission_resolved',
+  'question_resolved',
+]
+
+export function createRuntimeFlags() {
+  return {
+    isRunning: false,
+    awaitingTurnRestart: false,
+  }
+}
+
 export function shouldStopSending(event) {
-  // 中文/English: `session_error` is visible to the user, but it is not a
-  // reliable turn terminator. Only real stop events should end the running state.
-  return RUN_STOP_EVENT_TYPES.includes(event?.eventType)
+  return TERMINAL_STOP_EVENT_TYPES.includes(event?.eventType) || PAUSE_EVENT_TYPES.includes(event?.eventType)
 }
 
 export function shouldStartRunning(event) {
-  ////////////// runtime-shell customization start //////////////
-  // 中文/English: `user_message_chunk` only confirms local acceptance.
-  // Only upstream output or upstream interaction requests mean the model really started.
-  ////////////// runtime-shell customization end //////////////
   return RUN_START_EVENT_TYPES.includes(event?.eventType)
 }
 
+export function shouldUnlockTurnRestart(event) {
+  return TURN_RESTART_EVENT_TYPES.includes(event?.eventType)
+}
+
+export function deriveRuntimeFlags(current, event) {
+  if (!event?.eventType) return current
+
+  if (shouldUnlockTurnRestart(event)) {
+    return {
+      ...current,
+      awaitingTurnRestart: false,
+    }
+  }
+
+  if (TERMINAL_STOP_EVENT_TYPES.includes(event.eventType)) {
+    return {
+      isRunning: false,
+      awaitingTurnRestart: true,
+    }
+  }
+
+  if (PAUSE_EVENT_TYPES.includes(event.eventType)) {
+    return {
+      ...current,
+      isRunning: false,
+    }
+  }
+
+  if (!shouldStartRunning(event)) return current
+  if (current.awaitingTurnRestart) return current
+
+  return {
+    ...current,
+    isRunning: true,
+  }
+}
+
+export function deriveRuntimeFlagsFromEvents(events) {
+  if (!Array.isArray(events) || events.length === 0) return createRuntimeFlags()
+  return events.reduce((flags, event) => deriveRuntimeFlags(flags, event), createRuntimeFlags())
+}
+
 export function deriveRunningState(current, event) {
-  if (shouldStopSending(event)) return false
-  if (shouldStartRunning(event)) return true
-  return current
+  return deriveRuntimeFlags({ isRunning: current, awaitingTurnRestart: false }, event).isRunning
 }
 
 export function deriveRunningStateFromEvents(events) {
-  if (!Array.isArray(events) || events.length === 0) return false
-  return events.reduce((running, event) => deriveRunningState(running, event), false)
+  return deriveRuntimeFlagsFromEvents(events).isRunning
 }
 
 export function deriveConversationPhase(input) {

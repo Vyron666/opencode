@@ -106,14 +106,20 @@ export function EventStreamPanel() {
 }
 
 function readPlanEntries(payload) {
-  if (!Array.isArray(payload?.entries)) return []
-  return payload.entries.flatMap((item) => {
+  const rawEntries = Array.isArray(payload?.entries)
+    ? payload.entries
+    : Array.isArray(payload?.plan)
+      ? payload.plan
+      : []
+
+  return rawEntries.flatMap((item) => {
     if (!item || typeof item !== 'object') return []
-    if (typeof item.content !== 'string' || !item.content) return []
+    const text = item.content || item.step || item.title || item.text
+    if (typeof text !== 'string' || !text) return []
     return [
       {
         status: typeof item.status === 'string' ? item.status : 'pending',
-        text: item.content,
+        text,
       },
     ]
   })

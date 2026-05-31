@@ -91,7 +91,7 @@ export async function respondPermissionForUser(input: {
   const permission = findPermissionForSession(result.session.id, input.requestId)
   if (!permission) return { ok: false as const, reason: "permission_request_not_found" }
 
-  const success = resolvePendingPermission(input.requestId, {
+  const success = await resolvePendingPermission(input.requestId, {
     approved: input.approved,
     optionId: input.optionId,
   })
@@ -119,7 +119,7 @@ export async function respondQuestionForUser(input: {
   const question = findQuestionForSession(result.session.id, input.requestId)
   if (!question) return { ok: false as const, reason: "question_request_not_found" }
 
-  const success = resolvePendingQuestion(input.requestId, {
+  const success = await resolvePendingQuestion(input.requestId, {
     action: input.action,
     content: input.content,
   })

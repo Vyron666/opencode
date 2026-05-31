@@ -20,9 +20,12 @@ export class StoreStateService {
   }
 
   async save() {
-    const targetVersion = ++this.dirtyWriteVersion
-    this.writeTask = this.writeTask.then(() => this.flushWrites(targetVersion))
+    this.enqueueWrite()
     await this.writeTask
+  }
+
+  saveEventually() {
+    this.enqueueWrite()
   }
 
   private async flushWrites(targetVersion: number) {
@@ -33,5 +36,13 @@ export class StoreStateService {
       await saveStateToDisk(this.state)
       this.flushedWriteVersion = nextVersion
     }
+  }
+
+  private enqueueWrite() {
+    const targetVersion = ++this.dirtyWriteVersion
+    this.writeTask = this.writeTask
+      .catch(() => undefined)
+      .then(() => this.flushWrites(targetVersion))
+    return this.writeTask
   }
 }

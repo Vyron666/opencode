@@ -24,7 +24,7 @@ export function createInteractionActions(input) {
 
       // 中文/English: once runtime-shell accepted the turn, switch to running early
       // so the user does not stare at a stale "submitting" state during cold-start gaps.
-      input.set({ isSubmitting: false, isRunning: true, isCancelling: false })
+      input.set({ isSubmitting: false, isRunning: true, awaitingTurnRestart: false, isCancelling: false })
       input.get().setFlash(attachments?.length ? `消息已发送，包含 ${attachments.length} 个附件，模型正在处理` : '消息已发送，模型正在处理')
       return true
     },
@@ -35,7 +35,20 @@ export function createInteractionActions(input) {
       input.set({ isCancelling: true })
       await input.api.cancelSessionPrompt(currentSessionId).then(
         () => undefined,
-        createRequestFailureHandler(input, { isCancelling: false }, '取消失败'),
+        (error) => {
+          // 中文/English: a 409 here means upstream already ended the active turn.
+          if (error?.status === 409) {
+            input.set({
+              isSubmitting: false,
+              isRunning: false,
+              awaitingTurnRestart: true,
+              isCancelling: false,
+            })
+            input.get().setFlash('当前会话已经没有可取消的生成，已同步最新状态')
+            return
+          }
+          return createRequestFailureHandler(input, { isCancelling: false }, '取消失败')(error)
+        },
       )
       input.set({ isSubmitting: false })
     },
@@ -46,8 +59,13 @@ export function createInteractionActions(input) {
     respondPermission: async (requestId, approved, optionId) => {
       const currentSessionId = input.get().currentSessionId
       if (!currentSessionId || !requestId) return
+      const previousPendingPermissions = input.get().pendingPermissions
       input.set((state) => ({
         respondingPermissionIds: new Set(state.respondingPermissionIds).add(requestId),
+        pendingPermissions: state.pendingPermissions.filter((item) => (item.requestId || item.id) !== requestId),
+        isSubmitting: false,
+        awaitingTurnRestart: false,
+        isCancelling: false,
       }))
       await input.api.permissionRespond(currentSessionId, requestId, approved, optionId).then(
         () => undefined,
@@ -59,7 +77,10 @@ export function createInteractionActions(input) {
             input.set((state) => {
               const respondingPermissionIds = new Set(state.respondingPermissionIds)
               respondingPermissionIds.delete(requestId)
-              return { respondingPermissionIds }
+              return {
+                respondingPermissionIds,
+                pendingPermissions: previousPendingPermissions,
+              }
             }),
         ),
       )
@@ -68,8 +89,13 @@ export function createInteractionActions(input) {
     respondQuestion: async (requestId, action, content) => {
       const currentSessionId = input.get().currentSessionId
       if (!currentSessionId || !requestId) return
+      const previousPendingQuestions = input.get().pendingQuestions
       input.set((state) => ({
         respondingQuestionIds: new Set(state.respondingQuestionIds).add(requestId),
+        pendingQuestions: state.pendingQuestions.filter((item) => (item.requestId || item.id) !== requestId),
+        isSubmitting: false,
+        awaitingTurnRestart: false,
+        isCancelling: false,
       }))
       await input.api.questionRespond(currentSessionId, requestId, action, content).then(
         () => undefined,
@@ -81,7 +107,10 @@ export function createInteractionActions(input) {
             input.set((state) => {
               const respondingQuestionIds = new Set(state.respondingQuestionIds)
               respondingQuestionIds.delete(requestId)
-              return { respondingQuestionIds }
+              return {
+                respondingQuestionIds,
+                pendingQuestions: previousPendingQuestions,
+              }
             }),
         ),
       )

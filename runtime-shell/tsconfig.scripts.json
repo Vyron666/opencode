@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2023",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["bun"]
+  },
+  "files": ["scripts/e2e-web-regression.ts"]
+}

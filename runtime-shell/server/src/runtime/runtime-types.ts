@@ -22,11 +22,11 @@ export type SessionBootstrap = {
 }
 
 export type PermissionResponder = {
-  resolve: (decision: { approved: boolean; optionId?: string }) => void
+  resolve: (decision: { approved: boolean; optionId?: string }) => boolean | Promise<boolean>
 }
 
 export type QuestionResponder = {
-  resolve: (res: { action: "accept" | "decline" | "cancel"; content?: Record<string, ElicitationContentValue> }) => void
+  resolve: (res: { action: "accept" | "decline" | "cancel"; content?: Record<string, ElicitationContentValue> }) => boolean | Promise<boolean>
 }
 
 export function toElicitationContent(input?: Record<string, unknown>) {

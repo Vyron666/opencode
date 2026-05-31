@@ -5,12 +5,21 @@ export function buildInitialLegacyAnswers(prompts) {
 const CUSTOM_INPUT_SENTINEL = '__custom__'
 const CUSTOM_INPUT_HINT = 'Custom input is allowed.'
 
-export function buildLegacyQuestionAnswers(prompts, legacyAnswers, legacyCustomAnswers) {
-  return prompts.map((prompt, index) => {
+export function buildLegacyQuestionContent(prompts, legacyAnswers, legacyCustomAnswers) {
+  return prompts.reduce((result, prompt, index) => {
     const selected = Array.isArray(legacyAnswers[index]) ? [...legacyAnswers[index]] : []
     const custom = typeof legacyCustomAnswers[index] === 'string' ? legacyCustomAnswers[index].trim() : ''
     if (prompt.custom === true && custom) selected.push(custom)
-    return selected
+    result[`question_${index}`] = prompt.multiple ? selected : selected[0] || ''
+    return result
+  }, {})
+}
+
+export function hasEmptyLegacyQuestionAnswer(prompts, legacyAnswers, legacyCustomAnswers) {
+  return prompts.some((prompt, index) => {
+    const selected = Array.isArray(legacyAnswers[index]) ? legacyAnswers[index].filter(Boolean) : []
+    const custom = typeof legacyCustomAnswers[index] === 'string' ? legacyCustomAnswers[index].trim() : ''
+    return prompt.custom === true ? selected.length === 0 && !custom : selected.length === 0
   })
 }
 

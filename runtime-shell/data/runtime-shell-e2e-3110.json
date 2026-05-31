@@ -1,0 +1,140 @@
+{
+  "tenants": [
+    {
+      "id": "tenant_default",
+      "slug": "default",
+      "name": "Default Tenant",
+      "createdAt": "2026-05-30T14:12:12.092Z",
+      "updatedAt": "2026-05-30T14:12:12.092Z"
+    }
+  ],
+  "organizations": [
+    {
+      "id": "org_default",
+      "tenantId": "tenant_default",
+      "slug": "default",
+      "name": "Default Organization",
+      "createdAt": "2026-05-30T14:12:12.092Z",
+      "updatedAt": "2026-05-30T14:12:12.092Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "default",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "code": "default",
+      "name": "Default Project",
+      "defaultWorkspacePath": "/workspace/workspaces",
+      "createdAt": "2026-05-30T14:12:12.092Z",
+      "updatedAt": "2026-05-30T14:12:12.092Z"
+    },
+    {
+      "id": "project_secondary",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "code": "secondary",
+      "name": "Secondary Project",
+      "defaultWorkspacePath": "/workspace/workspaces/secondary",
+      "createdAt": "2026-05-30T14:12:12.092Z",
+      "updatedAt": "2026-05-30T14:12:12.092Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "user_admin",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "username": "admin",
+      "passwordHash": "e2186dbdb1bb4193608605e84f33208765b5693b55edd4f730a719a100eeea6f",
+      "displayName": "Runtime Shell Admin",
+      "role": "admin",
+      "projectIds": [
+        "default",
+        "project_secondary"
+      ],
+      "workspaceIds": [
+        "workspace_default",
+        "workspace_secondary"
+      ]
+    },
+    {
+      "id": "user_developer",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "username": "developer",
+      "passwordHash": "e2186dbdb1bb4193608605e84f33208765b5693b55edd4f730a719a100eeea6f",
+      "displayName": "Runtime Developer",
+      "role": "developer",
+      "projectIds": [
+        "project_secondary"
+      ],
+      "workspaceIds": [
+        "workspace_secondary"
+      ]
+    },
+    {
+      "id": "user_developer_secondary",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "username": "developer-secondary",
+      "passwordHash": "e2186dbdb1bb4193608605e84f33208765b5693b55edd4f730a719a100eeea6f",
+      "displayName": "Runtime Developer Secondary",
+      "role": "developer",
+      "projectIds": [
+        "default"
+      ],
+      "workspaceIds": [
+        "workspace_default"
+      ]
+    }
+  ],
+  "roles": [],
+  "permissions": [],
+  "authSessions": [],
+  "workspaces": [
+    {
+      "id": "workspace_default",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "projectId": "default",
+      "name": "Default Workspace Root",
+      "rootPath": "/workspace/workspaces",
+      "status": "active",
+      "createdBy": "user_admin",
+      "createdAt": "2026-05-30T14:12:12.092Z",
+      "updatedAt": "2026-05-30T14:12:12.092Z"
+    },
+    {
+      "id": "workspace_secondary",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "projectId": "project_secondary",
+      "name": "Secondary Workspace Root",
+      "rootPath": "/workspace/workspaces/secondary",
+      "status": "active",
+      "createdBy": "user_admin",
+      "createdAt": "2026-05-30T14:12:12.092Z",
+      "updatedAt": "2026-05-30T14:12:12.092Z"
+    }
+  ],
+  "workspaceShareBindings": [],
+  "workers": [
+    {
+      "id": "worker_local",
+      "tenantId": "tenant_default",
+      "organizationId": "org_default",
+      "workerCode": "worker_local",
+      "name": "opencode-worker",
+      "baseUrl": "http://opencode-worker:4096",
+      "status": "ready",
+      "capacity": 16,
+      "activeSessionCount": 0,
+      "lastHeartbeatAt": "2026-05-30T14:12:12.092Z",
+      "version": "local"
+    }
+  ],
+  "sessions": [],
+  "events": [],
+  "auditLogs": []
+}

@@ -5,6 +5,7 @@ import type {
   ResumeSessionResponse,
 } from "@agentclientprotocol/sdk"
 import { AcpProcessClient } from "../acp/acp-process-client"
+import { createUpstreamDrainController } from "../runtime/upstream-drain"
 import type { SessionEvent } from "../types"
 import { recordPromptEventTrace } from "./worker-agent-prompt-observe"
 import { forgetRuntime } from "./worker-agent-store"
@@ -19,6 +20,7 @@ export function createRuntimeEntry(input: {
   configContent?: string
 }) {
   const remoteRuntimeId = `rrt_${crypto.randomUUID().replace(/-/g, "")}`
+  const upstreamDrain = createUpstreamDrainController()
   const entry: RuntimeEntry = {
     remoteRuntimeId,
     businessSessionId: input.businessSessionId,
@@ -31,15 +33,21 @@ export function createRuntimeEntry(input: {
         workerId: input.workerId,
         configContent: input.configContent,
         onEvent: async (event) => {
-          await pushEvent({
+          const nextPush = pushEvent({
             runtimeShellBaseUrl: input.runtimeShellBaseUrl,
             workerToken: input.workerToken,
             entry,
             event,
           })
+          upstreamDrain.track(nextPush)
+          await nextPush
         },
       },
-      () => Promise.resolve(),
+      () => {
+        // 中文/English: mirror the local runtime drain semantics so remote worker
+        // prompts also wait for persisted tail events before reporting completion.
+        return upstreamDrain.waitForQuiet()
+      },
     ),
     snapshot: {},
     closing: false,

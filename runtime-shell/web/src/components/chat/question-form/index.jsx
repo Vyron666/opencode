@@ -11,6 +11,7 @@ import {
 
 export function QuestionInlineBlock({ block }) {
   const respondQuestion = useStore((state) => state.respondQuestion)
+  const pendingQuestions = useStore((state) => state.pendingQuestions)
   const respondingQuestionIds = useStore((state) => state.respondingQuestionIds)
   const requestId = block.data?.requestId || block.data?.id
   const schema = block.data?.requestedSchema
@@ -37,6 +38,10 @@ export function QuestionInlineBlock({ block }) {
   const hasLegacyPrompts = prompts.length > 0
   const hasSchemaFields = fields.length > 0
   const submitting = requestId ? respondingQuestionIds.has(requestId) : false
+  const pending = requestId
+    ? pendingQuestions.some((item) => (item.requestId || item.id) === requestId)
+    : false
+  const resolved = Boolean(requestId) && !pending && !submitting
 
   return (
     <div className="flex justify-center px-4">
@@ -47,7 +52,11 @@ export function QuestionInlineBlock({ block }) {
           当前会话正在等待你回答这个问题，提交后会继续运行。
         </div>
 
-        {hasLegacyPrompts ? (
+        {resolved ? (
+          <div className="text-[11px] text-[var(--text-muted)]">
+            已提交，等待会话继续。
+          </div>
+        ) : hasLegacyPrompts ? (
           <QuestionLegacyForm
             prompts={prompts}
             requestId={requestId}

@@ -10,6 +10,7 @@ import { RemoteRuntimeClient } from "./remote-runtime-client"
 import { extractUpstreamError, normalizeBootstrap } from "./runtime-capabilities"
 import type { ManagedRuntimeClient } from "./runtime-client"
 import { createEvent, nextId, persistAndFanout } from "./runtime-events"
+import { createUpstreamDrainController } from "./upstream-drain"
 import {
   addPendingPermission,
   addPendingQuestion,
@@ -24,8 +25,6 @@ import {
 import type { RuntimeEntry, SessionBootstrap } from "./runtime-types"
 
 const log = createLogger("runtime")
-const UPSTREAM_QUIET_WINDOW_MS = 120
-
 export async function bindRuntime(
   session: BusinessSession,
   client: ManagedRuntimeClient,
@@ -94,8 +93,11 @@ export async function bindRuntime(
         const ok = approved && optionId
           ? client.resolvePermission(permission.requestId, optionId)
           : client.rejectPermission(permission.requestId)
-        if (!ok) return
+        if (!ok) return false
         deletePendingPermission(permission.requestId)
+        // 中文/English: report whether the resolve actually reached the in-flight
+        // ACP request so the HTTP API does not claim success on a dropped reply.
+        return true
       },
     })
   })
@@ -110,8 +112,10 @@ export async function bindRuntime(
               ? { action: "decline" }
               : { action: "cancel" }
         const ok = client.resolveQuestion(question.requestId, permissionResponse)
-        if (!ok) return
+        if (!ok) return false
         deletePendingQuestion(question.requestId)
+        // 中文/English: mirror permission resolution semantics for question flows.
+        return true
       },
     })
   })
@@ -140,22 +144,7 @@ export function createClient(session: BusinessSession, configContent?: string) {
     // calls there so the worker process truly carries dialog and tool load.
     return new RemoteRuntimeClient(session, worker, configContent)
   }
-  let upstreamEventVersion = 0
-  let lastUpstreamEventAt = 0
-
-  const waitForUpstreamQuiet = async () => {
-    let observedVersion = -1
-
-    while (true) {
-      const quietForMs = lastUpstreamEventAt ? Date.now() - lastUpstreamEventAt : Number.POSITIVE_INFINITY
-      if (observedVersion === upstreamEventVersion && quietForMs >= UPSTREAM_QUIET_WINDOW_MS) return
-      observedVersion = upstreamEventVersion
-      const waitMs = Math.max(UPSTREAM_QUIET_WINDOW_MS - quietForMs, 0)
-      if (waitMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, waitMs))
-      }
-    }
-  }
+  const upstreamDrain = createUpstreamDrainController()
 
   return new AcpProcessClient(
     {
@@ -164,8 +153,6 @@ export function createClient(session: BusinessSession, configContent?: string) {
       workerId: session.workerId,
       configContent,
       onEvent: (event) => {
-        upstreamEventVersion += 1
-        lastUpstreamEventAt = Date.now()
         ////////////// runtime-shell customization start //////////////
         // 中文/English: publish and stage each upstream chunk immediately so SSE
         // does not wait for the previous event's disk write before seeing the next chunk.
@@ -183,6 +170,7 @@ export function createClient(session: BusinessSession, configContent?: string) {
               }
             : event,
         )
+        upstreamDrain.track(nextWrite)
         void nextWrite
         return
         ////////////// runtime-shell customization end //////////////
@@ -192,7 +180,7 @@ export function createClient(session: BusinessSession, configContent?: string) {
       ////////////// runtime-shell customization start //////////////
       // 中文/English: wait for the persisted queue first, then require one
       // quiet window so prompt completion does not outrun late upstream chunks.
-      return waitForUpstreamQuiet()
+      return upstreamDrain.waitForQuiet()
       ////////////// runtime-shell customization end //////////////
     },
   )

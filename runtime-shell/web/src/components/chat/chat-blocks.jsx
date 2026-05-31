@@ -66,24 +66,60 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
   const textRef = useRef(null)
   const textNodeRef = useRef(null)
   const chunkVersionRef = useRef(0)
+  const markdownFrameRef = useRef(0)
+  const plainText = block.message || (Array.isArray(block.chunks) && block.chunks.length > 0 ? block.chunks.join('') : block.latestChunk || '')
+  const [showMarkdown, setShowMarkdown] = useState(() => !block.streaming)
+  const renderPlainText = block.streaming || !showMarkdown
+
+  useEffect(() => {
+    if (markdownFrameRef.current) {
+      cancelAnimationFrame(markdownFrameRef.current)
+      markdownFrameRef.current = 0
+    }
+    if (block.streaming) {
+      setShowMarkdown(false)
+      return
+    }
+    if (!plainText) {
+      setShowMarkdown(true)
+      return
+    }
+    // 中文/English: keep the streamed text node visible for one more frame so
+    // the final markdown tree can replace it without a blank transition flash.
+    markdownFrameRef.current = requestAnimationFrame(() => {
+      markdownFrameRef.current = 0
+      setShowMarkdown(true)
+    })
+    return () => {
+      if (!markdownFrameRef.current) return
+      cancelAnimationFrame(markdownFrameRef.current)
+      markdownFrameRef.current = 0
+    }
+  }, [block.streaming, plainText])
 
   useLayoutEffect(() => {
-    if (!block.streaming || !textRef.current) return
+    if (!renderPlainText || !textRef.current) return
     if (!textNodeRef.current) {
       textNodeRef.current = document.createTextNode('')
       textRef.current.replaceChildren(textNodeRef.current)
     }
-    if (chunkVersionRef.current > block.chunkVersion) {
+    if (block.streaming && chunkVersionRef.current > block.chunkVersion) {
       textNodeRef.current.nodeValue = ''
       chunkVersionRef.current = 0
     }
-    if (chunkVersionRef.current === block.chunkVersion) return
-    if (!block.latestChunk) return
+    if (block.streaming && chunkVersionRef.current === block.chunkVersion && textNodeRef.current.nodeValue === plainText) return
+    const nextText = block.streaming
+      ? Array.isArray(block.chunks) && block.chunks.length > 0
+        ? block.chunks.join('')
+        : block.latestChunk || ''
+      : plainText
+    if (!nextText) return
     // 中文/English: append only the latest upstream chunk so the DOM path stays
     // incremental end-to-end on a single Text node to avoid node explosion.
-    textNodeRef.current.nodeValue += block.latestChunk
+    textNodeRef.current.nodeValue = nextText
+    if (!block.streaming) return
     chunkVersionRef.current = block.chunkVersion
-  }, [block.chunkVersion, block.latestChunk, block.streaming])
+  }, [block.chunkVersion, block.chunks, block.latestChunk, block.streaming, plainText, renderPlainText])
 
   useEffect(() => {
     if (!block.streaming || !textRef.current) return
@@ -109,11 +145,10 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
   }, [block.key, block.streaming])
 
   useEffect(() => {
-    if (block.streaming || !textRef.current) return
-    textRef.current.textContent = ''
+    if (renderPlainText) return
     textNodeRef.current = null
     chunkVersionRef.current = 0
-  }, [block.streaming])
+  }, [renderPlainText])
 
   return (
     <div className="flex min-w-0 gap-3 items-start">
@@ -130,6 +165,8 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
         </div>
         <div
           className="min-w-0 max-w-full rounded-[20px] px-4 py-3 text-sm leading-relaxed break-words markdown-body"
+          data-assistant-block-key={block.key}
+          data-assistant-render-mode={renderPlainText ? 'plain' : 'markdown'}
           style={{
             background: '#231e19',
             borderTopLeftRadius: '6px',
@@ -137,7 +174,7 @@ const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
           }}
         >
-          {block.streaming ? (
+          {renderPlainText ? (
             <pre ref={textRef} className="max-w-full overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" />
           ) : (
             <MarkdownContent content={block.message} />
@@ -318,9 +355,14 @@ function PlanBlock({ block }) {
 
 function PermissionInlineBlock({ block }) {
   const respondPermission = useStore((state) => state.respondPermission)
+  const pendingPermissions = useStore((state) => state.pendingPermissions)
   const respondingPermissionIds = useStore((state) => state.respondingPermissionIds)
   const requestId = block.data?.requestId || block.data?.id
   const submitting = requestId ? respondingPermissionIds.has(requestId) : false
+  const pending = requestId
+    ? pendingPermissions.some((item) => (item.requestId || item.id) === requestId)
+    : false
+  const resolved = Boolean(requestId) && !pending && !submitting
 
   return (
     <div className="flex justify-center px-4">
@@ -333,7 +375,12 @@ function PermissionInlineBlock({ block }) {
             {formatData(block.data.rawInput)}
           </pre>
         )}
-        <div className="flex gap-2 justify-center flex-wrap">
+        {resolved ? (
+          <div className="text-[11px] text-[var(--text-muted)]">
+            已处理，等待会话继续。
+          </div>
+        ) : (
+          <div className="flex gap-2 justify-center flex-wrap">
           {(block.data?.options || []).map((option) => (
             <button
               key={option.optionId || option.id}
@@ -360,7 +407,8 @@ function PermissionInlineBlock({ block }) {
           >
             {submitting ? '提交中...' : '拒绝'}
           </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )

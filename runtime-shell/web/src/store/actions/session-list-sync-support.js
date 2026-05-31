@@ -5,11 +5,25 @@ import {
   writeStoredCurrentSessionId,
 } from '../session-selection-support'
 
+let latestSessionListRequestId = 0
+
 export async function loadSessionSummaries(input) {
+  const requestId = ++latestSessionListRequestId
   const data = await input.api.sessionList()
+  if (requestId !== latestSessionListRequestId) {
+    // 中文/English: ignore slower session-list responses so an older poll
+    // cannot roll back a newer create/select/open transition.
+    return Array.isArray(data.items) ? data.items : []
+  }
   const currentSessionId = input.get().currentSessionId
   const nextSessions = Array.isArray(data.items) ? data.items : []
   const nextWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : []
+  const currentSessionSummary = currentSessionId
+    ? nextSessions.find((session) => session.id === currentSessionId) || null
+    : null
+  const previousSessionSummary = currentSessionId
+    ? input.get().sessions.find((session) => session.id === currentSessionId) || null
+    : null
   const restoredSessionId = !currentSessionId
     ? readLocationCurrentSessionId(nextSessions) || readStoredCurrentSessionId(input.get().user?.id, nextSessions)
     : ''
@@ -36,6 +50,9 @@ export async function loadSessionSummaries(input) {
           ? state.sessionSelectionVersion + 1
           : state.sessionSelectionVersion,
     }))
+    if (shouldRefreshCurrentSessionDetail(currentSessionId, previousSessionSummary, currentSessionSummary)) {
+      void input.get().loadSessionDetail().catch(() => undefined)
+    }
     return nextSessions
   }
 
@@ -53,4 +70,18 @@ export async function loadSessionSummaries(input) {
     }),
   )
   return nextSessions
+}
+
+function shouldRefreshCurrentSessionDetail(currentSessionId, previousSessionSummary, currentSessionSummary) {
+  if (!currentSessionId || !currentSessionSummary) return false
+  if (!previousSessionSummary) return true
+  return (
+    // 中文/English: do not reload detail on every eventCount tick. SSE already
+    // streams normal answer chunks live, and a poll-time detail replay here can
+    // rebuild the same assistant block mid-stream and cause visible flicker.
+    previousSessionSummary.status !== currentSessionSummary.status ||
+    previousSessionSummary.capabilityState?.modelId !== currentSessionSummary.capabilityState?.modelId ||
+    previousSessionSummary.pendingPermissions?.length !== currentSessionSummary.pendingPermissions?.length ||
+    previousSessionSummary.pendingQuestions?.length !== currentSessionSummary.pendingQuestions?.length
+  )
 }

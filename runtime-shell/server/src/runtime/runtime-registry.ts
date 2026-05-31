@@ -57,11 +57,10 @@ export function addPendingPermission(permission: PendingPermission, responder: P
   pendingPermissionResponders.set(permission.requestId, responder)
 }
 
-export function resolvePendingPermission(requestId: string, input: { approved: boolean; optionId?: string }) {
+export async function resolvePendingPermission(requestId: string, input: { approved: boolean; optionId?: string }) {
   const responder = pendingPermissionResponders.get(requestId)
   if (!responder) return false
-  responder.resolve(input)
-  return true
+  return await responder.resolve(input)
 }
 
 export function clearPendingPermissionsBySession(sessionId: string) {
@@ -93,11 +92,10 @@ export function resolvePendingQuestion(
 ) {
   const responder = pendingQuestionResponders.get(requestId)
   if (!responder) return false
-  responder.resolve({
+  return responder.resolve({
     action: input.action,
     ...(input.action === "accept" ? { content: mapContent(input.content) } : {}),
   })
-  return true
 }
 
 export function clearPendingQuestionsBySession(sessionId: string) {

@@ -180,6 +180,14 @@ export const api = {
         body: JSON.stringify(payload),
       }),
   },
+  configHistory: {
+    list: (params = {}) => {
+      const search = new URLSearchParams()
+      if (params.namespace) search.set('namespace', params.namespace)
+      if (params.limit) search.set('limit', String(params.limit))
+      return request(`/api/config-history/list${search.toString() ? `?${search.toString()}` : ''}`)
+    },
+  },
 }
 
 export function createEventSource(sessionId, onEvent, onError, afterEventId) {

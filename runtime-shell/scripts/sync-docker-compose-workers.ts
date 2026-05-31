@@ -164,7 +164,7 @@ function buildWorkerService(workerIndex: number) {
       - "4097"
     volumes:
       - ${readWorkerDataDir(workerIndex)}:/root/.local/share/opencode
-      - ../.opencode/skills:/workspace/.opencode/skills:ro
+      - ../.opencode:/workspace/.opencode
       - ../workspaces:/workspace/workspaces
     working_dir: /workspace
     entrypoint: ["bash", "/workspace/runtime-shell/server/src/worker-agent/start-worker.sh"]`

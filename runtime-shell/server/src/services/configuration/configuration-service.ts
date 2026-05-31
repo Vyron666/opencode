@@ -1,4 +1,4 @@
-import type { RuntimeShellProviderConfig, RuntimeShellStoredProviderConfig } from "../../provider-config"
+import { listProviderConfigs, type RuntimeShellProviderConfig, type RuntimeShellStoredProviderConfig } from "../../provider-config"
 import * as ConfigRepo from "../../repos/config-repo"
 import type { ConfigNamespace, ConfigScopeLevel, ConfigSource, User, UserMcpConfig, UserSkillConfig } from "../../types"
 
@@ -90,13 +90,30 @@ async function listUserPrivateStoredProviderConfigs(user: User) {
 
 export async function listVisibleProviderConfigs(user: User) {
   const [platformProviders, privateProviders] = await Promise.all([
-    listPlatformProviderConfigs(user),
+    listReservedPlatformProviderConfigs(user),
     listUserPrivateProviderConfigs(user),
   ])
   const platformIds = new Set(platformProviders.map((item) => item.providerId))
   return [
     ...platformProviders,
     ...privateProviders.filter((item) => !platformIds.has(item.providerId)),
+  ]
+}
+
+async function listReservedPlatformProviderConfigs(user: User) {
+  const [savedPlatformProviders, builtinProviders] = await Promise.all([
+    listPlatformProviderConfigs(user),
+    listProviderConfigs(),
+  ])
+  const savedIds = new Set(savedPlatformProviders.map((item) => item.providerId))
+  return [
+    ...savedPlatformProviders,
+    ...builtinProviders
+      .filter((item) => !savedIds.has(item.providerId))
+      .map((item) => ({
+        ...item,
+        source: "platform_shared" as const,
+      })),
   ]
 }
 
@@ -210,7 +227,7 @@ export async function saveUserPrivateProviderConfig(input: {
   config: RuntimeShellProviderConfig
   summaryJson: Record<string, unknown>
 }) {
-  const platformProviders = await listPlatformProviderConfigs(input.user)
+  const platformProviders = await listReservedPlatformProviderConfigs(input.user)
   const platformIds = new Set(platformProviders.map((item) => item.providerId))
   if (platformIds.has(input.config.providerId)) {
     return {
