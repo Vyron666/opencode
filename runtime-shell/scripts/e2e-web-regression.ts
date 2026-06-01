@@ -7,7 +7,14 @@ import {
   finalizeConversationView,
 } from "../web/src/components/chat/conversation-blocks.js"
 import { createInteractionActions } from "../web/src/store/actions/interaction-actions.js"
+import { activateCurrentSession } from "../web/src/store/actions/session-activation-support.js"
 import { loadCurrentSessionDetail } from "../web/src/store/actions/session-detail-sync-support.js"
+import {
+  closeCurrentSessionAndReset,
+  createSessionAndActivate,
+  forkCurrentSessionAndSelect,
+} from "../web/src/store/actions/session-lifecycle-write-support.js"
+import { updateCurrentSessionMode } from "../web/src/store/actions/session-settings-support.js"
 import { mergeSessionDetail } from "../web/src/store/session-events.js"
 import {
   deriveConversationPhase,
@@ -106,6 +113,24 @@ try {
 
     await verifyAttachmentLocalStatusKeepsVisiblePermissionBlock()
     result.assertions.attachment_local_status_keeps_visible_permission_block = true
+
+    await verifyActivateFailureClearsPendingSessionAction()
+    result.assertions.activate_failure_clears_pending_session_action = true
+
+    await verifyStaleActivateFailureDoesNotClearNewSelectionPending()
+    result.assertions.stale_activate_failure_does_not_clear_new_selection_pending = true
+
+    await verifyStaleCloseDoesNotClearNewSelection()
+    result.assertions.stale_close_does_not_clear_new_selection = true
+
+    await verifyStaleForkDoesNotSelectFork()
+    result.assertions.stale_fork_does_not_select_fork = true
+
+    await verifyStaleCreateDoesNotOverrideNewSelection()
+    result.assertions.stale_create_does_not_override_new_selection = true
+
+    await verifyStaleSettingsFailureDoesNotClearNewSelectionPending()
+    result.assertions.stale_settings_failure_does_not_clear_new_selection_pending = true
   }
 
   result.ok = true
@@ -949,6 +974,163 @@ async function verifyAttachmentLocalStatusKeepsVisiblePermissionBlock() {
   )
 }
 
+async function verifyActivateFailureClearsPendingSessionAction() {
+  const state = createActivationState({
+    currentSessionId: "bs_orphaned",
+    sessions: [
+      {
+        id: "bs_orphaned",
+        title: "Lost workspace",
+        status: "orphaned",
+        binding: { acpSessionId: null },
+      },
+    ],
+  })
+
+  await activateCurrentSession(
+    createActivationInput(state, {
+      openSession: async () => {
+        throw new Error("runtime lease expired")
+      },
+    }) as never,
+  ).catch(() => undefined)
+
+  assert(state.pendingSessionAction === "", "failed automatic activation should release the session pending action")
+  assert(
+    state.flash.includes("打开会话失败") && state.flash.includes("runtime lease expired"),
+    "failed automatic activation should surface the open failure",
+  )
+}
+
+async function verifyStaleActivateFailureDoesNotClearNewSelectionPending() {
+  const state = createActivationState({
+    currentSessionId: "bs_old",
+    sessions: [
+      {
+        id: "bs_old",
+        title: "Old session",
+        status: "orphaned",
+        binding: { acpSessionId: null },
+      },
+    ],
+  })
+
+  await activateCurrentSession(
+    createActivationInput(state, {
+      openSession: async () => {
+        state.currentSessionId = "bs_new"
+        state.sessionSelectionVersion += 1
+        state.pendingSessionAction = "activate"
+        throw new Error("old session failed late")
+      },
+    }) as never,
+  ).catch(() => undefined)
+
+  assert(state.currentSessionId === "bs_new", "stale activation failure should not change the new selection")
+  assert(state.pendingSessionAction === "activate", "stale activation failure should not clear the new session pending action")
+  assert(state.flash === "", "stale activation failure should not show an error for the previous selection")
+}
+
+async function verifyStaleCloseDoesNotClearNewSelection() {
+  const state = createLifecycleState({
+    currentSessionId: "bs_old",
+    sessionSelectionVersion: 3,
+    pendingSessionAction: "activate",
+  })
+
+  await closeCurrentSessionAndReset(
+    createLifecycleInput(state, {
+      closeSession: async () => {
+        state.currentSessionId = "bs_new"
+        state.sessionSelectionVersion += 1
+        state.pendingSessionAction = "activate"
+        return { success: true }
+      },
+    }) as never,
+  )
+
+  assert(state.currentSessionId === "bs_new", "stale close should not clear the newer selected session")
+  assert(state.pendingSessionAction === "activate", "stale close should not clear the newer session pending action")
+  assert(state.disconnected === false, "stale close should not disconnect the newer session SSE")
+}
+
+async function verifyStaleForkDoesNotSelectFork() {
+  const state = createLifecycleState({
+    currentSessionId: "bs_old",
+    sessionSelectionVersion: 5,
+    pendingSessionAction: "activate",
+  })
+
+  await forkCurrentSessionAndSelect(
+    createLifecycleInput(state, {
+      forkSession: async () => {
+        state.currentSessionId = "bs_new"
+        state.sessionSelectionVersion += 1
+        state.pendingSessionAction = "activate"
+        return { id: "bs_fork", title: "Forked" }
+      },
+    }) as never,
+    "Forked",
+  )
+
+  assert(state.currentSessionId === "bs_new", "stale fork should not switch the current selection to the fork")
+  assert(state.pendingSessionAction === "activate", "stale fork should not clear the newer session pending action")
+}
+
+async function verifyStaleCreateDoesNotOverrideNewSelection() {
+  const state = createLifecycleState({
+    currentSessionId: "bs_existing",
+    sessionSelectionVersion: 7,
+    sessions: [{ id: "bs_existing", title: "Existing" }],
+    pendingSessionAction: "activate",
+  })
+
+  await createSessionAndActivate(
+    createLifecycleInput(state, {
+      createSession: async () => {
+        state.currentSessionId = "bs_new"
+        state.sessionSelectionVersion += 1
+        state.pendingSessionAction = "activate"
+        return { id: "bs_created", title: "Created", pendingPermissions: [], pendingQuestions: [] }
+      },
+    }) as never,
+    "Created",
+    "project_1",
+    "workspace_1",
+  )
+
+  assert(state.currentSessionId === "bs_new", "stale create should not override the newer selected session")
+  assert(state.pendingSessionAction === "activate", "stale create should not clear the newer session pending action")
+  assert(
+    state.sessions.some((session: { id?: string }) => session.id === "bs_created"),
+    "stale create should still add the created session to the list",
+  )
+}
+
+async function verifyStaleSettingsFailureDoesNotClearNewSelectionPending() {
+  const state = createLifecycleState({
+    currentSessionId: "bs_old",
+    sessionSelectionVersion: 9,
+    pendingSettingsAction: "config",
+  })
+
+  await updateCurrentSessionMode(
+    createLifecycleInput(state, {
+      updateMode: async () => {
+        state.currentSessionId = "bs_new"
+        state.sessionSelectionVersion += 1
+        state.pendingSettingsAction = "model"
+        throw new Error("old mode update failed late")
+      },
+    }) as never,
+    "plan",
+  ).catch(() => undefined)
+
+  assert(state.currentSessionId === "bs_new", "stale settings failure should not change the newer selection")
+  assert(state.pendingSettingsAction === "model", "stale settings failure should not clear the newer settings pending action")
+  assert(state.flash === "", "stale settings failure should not show an error for the previous selection")
+}
+
 function createInput(state: State, apiOverrides: Partial<Input["api"]>): Input {
   return {
     api: {
@@ -1009,6 +1191,101 @@ function createState(overrides: Partial<State>): State {
     flash: "",
     ...overrides,
   }
+}
+
+function createActivationInput(state: Record<string, any>, apiOverrides: Record<string, unknown>) {
+  return {
+    api: {
+      loadSession: async () => ({ success: true }),
+      openSession: async () => ({ success: true }),
+      resumeSession: async () => ({ success: true }),
+      ...apiOverrides,
+    },
+    get: () => ({
+      ...state,
+      loadSessionDetail: async () => ({ session: null }),
+      connectSSE: () => {
+        state.connected = true
+      },
+      setFlash: (message: string) => {
+        state.flash = message
+      },
+    }),
+    set: (patch: Record<string, unknown> | ((state: Record<string, any>) => Record<string, unknown>)) => {
+      const next = typeof patch === "function" ? patch(state) : patch
+      Object.assign(state, next)
+    },
+  }
+}
+
+function createActivationState(overrides: Record<string, unknown>) {
+  return {
+    currentSessionId: "",
+    sessionSelectionVersion: 0,
+    pendingSessionAction: "",
+    sessions: [],
+    sessionDetail: null,
+    flash: "",
+    connected: false,
+    ...overrides,
+  } as Record<string, any>
+}
+
+function createLifecycleInput(state: Record<string, any>, apiOverrides: Record<string, unknown>) {
+  return {
+    api: {
+      createSession: async () => ({ id: "bs_created", title: "Created" }),
+      closeSession: async () => ({ success: true }),
+      forkSession: async () => ({ id: "bs_fork", title: "Forked" }),
+      loadSessions: async () => ({ items: state.sessions, workspaces: state.workspaces }),
+      updateMode: async () => ({ success: true }),
+      updateModel: async () => ({ success: true }),
+      updateConfig: async () => ({ success: true }),
+      ...apiOverrides,
+    },
+    get: () => ({
+      ...state,
+      activateSession: async () => {
+        state.activated = true
+      },
+      loadSessions: async () => {
+        state.loadedSessions = true
+      },
+      loadSessionDetail: async () => {
+        state.loadedDetail = true
+      },
+      disconnectSSE: () => {
+        state.disconnected = true
+      },
+      setFlash: (message: string) => {
+        state.flash = message
+      },
+    }),
+    set: (patch: Record<string, unknown> | ((state: Record<string, any>) => Record<string, unknown>)) => {
+      const next = typeof patch === "function" ? patch(state) : patch
+      Object.assign(state, next)
+    },
+    resetConversationState: (patch: Record<string, unknown>) => patch,
+  }
+}
+
+function createLifecycleState(overrides: Record<string, unknown>) {
+  return {
+    user: { id: "u_1" },
+    currentSessionId: "",
+    sessionSelectionVersion: 0,
+    pendingSessionAction: "",
+    pendingSettingsAction: "",
+    sessions: [],
+    workspaces: [],
+    sessionDetail: null,
+    flash: "",
+    disconnected: false,
+    activated: false,
+    loadedSessions: false,
+    loadedDetail: false,
+    ...overrides,
+  } as Record<string, any>
 }
 
 function createEvent(eventId: string, eventType: string, payload: Record<string, unknown>) {

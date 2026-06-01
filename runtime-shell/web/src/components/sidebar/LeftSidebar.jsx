@@ -122,12 +122,12 @@ export default function LeftSidebar() {
           <button
             onClick={() => loadSessions()}
             aria-label={'\u5237\u65b0\u4f1a\u8bdd\u5217\u8868'}
-            disabled={Boolean(pendingSessionAction)}
-            className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
           >
             {'\u5237\u65b0'}
           </button>
         </div>
+        {/* 中文/English: navigation must stay available even if the selected session is stuck opening. */}
         <div className="grid gap-2 max-h-[300px] overflow-y-auto">
           {sessions.length === 0 ? (
             <div className="text-xs text-[var(--text-muted)] text-center py-4 border border-dashed border-[var(--line-strong)] rounded-[14px]">
@@ -144,17 +144,15 @@ export default function LeftSidebar() {
                   : session.status === 'completed'
                     ? '#7a6e60'
                     : '#c44a3a'
-
             return (
               <button
                 key={session.id}
                 onClick={() => setCurrentSession(session.id)}
-                disabled={Boolean(pendingSessionAction)}
                 aria-label={`\u9009\u62e9\u4f1a\u8bdd: ${session.title}`}
                 aria-current={isActive ? 'true' : undefined}
                 className={`w-full text-left p-3 rounded-[14px] border text-sm transition-all ${
                   isActive ? 'border-brand bg-brand/10 shadow-glow' : 'border-[var(--line)] bg-black/30 hover:bg-black/50 hover:border-[var(--line-strong)]'
-                } disabled:opacity-60 disabled:cursor-not-allowed`}
+                }`}
               >
                 <div className="font-semibold text-sm">{session.title}</div>
                 <div className="mt-1.5 text-xs text-[var(--text-muted)] flex items-center gap-1.5">

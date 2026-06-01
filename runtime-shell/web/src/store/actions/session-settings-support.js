@@ -66,13 +66,21 @@ async function runSessionSettingsFlow(input, flow) {
   input.set({ pendingSettingsAction: flow.action })
   await flow.request(currentSessionId).then(
     () => undefined,
-    createRequestFailureHandler(input, { pendingSettingsAction: '' }, flow.requestFailureMessage),
+    createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSettingsAction: '' }, flow.requestFailureMessage),
   )
   if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
   await input.get().loadSessionDetail().then(
     (value) => value,
-    createRequestFailureHandler(input, { pendingSettingsAction: '' }, '刷新会话详情失败'),
+    createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSettingsAction: '' }, '刷新会话详情失败'),
   )
   if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
   input.set({ pendingSettingsAction: '' })
+}
+
+function createSessionSelectionFailureHandler(input, sessionId, sessionSelectionVersion, patch, message) {
+  return (error) => {
+    if (!isLatestSessionSelection(input, sessionId, sessionSelectionVersion)) throw error
+    // 中文/English: stale settings requests must not clear a newer session's pending state.
+    return createRequestFailureHandler(input, patch, message)(error)
+  }
 }

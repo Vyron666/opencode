@@ -11,7 +11,7 @@ export async function activateCurrentSession(input) {
     readSelectedSessionSummary(input, currentSessionId) ||
     (await input.get().loadSessionDetail().then(
       (value) => value?.session,
-      createRequestFailureHandler(input, { pendingSessionAction: '' }, '读取会话详情失败'),
+      createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, '读取会话详情失败'),
     ))
   if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
   if (!session) {
@@ -22,7 +22,7 @@ export async function activateCurrentSession(input) {
   if (session.status === 'completed' && session.binding?.acpSessionId) {
     await input.api.loadSession(currentSessionId).then(
       () => undefined,
-      createRequestFailureHandler(input, {}, '加载历史失败'),
+      createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, '加载历史失败'),
     )
   } else if (
     !session.binding?.acpSessionId ||
@@ -32,12 +32,12 @@ export async function activateCurrentSession(input) {
   ) {
     await input.api.openSession(currentSessionId).then(
       () => undefined,
-      createRequestFailureHandler(input, {}, '打开会话失败'),
+      createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, '打开会话失败'),
     )
   } else {
     await input.api.resumeSession(currentSessionId).then(
       () => undefined,
-      createRequestFailureHandler(input, {}, '恢复会话失败'),
+      createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, '恢复会话失败'),
     )
   }
   if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
@@ -89,7 +89,7 @@ async function runSessionOpenFlow(input, flow) {
   input.set({ pendingSessionAction: flow.action })
   await flow.request().then(
     () => undefined,
-    createRequestFailureHandler(input, { pendingSessionAction: '' }, flow.requestFailureMessage),
+    createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, flow.requestFailureMessage),
   )
   if (!isLatestSessionSelection(input, currentSessionId, sessionSelectionVersion)) return
   await reloadSessionDetailAndReconnect(input, currentSessionId, sessionSelectionVersion, '刷新会话详情失败')
@@ -100,8 +100,16 @@ async function runSessionOpenFlow(input, flow) {
 async function reloadSessionDetailAndReconnect(input, sessionId, sessionSelectionVersion, message) {
   await input.get().loadSessionDetail().then(
     (value) => value,
-    createRequestFailureHandler(input, { pendingSessionAction: '' }, message),
+    createSessionSelectionFailureHandler(input, sessionId, sessionSelectionVersion, { pendingSessionAction: '' }, message),
   )
   if (!isLatestSessionSelection(input, sessionId, sessionSelectionVersion)) return
   input.get().connectSSE()
+}
+
+function createSessionSelectionFailureHandler(input, sessionId, sessionSelectionVersion, patch, message) {
+  return (error) => {
+    if (!isLatestSessionSelection(input, sessionId, sessionSelectionVersion)) throw error
+    // 中文/English: only the still-selected session may release its own pending state.
+    return createRequestFailureHandler(input, patch, message)(error)
+  }
 }
