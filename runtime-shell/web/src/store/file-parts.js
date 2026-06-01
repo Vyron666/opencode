@@ -6,3 +6,7 @@ export function fileToBase64(file) {
     reader.readAsDataURL(file)
   })
 }
+
+export function shouldSendAsBlobResource(file) {
+  return file.type === 'application/pdf'
+}

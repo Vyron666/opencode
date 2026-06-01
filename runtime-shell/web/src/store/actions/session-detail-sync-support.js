@@ -76,6 +76,14 @@ export async function loadCurrentSessionDetail(input) {
     const patch = deriveCapPatch(event)
     return patch ? mergeCapabilities(capabilities, patch) : capabilities
   }, buildCapabilitiesFromSession(session))
+  const shouldKeepLocalInFlight =
+    currentState.currentSessionId === currentSessionId &&
+    (currentState.isSubmitting || currentState.isRunning) &&
+    !runtimeFlags.isRunning &&
+    !runtimeFlags.awaitingTurnRestart &&
+    session?.status === 'waiting_input'
+  const nextIsSubmitting = shouldKeepLocalInFlight ? currentState.isSubmitting : false
+  const nextIsRunning = shouldKeepLocalInFlight ? currentState.isRunning : runtimeFlags.isRunning
   const nextSessionDetail = {
     ...data,
     session: session
@@ -96,18 +104,17 @@ export async function loadCurrentSessionDetail(input) {
     conversationState,
     ...finalizeConversationView({
       conversationState,
-      isRunning: runtimeFlags.isRunning,
+      isRunning: nextIsRunning,
       eventBuffer,
       pendingPermissions,
       pendingQuestions,
       respondingPermissionIds,
       respondingQuestionIds,
     }),
-    // 中文/English: a reloaded session detail is the source of truth; once the
-    // persisted event history has been replayed we must clear any optimistic
-    // local sending state even if SSE missed the terminal event live.
-    isSubmitting: false,
-    isRunning: runtimeFlags.isRunning,
+    // 中文/English: polling can replay history before the first model chunk is
+    // persisted, so keep the local in-flight phase until events prove otherwise.
+    isSubmitting: nextIsSubmitting,
+    isRunning: nextIsRunning,
     awaitingTurnRestart: runtimeFlags.awaitingTurnRestart,
     isCancelling: false,
     pendingPermissions,

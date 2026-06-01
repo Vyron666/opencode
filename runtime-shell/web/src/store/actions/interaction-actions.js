@@ -3,7 +3,6 @@ import {
   finalizeConversationView,
 } from '../../components/chat/conversation-blocks'
 import { createRequestFailureHandler } from './interaction-action-support'
-import { fileToBase64 } from '../file-parts'
 import { convergeInteractionState, createLocalEvent } from '../session-events'
 
 export function createInteractionActions(input) {
@@ -201,24 +200,9 @@ async function buildPromptParts(text, attachments, businessSessionId, set) {
   const attachmentFeedback = []
 
   if (attachments?.length) {
-    for (const file of attachments) {
-      if (file.type?.startsWith('image/')) {
-        parts.push({ type: 'image', data: await fileToBase64(file), mimeType: file.type })
-      } else if (file.type?.startsWith('audio/')) {
-        parts.push({ type: 'audio', data: await fileToBase64(file), mimeType: file.type })
-      } else {
-        parts.push({
-          type: 'resource',
-          resource: {
-            uri: `file://${file.name}`,
-            text: await file.text(),
-            mimeType: file.type || 'text/plain',
-          },
-        })
-      }
-
-      // 中文/English: inject a local status event so the attachment shows immediate UI feedback.
-      attachmentFeedback.push(createLocalEvent(businessSessionId, 'status_local', { message: `已附加文件：${file.name}` }))
+    for (const attachment of attachments) {
+      parts.push(attachment)
+      attachmentFeedback.push(createLocalEvent(businessSessionId, 'status_local', { message: '已附加附件' }))
     }
   }
 

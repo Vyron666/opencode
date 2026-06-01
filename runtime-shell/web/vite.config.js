@@ -6,6 +6,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('pdfjs-dist')) return 'attachment-pdf'
+          if (id.includes('tesseract.js')) return 'attachment-ocr'
+          if (id.includes('xlsx')) return 'attachment-xlsx'
+        },
+      },
+    },
   },
   server: {
     port: 5173,
