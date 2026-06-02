@@ -5,9 +5,11 @@ import type {
   ResumeSessionResponse,
 } from "@agentclientprotocol/sdk"
 import { AcpProcessClient } from "../acp/acp-process-client"
+import { Config } from "../config"
 import { createUpstreamDrainController } from "../runtime/upstream-drain"
 import type { SessionEvent } from "../types"
 import { recordPromptEventTrace } from "./worker-agent-prompt-observe"
+import { createSandboxManager } from "./sandbox/sandbox-manager"
 import { forgetRuntime } from "./worker-agent-store"
 import type { RuntimeEntry, RuntimeSnapshot } from "./worker-agent-types"
 
@@ -16,19 +18,33 @@ export function createRuntimeEntry(input: {
   workerToken: string
   businessSessionId: string
   workspacePath: string
+  sandboxPath?: string
   workerId: string
   configContent?: string
 }) {
   const remoteRuntimeId = `rrt_${crypto.randomUUID().replace(/-/g, "")}`
+  const runtimeCwd = input.sandboxPath || input.workspacePath
   const upstreamDrain = createUpstreamDrainController()
+  const sandboxManager = createSandboxManager(Config.sandboxBackend)
+  const sandboxHandle = sandboxManager.prepare({
+    businessSessionId: input.businessSessionId,
+    workerId: input.workerId,
+    workspacePath: input.workspacePath,
+    sandboxPath: input.sandboxPath,
+  })
   const entry: RuntimeEntry = {
     remoteRuntimeId,
     businessSessionId: input.businessSessionId,
     workerId: input.workerId,
     workspacePath: input.workspacePath,
+    sandboxPath: input.sandboxPath,
+    sandboxHandle,
+    closeSandbox: () => sandboxManager.close({ handle: sandboxHandle }),
     client: new AcpProcessClient(
       {
-        cwd: input.workspacePath,
+        // 中文/English: ACP must run inside the sandbox copy when present,
+        // otherwise sandbox mount validation and write isolation both break.
+        cwd: runtimeCwd,
         businessSessionId: input.businessSessionId,
         workerId: input.workerId,
         configContent: input.configContent,
@@ -48,6 +64,14 @@ export function createRuntimeEntry(input: {
         // prompts also wait for persisted tail events before reporting completion.
         return upstreamDrain.waitForQuiet()
       },
+      (options) => {
+        // 中文/English: keep ACP transport unchanged while the selected sandbox
+        // backend owns process creation and lifecycle isolation.
+        return sandboxManager.attachAcp({
+          handle: sandboxHandle,
+          runtimeClientOptions: options,
+        })
+      },
     ),
     snapshot: {},
     closing: false,
@@ -63,6 +87,7 @@ export function createRuntimeEntry(input: {
   })
   entry.client.onExit((code, signal) => {
     forgetRuntime(entry)
+    void entry.closeSandbox?.()
     if (entry.closing) return
     entry.lastFailure = {
       at: new Date().toISOString(),

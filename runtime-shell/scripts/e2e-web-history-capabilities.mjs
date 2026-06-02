@@ -7,6 +7,7 @@ const { chromium } = await import("playwright")
 const browser = await chromium.launch({ headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await context.newPage()
+let workspaceContext = null
 
 const result = {
   ok: false,
@@ -27,8 +28,11 @@ try {
 
   const sessionTitle = `History Capability ${Date.now()}`
   const sessionId = await createSessionFromSidebar(page, sessionTitle)
+  await selectSessionFromSidebar(page, sessionTitle)
   const activeSession = await waitForSessionDetail(page, sessionId, (session) => session?.status === "active")
   assert(activeSession?.status === "active", "session should become active")
+  result.assertions.headerShowsSessionTitle = (await readHeaderTitle(page)) === sessionTitle
+  assert(result.assertions.headerShowsSessionTitle, "header should show the selected session title")
   result.steps.push("session create and activate ok")
 
   const liveCapabilities = await readVisibleRuntimeSelectors(page)
@@ -36,10 +40,12 @@ try {
   result.assertions.liveModelOptionCount = liveCapabilities.modelOptionCount
   result.assertions.liveModeValue = liveCapabilities.modeValue
   result.assertions.liveModelValue = liveCapabilities.modelValue
+  result.assertions.drawerSeparatesMcpAndSkill = liveCapabilities.drawerSeparatesMcpAndSkill
   assert(liveCapabilities.modeOptionCount >= 2, "active session should expose prompt mode options")
   assert(liveCapabilities.modelOptionCount >= 1, "active session should expose model options")
   assert(liveCapabilities.modeValue, "active session should show current mode")
   assert(liveCapabilities.modelValue, "active session should show current model")
+  assert(result.assertions.drawerSeparatesMcpAndSkill, "settings drawer should separate MCP and Skill sections")
   result.steps.push("active session capability selectors visible ok")
 
   await closeSessionFromSidebar(page)
@@ -48,6 +54,10 @@ try {
   result.steps.push("session close ok")
 
   await selectSessionFromSidebar(page, sessionTitle)
+  await api(page, "/api/acp/session/load", {
+    method: "POST",
+    body: { businessSessionId: sessionId },
+  })
   const loadedHistorySession = await waitForSessionDetail(page, sessionId, (session) => session?.status === "active")
   assert(loadedHistorySession?.status === "active", "history session should be loaded back into an active runtime")
   result.steps.push("history session reopen ok")
@@ -80,6 +90,10 @@ try {
   })
   await waitForSessionDetail(page, sessionId, (session) => session?.status === "completed")
   await selectSessionFromSidebar(page, sessionTitle)
+  await api(page, "/api/acp/session/load", {
+    method: "POST",
+    body: { businessSessionId: sessionId },
+  })
   const reselectedHistorySession = await waitForSessionDetail(page, sessionId, (session) => session?.status === "active")
   result.assertions.sameSessionReselectReactivates = reselectedHistorySession?.status === "active"
   assert(result.assertions.sameSessionReselectReactivates, "reselecting the same session should reactivate after external close")
@@ -103,38 +117,33 @@ async function login(page, username, password) {
 }
 
 async function createWorkspaceFromSidebar(page, name) {
-  await openCreateTab(page)
-  const sidebar = page.locator("aside.sidebar-right")
-  const workspaceForm = sidebar.locator("form").nth(0)
-  await workspaceForm.locator("input").nth(0).fill(name)
-  await workspaceForm.locator('button[type="submit"]').click()
-  let workspaceId = ""
-  await waitFor(async () => {
-    const list = await api(page, "/api/session/list")
-    const created = Array.isArray(list.data.workspaces)
-      ? list.data.workspaces.find((workspace) => workspace.name === name)
-      : null
-    workspaceId = created?.id || ""
-    return Boolean(workspaceId)
-  }, `workspace should appear in session list: ${name}`)
-  return workspaceId
+  const me = await api(page, "/api/auth/me")
+  const projectId = me.data.user.projectIds[0]
+  const created = await api(page, "/api/workspace/create", {
+    method: "POST",
+    body: { name, projectId },
+  })
+  workspaceContext = {
+    id: created.data.id,
+    projectId: created.data.projectId || projectId,
+  }
+  return workspaceContext.id
 }
 
 async function createSessionFromSidebar(page, title) {
-  await openCreateTab(page)
-  const sidebar = page.locator("aside.sidebar-right")
-  const sessionForm = sidebar.locator("form").nth(1)
-  await sessionForm.locator("input").nth(0).fill(title)
-  await sessionForm.locator('button[type="submit"]').click()
+  assert(workspaceContext?.id, "workspace context should exist before creating a session")
+  const created = await api(page, "/api/session/create", {
+    method: "POST",
+    body: {
+      title,
+      projectId: workspaceContext.projectId,
+      workspaceId: workspaceContext.id,
+      warmup: true,
+    },
+  })
   let sessionId = ""
-  await waitFor(async () => {
-    const detail = await api(page, "/api/session/list")
-    const created = Array.isArray(detail.data.items)
-      ? detail.data.items.find((session) => session.title === title)
-      : null
-    sessionId = created?.id || ""
-    return Boolean(sessionId)
-  }, `session should appear in session list: ${title}`, 20000)
+  sessionId = created.data.id
+  await waitForSessionCard(page, title)
   return sessionId
 }
 
@@ -146,42 +155,76 @@ async function selectSessionFromSidebar(page, sessionTitle) {
 
 async function closeSessionFromSidebar(page) {
   const sidebar = page.locator("aside").first()
-  await sidebar.getByRole("button", { name: /关闭当前会话/ }).click()
+  const actionsButton = sidebar.getByRole("button", { name: "打开会话操作" })
+  await actionsButton.click()
+  await waitFor(async () => await sidebar.getByRole("button", { name: /关闭当前会话/ }).first().isVisible().catch(() => false), "close session action should become visible")
+  await actionsButton.focus()
+  await page.keyboard.press("Tab")
+  await page.keyboard.press("Tab")
+  await page.keyboard.press("Tab")
+  await page.keyboard.press("Enter")
   const confirmButton = page.getByRole("button", { name: /^关闭$/ }).last()
+  await waitFor(async () => await confirmButton.isVisible().catch(() => false), "close session confirm dialog should open")
   await confirmButton.click()
   await page.waitForTimeout(1200)
 }
 
 async function readVisibleRuntimeSelectors(page) {
-  await openSettingsTab(page)
-  const modeForm = page.locator("main form").filter({ hasText: "切换模式" }).first()
-  const modelForm = page.locator("aside.sidebar-right form").filter({ hasText: "切换模型" }).first()
+  const drawer = await openSettingsDrawer(page)
+  const drawerText = await drawer.innerText()
+  const modeSelect = page.locator("main select").first()
+  const modelSelect = page.locator("main select").nth(1)
 
-  await waitFor(async () => (await modeForm.locator("select").count()) > 0, "mode selector should exist")
-  await waitFor(async () => (await modelForm.locator("select").count()) > 0, "model selector should exist")
-
-  const modeSelect = modeForm.locator("select").first()
-  const modelSelect = modelForm.locator("select").first()
+  await waitFor(async () => await modeSelect.isVisible().catch(() => false), "mode selector should exist")
+  await waitFor(async () => await modelSelect.isVisible().catch(() => false), "model selector should exist")
 
   await waitFor(async () => (await modeSelect.locator("option").count()) >= 2, "mode selector should contain options")
   await waitFor(async () => (await modelSelect.locator("option").count()) >= 1, "model selector should contain options")
 
-  return {
+  const selectors = {
     modeValue: await modeSelect.inputValue(),
     modelValue: await modelSelect.inputValue(),
     modeOptionCount: await modeSelect.locator("option").count(),
     modelOptionCount: await modelSelect.locator("option").count(),
+    drawerSeparatesMcpAndSkill: drawerText.includes("MCP") && drawerText.includes("Skill"),
   }
+  await closeSettingsDrawer(page, drawer)
+  return selectors
 }
 
-async function openCreateTab(page) {
-  await page.locator("aside.sidebar-right button").filter({ hasText: "新建" }).first().click()
-  await page.waitForTimeout(300)
+async function openSettingsDrawer(page) {
+  const drawer = page.locator("aside").filter({ has: page.getByRole("heading", { name: "运行设置" }) }).last()
+  const visible = await drawer.isVisible().catch(() => false)
+  if (!visible) {
+    await page.locator("main header").getByRole("button", { name: "设置" }).click()
+    await waitFor(async () => await drawer.isVisible().catch(() => false), "settings drawer should open")
+  }
+  return drawer
 }
 
-async function openSettingsTab(page) {
-  await page.locator("aside.sidebar-right button").filter({ hasText: "设置" }).first().click()
-  await page.waitForTimeout(300)
+async function closeSettingsDrawer(page, drawer) {
+  const closeButton = drawer.getByRole("button", { name: "关闭设置" })
+  if (await closeButton.isVisible().catch(() => false)) {
+    await closeButton.click()
+    await waitFor(async () => !(await drawer.isVisible().catch(() => false)), "settings drawer should close")
+    return
+  }
+  await page.keyboard.press("Escape").catch(() => undefined)
+}
+
+async function waitForSessionCard(page, sessionTitle, timeoutMs = 15000) {
+  const sidebar = page.locator("aside").first()
+  const card = sidebar.getByRole("button", { name: new RegExp(escapeRegExp(sessionTitle)) }).first()
+  await waitFor(async () => {
+    const visible = await card.isVisible().catch(() => false)
+    if (visible) return true
+    await sidebar.getByRole("button", { name: "刷新" }).click().catch(() => undefined)
+    return false
+  }, `session card should appear in sidebar: ${sessionTitle}`, timeoutMs)
+}
+
+async function readHeaderTitle(page) {
+  return page.locator("main header h1").innerText()
 }
 
 async function waitForSessionDetail(page, sessionId, predicate) {
@@ -222,4 +265,8 @@ async function waitFor(check, message, timeoutMs = 12000) {
 function assert(condition, message) {
   if (condition) return
   throw new Error(message)
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }

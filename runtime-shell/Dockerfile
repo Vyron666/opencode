@@ -38,7 +38,7 @@ RUN mkdir -p /workspace/node_modules/.bun \
 
 WORKDIR /app
 
-COPY runtime-shell/package.json runtime-shell/tsconfig.json ./
+COPY runtime-shell/package.json runtime-shell/bun.lock runtime-shell/tsconfig.json ./
 RUN bun install
 
 COPY runtime-shell/server ./server

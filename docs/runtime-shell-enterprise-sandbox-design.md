@@ -1,6 +1,43 @@
 # runtime-shell 企业级沙箱运行架构设计
 
-## 1. 背景与目标
+## 1. 主结论与目标架构
+
+主结论：
+
+1. 最终目标方案不是“每个对话长期占用一个 Docker 容器”，而是 `Stateful Session + Ephemeral Sandbox`。
+2. `session` 是持久化的逻辑会话，`sandbox` 是按需分配、可回收、可重建的执行租约。
+3. 开发和验证阶段可以先使用 Docker/Podman 作为过渡执行后端。
+4. 企业生产目标方案应演进到 `Kubernetes + Worker Pool + gVisor/Kata runtimeClass`。
+5. 大规模运行必须配套 `lease/rebind`、`warm pool`、`queue`、`quota` 和 `diff/overlay`，而不是把用户会话与长期容器数量做 1:1 绑定。
+
+### 1.1 方案选型结论
+
+1. 推荐方案主结论：`Stateful Session + Ephemeral Sandbox` 是目标架构，不应再把“每个对话长期占用一个 Docker sandbox”视为推荐方案。
+2. 开发/验证：使用 Docker/Podman 作为过渡执行后端，重点验证 `SandboxManager`、独立沙箱生命周期、挂载边界和主链路兼容性。
+3. 企业生产：使用 `Kubernetes + Worker Pool + gVisor/Kata` 作为目标执行方案，由平台统一调度、隔离和恢复。
+4. 大规模治理：必须补齐 `queue + quota + warm pool + lease/rebind`，避免退化为“每个逻辑会话长期绑定一个 Docker sandbox”的错误实现。
+
+### 1.2 当前实现状态（2026-06-02）
+
+当前 `runtime-shell` 已经完成并验证了第一阶段的 Docker 过渡沙箱后端，但它仍然只是过渡执行方案，不是最终企业生产执行模型。
+
+已实现并验证的状态：
+
+1. `SandboxManager` 抽象已经落地，`worker-agent` 可以通过独立 Docker sandbox 运行 ACP，而不是继续在 worker 容器内直接执行会话 ACP 子进程。
+2. Docker sandbox 当前采用容器内 `bun` TCP bridge 方式承接 ACP stdin/stdout，而不是依赖 `docker exec -i` 或 hijack stdin。这样做的原因是 Bun + Docker Desktop + dockerode/docker-modem 组合下，交互式 exec 链路稳定性不足。
+3. 当前安全边界已经包含：非 root 用户、只读 rootfs、`cap_drop=ALL`、`no-new-privileges`、独立 tmpfs 的 `/tmp` 与 runtime home、CPU/内存/pids 限制。
+4. 当前挂载边界已经收紧为：只挂载当前 session 的 workspace，不暴露 `runtime-shell` 服务代码，不向 sandbox 暴露 Docker socket。
+5. 当前配置注入方式已经调整为：由 worker 侧把运行配置 base64 注入 sandbox 环境，再在 sandbox 内写入临时配置文件，避免依赖宿主共享配置目录。
+6. 当前网络模式是通过 `runtime-shell_default` Docker 网络让 worker 能连接 sandbox bridge，同时保留 sandbox 出站能力，便于继续验证真实模型访问和第三方工具访问。
+7. 已验证主链路包括 `initialize`、`newSession`、`prompt`、`close`，并已通过 `bun run e2e:smoke`、`bun run typecheck`、`bun run typecheck:scripts` 与 `docker compose -f docker-compose.yml config --quiet`。
+
+当前仍未完成的关键能力：
+
+1. workspace 目前仍然是直接挂载给 sandbox 的可写目录，还没有切到企业级默认的 `copy workspace + diff 回写`。
+2. 还没有补齐 `queue + quota + warm pool + lease/rebind` 的大规模治理闭环。
+3. 还没有切到 `Kubernetes + gVisor/Kata` 的最终生产执行面。
+
+## 2. 背景与目标
 
 `runtime-shell` 当前已经具备会话、workspace、worker、runtime binding、lease 和基础治理能力，但 agent 运行时仍然不是强隔离环境。当前实现中，`runtime-shell` 或 `opencode-worker` 会在可见项目代码的进程/容器环境内启动 ACP runtime，agent 的 shell/file/MCP 能力理论上可以访问同一运行环境中的路径。对于企业级和大用户量场景，这会带来误改服务代码、误删工作区、越权访问配置、密钥泄漏、容量失控和故障扩散风险。
 
@@ -11,7 +48,7 @@
 3. 不过度实现业务无关能力，先把隔离、安全、大并发、审计和恢复的关键边界设计清楚。
 4. 保持后续可迁移到 Kubernetes、gVisor、Kata/Firecracker 等更强隔离后端。
 
-## 2. 现有代码执行链路
+## 3. 现有代码执行链路
 
 ### 2.1 session 到 runtime 的主链路
 
@@ -78,7 +115,7 @@ Config.workspaceRootDir / user.id / slug
 6. 没有任务队列和削峰机制，高并发打开会话会直接冲击 worker。
 7. 没有租户/用户/项目级资源配额模型。
 8. 没有统一策略网关限制 shell 命令、文件路径、网络域名、MCP server 和依赖安装。
-9. 审计日志目前仍通过 store JSON 路径写入，企业级需要 DB 化并补齐 shell/file/network/diff 审计。
+9. 审计日志当前仍主要通过 store JSON 路径写入，企业级目标应改为 DB 化并补齐 shell/file/network/diff 审计。
 10. 密钥注入与模型访问需要平台代理化，避免 agent 直接持有长期密钥。
 
 ## 4. 目标架构
@@ -113,6 +150,28 @@ agent sandbox 执行面
 3. sandbox 只看到当前 session 的 workspace 视图和必要只读配置。
 4. 平台服务代码默认不可见；如果因 opencode 运行方式必须存在，也只能是镜像只读层，不允许写。
 5. 用户修改先进入 sandbox 写层，经 diff 审核后再回写真实 workspace。
+6. 逻辑 session 与执行 sandbox 必须解耦，sandbox 允许空闲回收、故障重建和跨 worker 重新绑定。
+
+### 4.1 推荐执行模型
+
+按本文档目标，推荐执行模型如下：
+
+1. 控制面：
+   `runtime-shell` 负责鉴权、session、workspace、配置、审计、策略、队列和调度。
+
+2. 状态面：
+   session、binding、lease、queue、quota、diff、audit 等状态持久化在数据库中。
+
+3. 执行面：
+   sandbox 是短生命周期执行单元，只在 open/prompt/interactive turn 需要时分配。
+
+4. 恢复面：
+   空闲 sandbox 会回收；重新进入会话时，根据 session 状态和 workspace 快照恢复执行上下文。
+
+5. 生产承载面：
+   多 worker 节点组成 sandbox worker pool，结合 warm pool、queue、quota 和资源向量调度。
+
+这个模型直接面向企业规模和消费端规模，不把长期 Docker 容器当最终架构。
 
 ## 5. 沙箱执行模型
 
@@ -133,13 +192,21 @@ export type SandboxManager = {
 
 其中 `SandboxAcpProcess` 对外保持类似 `ChildProcessWithoutNullStreams` 的 stdin/stdout/stderr/exit 接口，让现有 `AcpProcessClient` 可以最小改动复用。理想落点是新增 `SandboxAcpClient` 或让 `spawnAcpProcess` 可注入 process factory，而不是修改 `opencode`。
 
-### 5.2 后端选择
+### 6.2 后端选择
 
-推荐支持多后端，但首个企业级后端建议是：
+推荐支持多后端，但需要明确区分“开发/验证阶段的过渡后端”和“企业生产阶段的目标后端”：
 
-1. Docker/Podman：用于本地开发和 MVP。
-2. gVisor `runsc`：作为默认生产容器运行时。
-3. Kata Containers 或 Firecracker：作为高安全租户或强隔离部署选项。
+1. Docker/Podman：
+   用于本地开发、验证执行抽象、跑通 sandbox 生命周期，不应被视为最终大规模生产方案。
+
+2. Kubernetes + gVisor `runsc`：
+   作为企业生产默认目标方案，兼顾可扩展性和隔离性。
+
+3. Kubernetes + Kata Containers：
+   作为更高安全等级租户或敏感代码场景的增强隔离方案。
+
+4. Firecracker / microVM：
+   保留为更长期的强对抗或公网高风险场景演进选项，不作为当前文档的首选落地方向。
 
 后端能力通过配置选择：
 
@@ -166,17 +233,41 @@ RUNTIME_SHELL_SANDBOX_WORKSPACE_MODE=overlay | copy | direct-readonly
 
 ### 5.4 workspace overlay 与 diff 回写
 
-企业级默认不应让 agent 直接写真实 workspace。推荐流程：
+企业级默认不应让 agent 直接写真实 workspace。目标形态可以是 overlay/copy-on-write，但第一版应优先落地 `copy workspace + diff 回写`，原因是 Windows、本地 Docker Desktop、Linux overlayfs 的行为差异较大，而 copy 模式更容易跨平台验证和审计。
 
-1. 打开 session 时创建 workspace snapshot。
-2. sandbox 挂载 snapshot 为 lower layer，挂载 session write layer 为 upper layer。
-3. agent 所有文件修改写入 upper layer。
-4. prompt 完成或用户点击应用时生成 diff。
-5. 策略检查 diff：路径是否越界、是否删除大量文件、是否触碰敏感文件、是否修改平台配置。
-6. 审计记录 diff 摘要。
-7. 经自动策略或人工确认后回写真实 workspace。
+推荐的一阶段实现流程：
 
-开发环境可以支持 `direct` 模式，但生产默认应禁用。
+1. 打开 session 时，在受控 scratch 目录下创建当前 workspace 的 session copy。
+2. sandbox 只把该 session copy 作为可写 workspace 挂载，真实 workspace 不再直接暴露给 sandbox。
+3. agent 的所有文件修改都发生在 session copy 内。
+4. prompt 完成、用户点击“查看变更”或平台策略要求提交时，生成真实 workspace 与 session copy 之间的 diff。
+5. diff 进入策略检查：路径是否越界、是否删除大量文件、是否触碰敏感文件、是否修改平台配置、是否包含大体积二进制文件。
+6. 审计记录 diff 摘要、变更文件数、删除数、命中策略和操作者。
+7. 经自动策略或人工确认后，平台再把选中的 diff 回写到真实 workspace。
+
+推荐的二阶段增强：
+
+1. 在 Linux 生产集群中，把 `copy workspace` 升级为真正的 overlay lower/upper/workdir，以降低大仓库复制成本。
+2. 保持 diff、审批、回写、审计语义不变，只替换底层 workspace 实现。
+
+推荐的数据状态：
+
+1. `created`：sandbox copy 已创建，但还未生成 diff。
+2. `pending_review`：diff 已生成，等待自动策略或人工确认。
+3. `applied`：diff 已成功回写真实 workspace。
+4. `rejected`：diff 被人工或策略拒绝。
+5. `expired`：会话关闭或超时后未处理。
+6. `failed`：diff 生成或回写失败。
+
+回写策略要求：
+
+1. `apply` 必须幂等，使用 `diff_id + idempotency_key` 或业务唯一键避免重复回写。
+2. 只允许回写 workspace 根目录内的相对路径，拒绝路径穿越和符号链接逃逸。
+3. `.env`、私钥、平台配置、部署配置、密钥目录默认拒绝自动回写。
+4. 大规模删除、批量重命名、二进制大文件改动默认进入人工确认。
+5. diff artifact、审计记录和 apply/reject 结果必须保留 TTL 与可追溯链路。
+
+开发环境可以支持 `direct` 模式，但生产默认应禁用。目标方案始终应围绕“持久化 session + 临时执行 sandbox”展开，而不是直接把真实 workspace 和长期容器绑定。
 
 ### 5.5 配置和密钥注入
 
@@ -222,7 +313,7 @@ sandbox_backend
 
 ### 6.2 预热池
 
-为了支持大用户量，不能每次打开 session 都冷启动镜像。worker-agent 应维护预热池：
+为了支持大用户量，不能每次打开 session 都冷启动镜像，也不能让每个逻辑 session 长期占用一个 sandbox。worker-agent 或 sandbox worker pool 应维护预热池：
 
 1. worker 启动时预拉镜像。
 2. 按配置提前创建 N 个 warm sandbox。
@@ -418,10 +509,15 @@ CREATE TABLE sandbox_diff (
   business_session_id VARCHAR(64) NOT NULL,
   sandbox_id VARCHAR(64) NOT NULL,
   status VARCHAR(32) NOT NULL,
+  workspace_mode VARCHAR(32) NOT NULL,
   summary_json TEXT NOT NULL,
   artifact_uri TEXT,
+  idempotency_key VARCHAR(128),
+  policy_result_json TEXT,
+  expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL,
-  applied_at TIMESTAMPTZ
+  applied_at TIMESTAMPTZ,
+  rejected_at TIMESTAMPTZ
 );
 ```
 
@@ -526,12 +622,12 @@ Kubernetes
 
 ## 11. 分阶段落地计划
 
-### Phase 1：沙箱抽象和 Docker 后端
+### 高层 Phase 1：沙箱抽象和过渡执行后端
 
 目标：
 
 1. 新增 `SandboxManager`。
-2. worker-agent 通过 Docker 后端启动 ACP sandbox。
+2. 先接入 Docker/Podman 作为过渡执行后端，验证独立 sandbox 生命周期。
 3. sandbox 只挂载 workspace 和只读配置。
 4. 平台代码不以可写方式暴露给 sandbox。
 
@@ -542,13 +638,14 @@ Kubernetes
 3. session open/prompt/cancel/close 行为与当前一致。
 4. `bun typecheck` 在 `runtime-shell` 目录通过。
 
-### Phase 2：overlay workspace 和 diff 回写
+### 高层 Phase 2：overlay workspace 和 diff 回写
 
 目标：
 
-1. workspace 默认 copy-on-write。
+1. workspace 默认进入 `copy workspace + diff 回写`，不再直接写真实 workspace。
 2. 生成 diff 并审计。
 3. 路径越界和敏感文件策略生效。
+4. 为后续 Linux overlayfs 升级保留同一套抽象与 API。
 
 验收：
 
@@ -556,7 +653,7 @@ Kubernetes
 2. diff 应用后真实 workspace 才变化。
 3. 大规模删除默认阻断或要求审批。
 
-### Phase 3：大并发调度治理
+### 高层 Phase 3：大并发调度治理
 
 目标：
 
@@ -571,11 +668,11 @@ Kubernetes
 2. 排队、超时、取消、重试可观测。
 3. worker offline 后 session 正确 orphaned/rebind。
 
-### Phase 4：企业级安全和观测
+### 高层 Phase 4：企业级安全、观测与生产化执行后端
 
 目标：
 
-1. gVisor/Kata runtimeClass。
+1. Kubernetes + gVisor/Kata runtimeClass。
 2. egress proxy 和网络白名单。
 3. DB 审计全量补齐。
 4. OpenTelemetry metrics/logs/traces。
@@ -619,16 +716,21 @@ Kubernetes
 
 普通 Docker 不应作为最终强安全边界。生产至少应使用 gVisor 或 Kata/Firecracker，并叠加 seccomp、AppArmor、非 root、只读 rootfs 和网络策略。
 
-## 14. 推荐结论
+## 15. 推荐结论
 
 基于现有代码，最合理的一步到位路线是：
 
 1. 保留 `runtime-shell` 现有 session、worker、binding、lease 和 event 体系。
 2. 不改或尽量少改 `packages/opencode`。
-3. 在 worker-agent 后面新增 `SandboxManager`，把当前直接 `spawnAcpProcess` 替换为沙箱内 ACP process adapter。
-4. 把 workspace 从直接写升级为 overlay/diff 回写。
-5. 把 worker capacity 升级为资源向量，并新增 queue、quota、warm pool。
-6. 把审计、策略、沙箱实例和 diff 持久化到数据库。
-7. 生产使用 gVisor/Kata 级别隔离，避免 agent 误改服务代码或越权访问宿主资源。
+3. 在 worker-agent 后面新增 `SandboxManager`，把当前直接 `spawnAcpProcess` 替换为独立 sandbox 执行路径。
+4. 用 Docker/Podman 作为开发/验证阶段的过渡执行后端，先把抽象和隔离边界跑通。
+5. 把 workspace 从直接写升级为 overlay/diff 回写。
+6. 把 worker capacity 升级为资源向量，并新增 queue、quota、warm pool。
+7. 把审计、策略、沙箱实例和 diff 持久化到数据库。
+8. 生产收敛到 `Kubernetes + Worker Pool + gVisor/Kata + Stateful Session + Ephemeral Sandbox`。
 
-这样可以最大化复用现有架构，避免大改 opencode 原代码，同时把企业级安全边界和大并发治理能力一次设计到位。
+这样可以最大化复用现有架构，避免大改 opencode 原代码，同时从一开始就把目标方案定义为“持久化逻辑会话 + 临时执行沙箱”，避免团队误把长期 Docker 容器当成最终形态。
+
+说明：
+
+本文中的 `高层 Phase 1-4` 是架构层面的阶段合并视图，用于说明总体路线。后续实施时，可在实施计划文档中进一步细化为更多可执行阶段与 PR 粒度任务。

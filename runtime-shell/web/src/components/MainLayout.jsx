@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useStore } from '../store'
 import LeftSidebar from './sidebar/LeftSidebar.jsx'
-import RightSidebar from './sidebar/RightSidebar.jsx'
 import ChatView from './chat/ChatView.jsx'
 
 export default function MainLayout() {
@@ -23,13 +22,12 @@ export default function MainLayout() {
 
   return (
     <div className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
-      grid-cols-[260px_minmax(400px,1fr)_320px]
-      xl:grid-cols-[280px_minmax(480px,1fr)_340px]
-      max-[1100px]:h-auto max-[1100px]:overflow-y-auto max-[1100px]:grid-cols-[1fr]"
+      grid-cols-[280px_minmax(0,1fr)]
+      max-[1279px]:grid-cols-[240px_minmax(0,1fr)]
+      max-[1024px]:h-auto max-[1024px]:overflow-y-auto max-[1024px]:grid-cols-[1fr]"
     >
       <LeftSidebar />
       <ChatView />
-      <RightSidebar />
     </div>
   )
 }

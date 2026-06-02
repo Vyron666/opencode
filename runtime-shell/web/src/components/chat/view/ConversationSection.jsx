@@ -54,10 +54,12 @@ export const ConversationSection = memo(function ConversationSection({ currentSe
         {!showDebug && !autoScroll && blocks.length > 0 ? (
           <button
             onClick={scrollToBottom}
-            className="absolute right-4 bottom-4 z-10 rounded-full px-4 py-2 text-xs font-semibold"
+            className="absolute right-4 bottom-4 z-10 h-10 w-10 rounded-full border border-brand/20 text-lg font-semibold transition-colors hover:bg-brand"
             style={{ background: 'rgba(212,160,90,0.92)', color: '#14100d', boxShadow: '0 8px 24px rgba(212,160,90,0.25)' }}
+            title="回到底部"
+            aria-label="回到底部"
           >
-            {'\u56de\u5230\u5e95\u90e8'}
+            ↓
           </button>
         ) : null}
       </div>

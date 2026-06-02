@@ -20,6 +20,7 @@ export function createSseActions(input) {
     connectSSE: () => {
       const currentSessionId = input.get().currentSessionId
       if (!currentSessionId) return
+      const previousReconnectAttempt = input.get().reconnectAttempt
 
       const lastEventId = [...input.get().eventBuffer]
         .reverse()
@@ -35,10 +36,13 @@ export function createSseActions(input) {
         flushScheduled = false
         if (stopped) return
         if (!queuedEvents.length) return
+        const nextEvents = queuedEvents.splice(0, queuedEvents.length)
+        const shouldSyncResolvedInteractions = nextEvents.some(
+          (event) => event?.eventType === 'permission_resolved' || event?.eventType === 'question_resolved',
+        )
 
         input.set((state) => {
           if (stopped || state.activeSSESessionId !== currentSessionId) return {}
-          const nextEvents = queuedEvents.splice(0, queuedEvents.length)
           let pendingPermissions = state.pendingPermissions
           let pendingQuestions = state.pendingQuestions
           let respondingPermissionIds = state.respondingPermissionIds
@@ -157,6 +161,15 @@ export function createSseActions(input) {
             reconnectAttempt: 0,
           }
         })
+
+        if (!shouldSyncResolvedInteractions) return
+        queueMicrotask(() => {
+          if (stopped || input.get().activeSSESessionId !== currentSessionId) return
+          // 中文/English: permission/question resolve can arrive back-to-back with
+          // persisted summary updates, so reload once here to force the browser
+          // phase banner and pending counters to converge on the authoritative view.
+          void input.get().loadSessionDetail().catch(() => {})
+        })
       }
 
       const scheduleFlush = () => {
@@ -174,8 +187,11 @@ export function createSseActions(input) {
 
       const onError = () => {
         if (stopped) return
-        input.set({ isConnected: false })
         const reconnectAttempt = input.get().reconnectAttempt
+        input.set({ isConnected: false })
+        if (reconnectAttempt === 0) {
+          input.get().setFlash('会话连接已中断，正在自动重连...')
+        }
         const delay = Math.min(1000 * 2 ** reconnectAttempt, 15000)
         input.set({ reconnectAttempt: reconnectAttempt + 1 })
         clearTimeout(reconnectTimer)
@@ -190,6 +206,9 @@ export function createSseActions(input) {
 
       eventSourceInstance = input.createEventSource(currentSessionId, onEvent, onError, lastEventId)
       input.set({ isConnected: true, reconnectAttempt: 0 })
+      if (previousReconnectAttempt > 0) {
+        input.get().setFlash('会话连接已恢复')
+      }
     },
 
     disconnectSSE: () => {
@@ -200,7 +219,7 @@ export function createSseActions(input) {
         eventSourceInstance = null
       }
       clearTimeout(reconnectTimer)
-      input.set({ isConnected: false, activeSSESessionId: '' })
+      input.set({ isConnected: false, reconnectAttempt: 0, activeSSESessionId: '' })
     },
   }
 }

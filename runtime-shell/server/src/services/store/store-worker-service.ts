@@ -24,6 +24,7 @@ export class StoreWorkerService {
   }
 
   async registerWorker(input: {
+    workerId?: string
     tenantId?: string
     organizationId?: string
     workerCode: string

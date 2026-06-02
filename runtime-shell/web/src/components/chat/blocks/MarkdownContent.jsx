@@ -1,4 +1,5 @@
-﻿import ReactMarkdown from 'react-markdown'
+import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 export function MarkdownContent({ content }) {
@@ -17,10 +18,9 @@ export function MarkdownContent({ content }) {
               {children}
             </code>
           ),
-        pre: ({ node, ...props }) => <pre {...props} className="max-w-full overflow-x-auto rounded-[12px] bg-black/45 p-3 my-3" />,
+        pre: ({ node, children, ...props }) => <CodeBlock {...props}>{children}</CodeBlock>,
         table: ({ node, ...props }) => (
           <div className="my-3 max-w-full overflow-x-auto">
-            {/* 中文/English: keep wide tables scrollable inside the message card instead of widening the whole timeline. */}
             <table {...props} className="min-w-full border-collapse text-left text-xs" />
           </div>
         ),
@@ -35,4 +35,49 @@ export function MarkdownContent({ content }) {
       {content}
     </ReactMarkdown>
   )
+}
+
+function CodeBlock({ children, ...props }) {
+  const [copied, setCopied] = useState(false)
+  const codeElement = Array.isArray(children) ? children.find((child) => child?.props?.className) || children[0] : children
+  const className = codeElement?.props?.className || ''
+  const language = readCodeLanguage(className)
+  const codeText = readCodeText(codeElement?.props?.children ?? children)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1200)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  return (
+    <div className="my-3 overflow-hidden rounded-[12px] border border-[var(--line)] bg-black/45">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2 text-[11px]">
+        <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{language}</span>
+        <button
+          type="button"
+          onClick={async () => {
+            if (!codeText) return
+            await navigator.clipboard.writeText(codeText)
+            setCopied(true)
+          }}
+          className="rounded-full border border-[var(--line)] bg-black/20 px-2.5 py-1 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+        >
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
+      <pre {...props} className="max-w-full overflow-x-auto p-3 text-sm">{children}</pre>
+    </div>
+  )
+}
+
+function readCodeLanguage(className) {
+  const match = String(className || '').match(/language-([\w-]+)/)
+  return match?.[1] || 'text'
+}
+
+function readCodeText(value) {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(readCodeText).join('')
+  return ''
 }

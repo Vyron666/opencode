@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../../../store'
-import { Field, Select, secondaryButtonClassName, useSessionCapabilities, useViewerContext } from '../../sidebar/sidebar-support'
+import { Select, useSessionCapabilities, useViewerContext } from '../../sidebar/sidebar-support'
 import {
   disposeAttachmentPreprocessResources,
   isCancelledError,
@@ -11,31 +11,34 @@ import {
 } from '../../../store/attachment-preprocess'
 import { useConversationPhase } from './useConversationPhase'
 
-export const ComposerSection = memo(function ComposerSection({ currentSessionId, showDebug, setShowDebug }) {
+export const ComposerSection = memo(function ComposerSection({ currentSessionId, showDebug, setShowDebug, onOpenSettings }) {
   const sendPrompt = useStore((state) => state.sendPrompt)
+  const cancelPrompt = useStore((state) => state.cancelPrompt)
   const setFlash = useStore((state) => state.setFlash)
   const updateMode = useStore((state) => state.updateMode)
+  const updateModel = useStore((state) => state.updateModel)
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
   const phase = useConversationPhase()
   const capabilities = useSessionCapabilities()
-  const { canUpdateMode, isSharedSession } = useViewerContext()
+  const { canUpdateMode, canUpdateModel, isSharedSession } = useViewerContext()
   const [attachments, setAttachments] = useState([])
   const attachmentsRef = useRef([])
+  const fileInputRef = useRef(null)
   const [promptText, setPromptText] = useState('')
-  const [selectedMode, setSelectedMode] = useState('')
   const sessionPreparing = Boolean(pendingSessionAction)
+  const settingsUpdating = Boolean(pendingSettingsAction)
   const hasPendingAttachment = attachments.some((item) => item.status === 'pending' || item.status === 'parsing')
   const hasFailedAttachment = attachments.some((item) => item.status === 'failed')
-  const sendDisabled = !currentSessionId || phase.isBusy || sessionPreparing || hasPendingAttachment || hasFailedAttachment
+  const sendDisabled = !currentSessionId || phase.isBusy || sessionPreparing || settingsUpdating || hasPendingAttachment || hasFailedAttachment
+  const currentModeId = capabilities.modeId || capabilities.modes?.[0]?.id || ''
+  const currentModelId = capabilities.modelId || capabilities.models?.[0]?.id || ''
+  const hasProviderConfigured = capabilities.models?.length > 0 || capabilities.availableCommands?.length > 0
+  const shouldShowProviderHint = Boolean(currentSessionId) && !sessionPreparing && !settingsUpdating && !hasProviderConfigured
 
   useEffect(() => {
     attachmentsRef.current = attachments
   }, [attachments])
-
-  useEffect(() => {
-    setSelectedMode(capabilities.modeId || capabilities.modes?.[0]?.id || '')
-  }, [capabilities.modeId, capabilities.modes, currentSessionId])
 
   const cancelAttachment = useCallback((attachmentId) => {
     setAttachments((current) => {
@@ -145,9 +148,6 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
     async (event) => {
       event.preventDefault()
       if (!promptText.trim()) return
-      if (canUpdateMode && selectedMode && selectedMode !== capabilities.modeId) {
-        await updateMode(selectedMode)
-      }
       const sent = await sendPrompt(
         promptText,
         attachments
@@ -161,7 +161,7 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
         return []
       })
     },
-    [attachments, capabilities.modeId, canUpdateMode, promptText, selectedMode, sendPrompt, updateMode],
+    [attachments, promptText, sendPrompt],
   )
 
   const handleDrop = useCallback((event) => {
@@ -227,11 +227,24 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
         </div>
       ) : null}
 
-      <form onSubmit={handleSend} className="grid gap-2.5">
+      <form onSubmit={handleSend} className="grid gap-3">
+        {shouldShowProviderHint ? (
+          <div className="rounded-[14px] px-4 py-3 text-sm text-brand-text bg-brand/5 border border-brand/20">
+            请先配置 AI 服务才能开始对话。
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="ml-2 underline font-semibold hover:opacity-80 transition-opacity"
+            >
+              前往配置
+            </button>
+          </div>
+        ) : null}
+
         <textarea
           value={promptText}
           onChange={(event) => setPromptText(event.target.value)}
-          rows={3}
+          rows={2}
           disabled={sessionPreparing}
           placeholder={
             !currentSessionId
@@ -240,7 +253,7 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
                 ? '会话正在打开或恢复，稍后即可发送'
                 : '输入消息...'
           }
-          className="w-full min-h-[88px] max-h-[220px] rounded-[12px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-sm outline-none resize-y focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
+          className="w-full min-h-[68px] max-h-[220px] rounded-[14px] border border-[var(--line-strong)] px-3.5 py-3 bg-black/55 text-sm outline-none resize-y focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
           style={{ lineHeight: '22px' }}
           onDragOver={(event) => {
             event.preventDefault()
@@ -257,30 +270,57 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
           }}
         />
 
-        {currentSessionId ? (
-          <div className="grid gap-2 rounded-[12px] border border-[var(--line)] bg-black/25 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-brand">Prompt Mode</span>
-              {isSharedSession ? <span className="text-[11px] text-[var(--text-muted)]">共享工作区会话不允许切换模式</span> : null}
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <Field label={'模式'}>
-                <Select value={selectedMode} onChange={setSelectedMode} options={capabilities.modes} emptyLabel={'当前会话没有可选模式'} />
-              </Field>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            {currentSessionId ? (
+              <div className="w-[132px]">
+                <Select
+                  value={currentModeId}
+                  onChange={(nextMode) => {
+                    if (!nextMode || nextMode === currentModeId || !canUpdateMode || pendingSettingsAction) return
+                    void updateMode(nextMode)
+                  }}
+                  options={capabilities.modes}
+                  emptyLabel="暂无模式"
+                  disabled={!canUpdateMode || Boolean(pendingSettingsAction)}
+                />
+              </div>
+            ) : null}
+
+            {currentSessionId ? (
+              <div className="w-[188px]">
+                <Select
+                  value={currentModelId}
+                  onChange={(nextModel) => {
+                    if (!nextModel || nextModel === currentModelId || !canUpdateModel || pendingSettingsAction) return
+                    void updateModel(nextModel)
+                  }}
+                  options={capabilities.models}
+                  emptyLabel="暂无模型"
+                  disabled={!canUpdateModel || Boolean(pendingSettingsAction)}
+                />
+              </div>
+            ) : null}
+
+            <label className="relative">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.md,.markdown,.xlsx,.csv,image/*"
+                onChange={handleFileChange}
+                className="sr-only"
+              />
               <button
                 type="button"
-                disabled={!selectedMode || !currentSessionId || Boolean(pendingSettingsAction) || !canUpdateMode}
-                onClick={() => void updateMode(selectedMode)}
-                className={secondaryButtonClassName}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-10 h-10 rounded-full border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+                aria-label="添加附件"
               >
-                {pendingSettingsAction === 'mode' ? '切换中...' : '切换模式'}
+                +
               </button>
-            </div>
-          </div>
-        ) : null}
+            </label>
 
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
             <label className="hidden sm:flex items-center gap-1 text-[11px] text-[var(--text-muted)] cursor-pointer shrink-0">
               <input
                 type="checkbox"
@@ -288,45 +328,38 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
                 onChange={(event) => setShowDebug(event.target.checked)}
                 className="w-3.5 h-3.5 accent-brand"
               />
-              <span>{'调试事件'}</span>
-            </label>
-
-            <label className="text-[11px] px-2.5 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors cursor-pointer shrink-0 relative overflow-hidden">
-              {'添加附件'}
-              <input
-                type="file"
-                multiple
-                accept=".pdf,.md,.markdown,.xlsx,.csv,image/*"
-                onChange={handleFileChange}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-              />
+              <span>调试事件</span>
             </label>
           </div>
 
-          <button
-            type="submit"
-            disabled={sendDisabled}
-            className="rounded-[10px] py-2 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed shrink-0 min-w-[84px]"
-          >
-            {sessionPreparing
-              ? '会话准备中...'
-              : phase.id === 'submitting'
-                ? '发送中...'
-                : phase.id === 'cancelling'
-                  ? '取消中...'
-                  : hasPendingAttachment
-                    ? '解析附件中...'
-                    : hasFailedAttachment
-                      ? '附件需要处理'
-                      : phase.id === 'running'
-                        ? '模型生成中...'
-                        : phase.id === 'waiting_permission'
-                          ? '等待审批中...'
-                          : phase.id === 'waiting_question'
-                            ? '等待回答中...'
-                            : '发送'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {phase.canCancel ? (
+              <button
+                type="button"
+                onClick={() => void cancelPrompt()}
+                disabled={!currentSessionId || phase.id === 'cancelling'}
+                className="h-10 px-4 rounded-full border border-danger/20 bg-danger/10 text-danger text-sm font-semibold hover:bg-danger/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {phase.id === 'cancelling' ? '取消中...' : '停止'}
+              </button>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={sendDisabled}
+              aria-label="发送消息"
+              className="w-10 h-10 rounded-full font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ↑
+            </button>
+          </div>
         </div>
+
+        {isSharedSession ? (
+          <div className="text-[11px] text-[var(--text-muted)] px-1">
+            共享工作区会话的模式和模型能力受当前权限控制，无法切换时会保持现状。
+          </div>
+        ) : null}
       </form>
     </section>
   )

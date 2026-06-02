@@ -5,6 +5,7 @@ import type { User } from "../../types"
 
 export async function registerWorkerForUser(input: {
   user: User
+  workerId?: string
   tenantId?: string
   organizationId?: string
   nodeCode: string
@@ -16,6 +17,7 @@ export async function registerWorkerForUser(input: {
   const authorization = authorizeSystemWorkersAccess(input.user)
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
   const worker = await workerService.registerWorker({
+    workerId: input.workerId,
     tenantId: input.tenantId ?? input.user.tenantId,
     organizationId: input.organizationId ?? input.user.organizationId,
     workerCode: input.nodeCode,

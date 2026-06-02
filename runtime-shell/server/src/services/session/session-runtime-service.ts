@@ -18,7 +18,17 @@ export async function openSessionWithFallback(session: BusinessSession) {
   }
   // 中文/English: runtime-shell only supports a real ACP runtime; workspace
   // binding validation must already be completed before this runtime bridge runs.
-  await openRealRuntime(session)
+  try {
+    await openRealRuntime(session)
+  } catch (error) {
+    log.warn("session open failed", {
+      businessSessionId: session.id,
+      workerId: session.workerId,
+      workspacePath: session.workspacePath,
+      message: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
   return (await sessionService.getSession(session.id)) || session
 }
 

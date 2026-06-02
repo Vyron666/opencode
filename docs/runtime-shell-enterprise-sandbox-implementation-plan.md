@@ -4,6 +4,38 @@
 
 本文基于 `docs/runtime-shell-enterprise-sandbox-design.md` 拆解落地计划，目标是在尽量不修改 `packages/opencode` 原代码的前提下，把 `runtime-shell` 的 agent 执行面升级为企业级、安全可控、可横向扩展的沙箱运行平台。
 
+本文默认接受以下前提：
+
+1. 最终目标方案是 `Stateful Session + Ephemeral Sandbox`。
+2. Docker/Podman 只是过渡执行后端，用于验证 `SandboxManager` 和隔离边界。
+3. 最终生产方案是 `Kubernetes + Worker Pool + gVisor/Kata`，而不是长期“每会话一个常驻 Docker 容器”。
+
+### 1.1 方案选型结论
+
+1. 推荐方案主结论：本实施计划服务于 `Stateful Session + Ephemeral Sandbox` 目标架构，而不是服务于“每个对话长期运行一个 Docker sandbox”。
+2. 开发/验证：使用 Docker/Podman 跑通独立沙箱、资源限制、挂载边界和 ACP 生命周期。
+3. 企业生产：收敛到 `Kubernetes + Worker Pool + gVisor/Kata`，由平台负责调度、隔离与故障恢复。
+4. 大规模治理：补齐 `queue + quota + warm pool + lease/rebind`，把执行面从“朴素一会话一容器”推进到“持久化 session + 临时执行 sandbox”。
+
+### 1.2 当前已完成状态（2026-06-02）
+
+当前已经完成并验证了 Docker/Podman 过渡沙箱后端，但它仍然只是开发/验证阶段的执行方案，不是最终企业生产执行模型。
+
+已完成并验证：
+
+1. `SandboxManager` 抽象和 Docker 后端已经接入 `worker-agent`。
+2. ACP 已经在独立 sandbox 容器中运行，主链路 `initialize`、`newSession`、`prompt`、`close` 已跑通。
+3. Docker 后端当前通过 sandbox 容器内 `bun` TCP bridge 承接 ACP stdin/stdout，而不是依赖交互式 `docker exec -i`。
+4. 当前基础隔离约束已经落地：非 root、只读 rootfs、`cap_drop=ALL`、`no-new-privileges`、独立 tmpfs runtime home、CPU/内存/pids 限制。
+5. 当前挂载边界已经收敛到当前 session workspace，并避免向 sandbox 暴露平台服务代码和 Docker socket。
+6. 当前已验证命令包括 `bun run e2e:smoke`、`bun run typecheck`、`bun run typecheck:scripts`、`docker compose -f docker-compose.yml config --quiet`。
+
+仍待完成：
+
+1. workspace 还没有切到企业默认的 `copy workspace + diff 回写`。
+2. 还没有补齐 `queue + quota + warm pool + lease/rebind` 的大规模治理。
+3. 还没有切换到 `Kubernetes + gVisor/Kata` 的最终生产执行面。
+
 核心目标：
 
 1. `runtime-shell server` 不直接执行 agent shell 或 ACP 子进程。
@@ -64,7 +96,7 @@
 
 1. Phase 0：准备与基线确认。
 2. Phase 1：沙箱抽象和进程适配。
-3. Phase 2：Docker/Podman 沙箱后端。
+3. Phase 2：Docker/Podman 过渡沙箱后端。
 4. Phase 3：只读配置和平台代码隔离。
 5. Phase 4：workspace overlay/diff 回写。
 6. Phase 5：队列、配额、资源容量和预热池。
@@ -72,6 +104,11 @@
 8. Phase 7：gVisor/Kata 生产加固与压测。
 
 每个阶段都要保持主链路可运行，不能把系统长期停在半接入状态。
+
+说明：
+
+本实施计划中的 `Phase 0-7` 是对设计文档中 `高层 Phase 1-4` 的细化拆分，用于落地执行、排期和拆 PR。两份文档的阶段编号粒度不同，但目标一致，不构成冲突。
+其中 Phase 1-2 主要用于跑通过渡执行后端，Phase 5-7 才逐步收敛到面向企业规模和消费端规模的目标方案。
 
 ## 5. Phase 0：准备与基线确认
 
@@ -208,11 +245,12 @@ bun run e2e:worker-routing
 
 保留 `local-process` 后端作为显式兼容模式。如果沙箱后端异常，可配置回 `RUNTIME_SHELL_SANDBOX_BACKEND=local-process`，但生产环境不得长期使用该模式。
 
-## 7. Phase 2：Docker/Podman 沙箱后端
+## 7. Phase 2：Docker/Podman 过渡沙箱后端
 
 ### 7.1 目标
 
 实现首个真实沙箱后端，让 ACP 在独立容器中运行，而不是在 worker-agent 容器内直接运行。
+注意：本阶段的 Docker/Podman 只是开发/验证阶段的过渡执行后端，不是最终执行模型，也不是最终大规模生产方案。
 
 ### 7.2 任务
 
@@ -235,7 +273,7 @@ runtime-shell/agent-runtime.Dockerfile
 4. 容器启动约束：
    非 root、只读 rootfs、drop capabilities、no-new-privileges、独立 tmpfs、CPU/内存/pids 限制。
 
-5. `attachAcp()` 使用 `docker run -i` 或 `docker exec -i` 接入 ACP stdin/stdout。
+5. `attachAcp()` 使用 sandbox 容器内 `bun` TCP bridge 接入 ACP stdin/stdout，避免依赖不稳定的交互式 `docker exec` 链路。
 
 6. `close()` 确保停止并删除对应容器。
 
@@ -360,18 +398,25 @@ runtime-shell/agent-runtime.Dockerfile
 
 ### 9.1 目标
 
-让 agent 默认不直接写真实 workspace。所有修改先进入 sandbox 写层，再由 diff 审核回写。
+让 agent 默认不直接写真实 workspace。Phase 4 第一版以 `copy workspace + diff 回写` 为准，所有修改先进入 sandbox 工作层，再由 diff 审核回写；Linux 生产环境后续可再升级为真正 overlayfs。
 
 ### 9.2 任务
 
-1. 新增 workspace snapshot/write layer 管理：
+1. Phase 4A：新增 workspace 工作层管理，第一版使用 session copy：
 
 ```text
 runtime-shell/server/src/worker-agent/sandbox/sandbox-workspace.ts
 runtime-shell/server/src/services/sandbox/sandbox-diff-service.ts
 ```
 
-2. 新增 `sandbox_diff` 表和 repo：
+要求：
+
+1. 在受控 scratch 目录下创建 `session copy workspace`。
+2. sandbox 只挂载 session copy 为可写目录。
+3. 真实 workspace 不再直接以可写方式挂载到 sandbox。
+4. session close 后 session copy 按 TTL 回收。
+
+2. Phase 4B：新增 `sandbox_diff` 表和 repo：
 
 ```text
 runtime-shell/server/src/repos/sandbox-diff-repo.ts
@@ -379,7 +424,21 @@ runtime-shell/server/src/db/migrations/0009_sandbox.postgres.sql
 runtime-shell/server/src/db/migrations/0009_sandbox.mysql.sql
 ```
 
-3. 新增 diff API：
+建议字段至少包含：
+
+1. `id`
+2. `tenant_id`、`organization_id`、`project_id`、`workspace_id`
+3. `business_session_id`、`sandbox_id`
+4. `workspace_mode`
+5. `status`
+6. `summary_json`
+7. `artifact_uri`
+8. `policy_result_json`
+9. `idempotency_key`
+10. `expires_at`
+11. `created_at`、`applied_at`、`rejected_at`
+
+3. Phase 4C：新增 diff API：
 
 ```text
 POST /api/session/:id/diff/create
@@ -388,10 +447,22 @@ POST /api/session/:id/diff/reject
 GET  /api/session/:id/diff
 ```
 
-4. 实现 diff 策略检查：
-   路径越界、敏感文件、大规模删除、二进制大文件、平台配置文件。
+要求：
 
-5. 应用 diff 时必须幂等。
+1. `create` 负责生成 diff 摘要、artifact 和策略检查结果。
+2. `apply` 负责幂等回写真实 workspace。
+3. `reject` 负责标记拒绝并保留审计链路。
+4. `GET` 返回当前 session 最近一次或指定 diff 的摘要与状态。
+
+4. Phase 4D：实现 diff 策略检查与回写策略：
+
+1. 拒绝路径越界、符号链接逃逸、workspace 外写入。
+2. 默认阻断 `.env`、私钥、平台配置、部署配置、密钥目录。
+3. 大规模删除、批量重命名、二进制大文件默认进入人工确认。
+4. `apply` 必须基于 `diff_id + idempotency_key` 幂等。
+5. `apply` 失败后状态必须可恢复、可重试、可审计。
+
+5. Phase 4E：补齐 E2E 与清理逻辑。
 
 ### 9.3 涉及文件
 
@@ -404,6 +475,7 @@ runtime-shell/server/src/repos/sandbox-diff-repo.ts
 runtime-shell/server/src/http/routes/sandbox-diff-routes.ts
 runtime-shell/server/src/db/migrations/0009_sandbox.postgres.sql
 runtime-shell/server/src/db/migrations/0009_sandbox.mysql.sql
+runtime-shell/scripts/e2e-sandbox-diff.ts
 ```
 
 修改：
@@ -412,15 +484,17 @@ runtime-shell/server/src/db/migrations/0009_sandbox.mysql.sql
 runtime-shell/server/src/http/routes/session-routes.ts
 runtime-shell/server/src/types.ts
 runtime-shell/server/src/worker-agent/sandbox/docker-sandbox-manager.ts
+runtime-shell/server/src/config.ts
 ```
 
 ### 9.4 验收标准
 
 1. agent 修改文件不会立即影响真实 workspace。
-2. diff 创建后能展示变更摘要。
+2. session copy 中的修改能稳定生成 diff 摘要。
 3. diff apply 后真实 workspace 才变化。
-4. 敏感路径和大规模删除默认阻断。
+4. 敏感路径和大规模删除默认阻断或进入人工确认。
 5. apply 重试不会重复应用或产生脏状态。
+6. session close 或 worker 异常退出后，未处理 diff 和 session copy 状态可恢复或可清理。
 
 ### 9.5 测试建议
 
@@ -432,10 +506,12 @@ runtime-shell/scripts/e2e-sandbox-diff.ts
 
 验证：
 
-1. 创建文件、修改文件、删除文件。
-2. 敏感文件阻断。
-3. apply 幂等。
-4. worker 异常退出后 diff 状态正确。
+1. 创建文件、修改文件、删除文件都只发生在 session copy。
+2. `diff/create` 能生成文件摘要、删除摘要和策略结果。
+3. 敏感文件阻断。
+4. `diff/apply` 幂等。
+5. worker 异常退出后 diff 状态正确。
+6. session close 后 session copy 按 TTL 清理。
 
 ### 9.6 回滚策略
 
@@ -446,7 +522,7 @@ runtime-shell/scripts/e2e-sandbox-diff.ts
 
 ### 10.1 目标
 
-让系统在大用户量下可控运行，避免高并发 open/prompt 直接打爆 worker。
+让系统在大用户量下可控运行，避免高并发 open/prompt 直接打爆 worker，并把执行模式从“朴素一会话一容器”推进到“持久化 session + 临时执行 sandbox”的目标模型。
 
 ### 10.2 任务
 
@@ -546,7 +622,7 @@ bun run e2e:governance
 ### 11.2 任务
 
 1. 审计 DB 化：
-   当前 `StoreAuditService` 仍通过 JSON store 写审计，应迁移到 DB repo。
+   当前 `StoreAuditService` 仍主要通过 JSON store 写审计，目标是迁移到 DB repo。
 
 2. 增加审计 action：
    `sandbox.create`、`sandbox.close`、`sandbox.exit`、`shell.execute`、`file.diff.generated`、`file.diff.applied`、`policy.denied`。
@@ -604,7 +680,7 @@ runtime-shell/server/src/log.ts
 
 ### 12.1 目标
 
-把 Docker 后端升级到生产安全边界，并完成容量压测和故障演练。
+把前期验证过的沙箱抽象演进到生产安全边界，并完成容量压测和故障演练，最终收敛到 `Kubernetes + Worker Pool + gVisor/Kata`。Docker/Podman 在这里不再被视为最终执行模型，而只是前序验证阶段的过渡实现。
 
 ### 12.2 任务
 
@@ -779,7 +855,7 @@ runtime-shell/scripts/bench-sandbox-capacity.ts
    worker-agent 如需控制 Docker，必须限制部署环境；生产优先使用 Kubernetes API 或 rootless Podman，不把 Docker socket 暴露给 sandbox。
 
 2. overlay/diff 复杂度：
-   Windows、本地 Docker、Linux overlayfs 行为不同。第一版可先实现 copy workspace 模式，再升级 overlay。
+   Windows、本地 Docker、Linux overlayfs 行为不同。第一版应先实现 copy workspace 模式，再升级 overlay。
 
 3. 密钥泄漏：
    `OPENCODE_CONFIG_CONTENT` 可能包含 provider key。生产应尽快切换到平台代理或短期 token。
@@ -818,6 +894,7 @@ runtime-shell/scripts/bench-sandbox-capacity.ts
 2. Phase 2 做出真实独立容器，先解决服务代码误改风险。
 3. Phase 3 收紧 mount 和配置，降低密钥和平台代码暴露。
 4. Phase 4 做 overlay/diff，解决真实 workspace 误改误删。
+   第一版以 `copy workspace + diff 回写` 落地，后续再升级 Linux overlayfs。
 5. Phase 5 再做大用户量治理。
 6. Phase 6 和 Phase 7 做企业级完善和生产加固。
 
@@ -832,3 +909,7 @@ runtime-shell/scripts/bench-sandbox-capacity.ts
 7. worker offline 清理
 
 这个 MVP 不能完全解决 diff 回写和大规模治理，但能先把“agent 误改服务代码”的最高风险降下来。
+
+补充说明：
+
+这个 MVP 也不是最终生产执行方案。它只是通向 `Stateful Session + Ephemeral Sandbox + Worker Pool + Queue + Quota + Kubernetes/gVisor/Kata` 的过渡落地版本。

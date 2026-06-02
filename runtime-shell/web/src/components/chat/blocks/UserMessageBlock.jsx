@@ -1,10 +1,23 @@
-﻿export function UserMessageBlock({ block }) {
+export function UserMessageBlock({ block }) {
+  const timestampLabel = formatMessageTime(block.timestamp)
+
   return (
-    <div className="flex min-w-0 gap-3 items-start justify-end">
-      <div className="grid min-w-0 gap-2 max-w-[88%] justify-items-end">
+    <div className="group flex min-w-0 gap-3 items-start justify-end">
+      <div className="relative grid min-w-0 gap-2 max-w-[88%] justify-items-end">
         <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] justify-end">
           <span className="font-bold text-xs text-accent">You</span>
-          <span>刚刚</span>
+          <span>{timestampLabel}</span>
+        </div>
+        <div className="pointer-events-none absolute left-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard.writeText(block.message || '')}
+            className="pointer-events-auto rounded-full border border-[var(--line)] bg-black/45 px-2.5 py-1 text-[11px] text-[var(--text-dim)] hover:bg-black/60 transition-colors"
+            aria-label="复制用户消息"
+            title="复制"
+          >
+            复制
+          </button>
         </div>
         <div
           className="min-w-0 max-w-full rounded-[20px] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
@@ -26,4 +39,14 @@
       </div>
     </div>
   )
+}
+
+function formatMessageTime(timestamp) {
+  if (!timestamp) return '刚刚'
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '刚刚'
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }

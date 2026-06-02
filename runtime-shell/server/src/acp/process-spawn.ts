@@ -51,10 +51,11 @@ function ensureLocalOpencodeDbMarker() {
   fs.closeSync(fs.openSync(marker, "a"))
 }
 
-export function logAcpStderr(proc: ChildProcessWithoutNullStreams) {
+export function logAcpStderr(proc: ChildProcessWithoutNullStreams, onChunk?: (text: string) => void) {
   proc.stderr.on("data", (chunk: Buffer) => {
     const text = chunk.toString("utf-8").trimEnd()
     if (text) {
+      onChunk?.(text)
       // 中文/English: ACP stderr 是上游认证、模型和协议错误的直接来源，必须原样记日志。
       log.error("acp stderr", { text })
     }

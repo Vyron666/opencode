@@ -1,6 +1,6 @@
 import type { User } from "../../types"
 import { listVisibleMcpServers } from "./mcp-configuration-service"
-import { listUserPrivateStoredProviderConfigs, listVisibleProviderConfigs } from "./provider-configuration-service"
+import { listVisibleProviderConfigs, listVisibleStoredProviderConfigs } from "./provider-configuration-service"
 import { getVisibleSkillConfig } from "./skill-configuration-service"
 
 export async function resolveSettingsSnapshot(user: User) {
@@ -18,7 +18,7 @@ export async function resolveSettingsSnapshot(user: User) {
 
 export async function buildSessionConfigOverride(user: User) {
   const [providers, mcpServers, skills] = await Promise.all([
-    listUserPrivateStoredProviderConfigs(user),
+    listVisibleStoredProviderConfigs(user),
     listVisibleMcpServers(user),
     getVisibleSkillConfig(user),
   ])

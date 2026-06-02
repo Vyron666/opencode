@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { readErrorMessage } from '../../store/actions/interaction-action-support'
@@ -7,7 +7,7 @@ import { Field, inputClassName, secondaryButtonClassName, useViewerContext } fro
 export function ConfigHistoryPanel() {
   const setFlash = useStore((state) => state.setFlash)
   const { canManageProviderSettings, canManagePlatformSettings } = useViewerContext()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded] = useState(true)
   const [namespace, setNamespace] = useState('')
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -33,14 +33,9 @@ export function ConfigHistoryPanel() {
   if (!canManageProviderSettings) return null
 
   return (
-    <div className="grid gap-2.5 pb-3 border-b border-[var(--line)]">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-[var(--text-dim)]">
-          {canManagePlatformSettings ? '配置变更历史' : '我的配置历史'}
-        </span>
-        <button onClick={() => setExpanded((current) => !current)} className={secondaryButtonClassName}>
-          {expanded ? '收起' : '展开'}
-        </button>
+    <div className="grid gap-2.5">
+      <div className="text-xs font-semibold text-[var(--text-dim)]">
+        {canManagePlatformSettings ? '配置变更历史' : '我的配置历史'}
       </div>
 
       {expanded ? (

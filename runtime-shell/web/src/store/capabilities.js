@@ -28,6 +28,17 @@ export function buildCapabilitiesFromSession(sessionSummary) {
 }
 
 export function mergeCapabilities(current, patch) {
+  const currentSessionInfo = current?.sessionInfo
+  const patchSessionInfo = patch?.sessionInfo
+  const sessionInfo = patchSessionInfo === null
+    ? null
+    : patchSessionInfo
+      ? {
+          ...(currentSessionInfo || {}),
+          ...patchSessionInfo,
+        }
+      : currentSessionInfo ?? null
+
   return {
     ...current,
     ...patch,
@@ -38,7 +49,7 @@ export function mergeCapabilities(current, patch) {
     configOptions: patch?.configOptions ?? current.configOptions ?? [],
     availableCommands: patch?.availableCommands ?? current.availableCommands ?? [],
     usage: patch?.usage ?? current.usage ?? null,
-    sessionInfo: patch?.sessionInfo ?? current.sessionInfo ?? null,
+    sessionInfo,
   }
 }
 

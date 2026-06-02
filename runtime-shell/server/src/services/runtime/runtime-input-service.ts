@@ -77,7 +77,7 @@ export function withLocaleGuidance(parts: z.infer<typeof inputPartSchema>[]) {
   return [
     {
       type: "text",
-      text: "请使用中文思考并使用中文回复用户；如无必要，不要切换到英文。",
+      text: "请使用中文思考并使用中文回复用户；如无必要，不要切换到英文。所有文件与目录操作都必须限制在当前工作区内，不要主动访问工作区之外的本地路径。",
       annotations: {
         audience: ["assistant"],
       },

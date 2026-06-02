@@ -6,6 +6,9 @@ import {
 import { createRequestFailureHandler } from './interaction-action-support'
 import { isLatestSessionSelection } from './session-activation-support'
 
+const DEFAULT_QUICK_SESSION_TITLE = '新对话'
+const DEFAULT_QUICK_WORKSPACE_NAME = '新工作区'
+
 export async function createSessionAndActivate(input, title, projectId, workspaceId) {
   const sessionSelectionVersion = input.get().sessionSelectionVersion
   input.set({ pendingSessionAction: 'create' })
@@ -41,6 +44,34 @@ export async function createSessionAndActivate(input, title, projectId, workspac
     (value) => value,
     createSessionVersionFailureHandler(input, input.get().sessionSelectionVersion, { pendingSessionAction: '' }, '打开新会话失败'),
   )
+}
+
+export async function createQuickSession(input) {
+  if (input.get().pendingSessionAction || input.get().pendingWorkspaceAction) return
+
+  const preferredWorkspaceId = input.get().preferredWorkspaceId
+  const workspaces = input.get().workspaces
+  const selectedWorkspace =
+    (preferredWorkspaceId && workspaces.find((workspace) => workspace.id === preferredWorkspaceId)) ||
+    workspaces[0] ||
+    null
+
+  if (selectedWorkspace) {
+    return createSessionAndActivate(input, DEFAULT_QUICK_SESSION_TITLE, selectedWorkspace.projectId, selectedWorkspace.id)
+  }
+
+  const fallbackProjectId = input.get().user?.projectIds?.[0] || ''
+  if (!fallbackProjectId) {
+    input.get().setFlash('当前没有可用项目，无法创建新对话')
+    return
+  }
+
+  // 中文/English: only bootstrap a workspace when the user truly has none,
+  // so quick create keeps the existing workspace scope model unchanged.
+  const workspace = await input.get().createWorkspace(DEFAULT_QUICK_WORKSPACE_NAME, fallbackProjectId)
+  if (!workspace?.id || !workspace?.projectId) return
+
+  return createSessionAndActivate(input, DEFAULT_QUICK_SESSION_TITLE, workspace.projectId, workspace.id)
 }
 
 export async function closeCurrentSessionAndReset(input) {

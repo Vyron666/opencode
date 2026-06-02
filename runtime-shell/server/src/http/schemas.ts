@@ -234,3 +234,18 @@ export const sessionRebindSchema = z.object({
   businessSessionId: z.string().min(1),
   reason: z.string().min(1),
 })
+
+export const sessionDiffCreateSchema = z.object({
+  businessSessionId: z.string().min(1),
+})
+
+export const sessionDiffApplySchema = z.object({
+  businessSessionId: z.string().min(1),
+  diffId: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+})
+
+export const sessionDiffRejectSchema = z.object({
+  businessSessionId: z.string().min(1),
+  diffId: z.string().min(1),
+})

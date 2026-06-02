@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { readErrorMessage } from '../../store/actions/interaction-action-support'
@@ -8,7 +8,7 @@ export function McpConfigPanel() {
   const setFlash = useStore((state) => state.setFlash)
   const { canManageProviderSettings, canManagePlatformSettings } = useViewerContext()
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded] = useState(true)
   const [servers, setServers] = useState([{ name: '', type: 'local', command: '', url: '', headers: '', timeout: '', enabled: true }])
   const [impactPreview, setImpactPreview] = useState(null)
 
@@ -34,14 +34,9 @@ export function McpConfigPanel() {
   if (!canManageProviderSettings) return null
 
   return (
-    <div className="grid gap-2.5 pb-3 border-b border-[var(--line)]">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-[var(--text-dim)]">
-          {canManagePlatformSettings ? '平台 MCP 配置' : '我的 MCP 配置'}
-        </span>
-        <button onClick={() => setExpanded((current) => !current)} className={secondaryButtonClassName}>
-          {expanded ? '收起' : '展开'}
-        </button>
+    <div className="grid gap-2.5">
+      <div className="text-xs font-semibold text-[var(--text-dim)]">
+        {canManagePlatformSettings ? '平台 MCP 配置' : '我的 MCP 配置'}
       </div>
 
       {expanded ? (

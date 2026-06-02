@@ -4,6 +4,7 @@ import type { WorkerNode } from "../types"
 import { findWorkerByCode, findWorkerById } from "./worker-query-repo"
 
 export async function registerWorker(input: {
+  workerId?: string
   tenantId?: string
   organizationId?: string
   workerCode: string
@@ -26,7 +27,9 @@ export async function registerWorker(input: {
   }
   const timestamp = now()
   const worker: WorkerNode = {
-    id: nextId("worker"),
+    // 中文/English: local configured workers need stable ids so heartbeat, dashboard
+    // filtering and scheduler reconciliation all point at the same DB row.
+    id: input.workerId || nextId("worker"),
     tenantId: input.tenantId,
     organizationId: input.organizationId,
     workerCode: input.workerCode,

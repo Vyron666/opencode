@@ -1,4 +1,4 @@
-﻿import { useStore } from '../../store'
+import { useStore } from '../../store'
 import { useViewerContext } from './sidebar-support'
 
 export function WorkerOverviewPanel() {
@@ -11,7 +11,7 @@ export function WorkerOverviewPanel() {
   if (!canViewSystemWorkers) return null
 
   return (
-    <div className="grid gap-2.5 pb-3 border-b border-[var(--line)]">
+    <div className="grid gap-2.5">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-[var(--text-dim)]">Worker 概览</span>
         <span className="text-[11px] text-[var(--text-muted)]">

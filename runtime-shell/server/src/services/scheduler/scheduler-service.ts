@@ -1,11 +1,14 @@
 import { Config } from "../../config"
+import { createLogger } from "../../log"
 import type { BusinessSession, User, WorkerNode } from "../../types"
 import { sessionService, workerService } from "../store/store-singleton"
 import { refreshLocalWorkersNow } from "../worker/local-worker-heartbeat-loop"
 
 const CREATED_SESSION_RESERVATION_MS = 30000
+const log = createLogger("scheduler-service")
 
-export async function selectWorkerForNewSession(user: User) {
+export async function selectWorkerForNewSession(user: User, excludedWorkerIds: string[] = []) {
+  const excluded = new Set(excludedWorkerIds.filter(Boolean))
   let workers = await workerService.listReadyWorkersForUser(user)
   if (!workers.length && Config.localWorkers.length) {
     // 中文/English: runtime-shell can start slightly earlier than local workers after a rebuild.
@@ -13,9 +16,16 @@ export async function selectWorkerForNewSession(user: User) {
     await refreshLocalWorkersNow()
     workers = await workerService.listReadyWorkersForUser(user)
   }
-  if (!workers.length) return
+  if (!workers.length) {
+    log.warn("worker selection found no ready workers", {
+      tenantId: user.tenantId,
+      organizationId: user.organizationId,
+      requestedProjects: user.projectIds,
+    })
+    return
+  }
   const sessions = await sessionService.listSessions()
-  return workers
+  const candidates = workers
     .map((worker) => ({
       ...worker,
       // 中文/English: recompute live load from session state at scheduling time so
@@ -32,8 +42,25 @@ export async function selectWorkerForNewSession(user: User) {
       ).length,
     }))
     .filter((worker) => supportsRuntimeExecution(worker))
+    .filter((worker) => !excluded.has(worker.id))
     .filter((worker) => worker.activeSessionCount < worker.capacity)
-    .sort(compareWorkers)[0]
+    .sort(compareWorkers)
+  const selected = candidates[0]
+  if (!selected) {
+    log.warn("worker selection exhausted candidates", {
+      readyWorkerIds: workers.map((worker) => worker.id),
+      readyWorkerStatuses: workers.map((worker) => `${worker.id}:${worker.status}:${worker.activeSessionCount}/${worker.capacity}`),
+    })
+    return
+  }
+  log.info("worker selected for new session", {
+    workerId: selected.id,
+    status: selected.status,
+    activeSessionCount: selected.activeSessionCount,
+    capacity: selected.capacity,
+    readyWorkerIds: workers.map((worker) => worker.id),
+  })
+  return selected
 }
 
 export async function resolveStickyWorkerForSession(session: BusinessSession) {

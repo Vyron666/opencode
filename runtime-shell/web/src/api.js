@@ -28,7 +28,7 @@ async function request(url, options = {}) {
   } catch (error) {
     if (error?.name === 'AbortError') {
       // 中文/English: surface backend stalls as an actionable UI error instead of leaving the login button spinning forever.
-      throw new Error('请求超时，请检查 Runtime Shell 和 PostgreSQL 是否已经恢复')
+      throw new Error('请求超时，请检查网络连接或服务状态后重试')
     }
     throw error
   } finally {

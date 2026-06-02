@@ -19,10 +19,12 @@ import {
 } from "./runtime-registry"
 import { toElicitationContent } from "./runtime-types"
 import { stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
+import { createLogger } from "../log"
 
 export { getRuntime, listPendingPermissions, resolvePendingPermission, listPendingQuestions, subscribeRuntimeEvents }
 
 const pendingRuntimeLoads = new Map<string, Promise<RuntimeEntry>>()
+const log = createLogger("runtime-manager")
 
 export function resolvePendingQuestion(
   requestId: string,
@@ -37,14 +39,23 @@ export async function openRealRuntime(session: BusinessSession) {
   const pending = pendingRuntimeLoads.get(session.id)
   if (pending) return pending
   const client = await createClientWithConfig(session)
-  const task = client.newSession(session.workspacePath).then((created) =>
-    bindRuntime(session, client, {
-      sessionId: created.sessionId,
-      configOptions: created.configOptions,
-      models: created.models,
-      modes: created.modes,
-    }, "opened"),
-  )
+  const task = client.newSession(session.workspacePath)
+    .then((created) =>
+      bindRuntime(session, client, {
+        sessionId: created.sessionId,
+        configOptions: created.configOptions,
+        models: created.models,
+        modes: created.modes,
+      }, "opened"))
+    .catch((error) => {
+      log.warn("open real runtime failed", {
+        businessSessionId: session.id,
+        workerId: session.workerId,
+        workspacePath: session.workspacePath,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    })
   pendingRuntimeLoads.set(session.id, task)
   return task.finally(() => pendingRuntimeLoads.delete(session.id))
 }

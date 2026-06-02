@@ -12,6 +12,7 @@ import {
 import { loadCurrentSessionDetail } from './session-detail-sync-support'
 import {
   closeCurrentSessionAndReset,
+  createQuickSession,
   createSessionAndActivate,
   forkCurrentSessionAndSelect,
 } from './session-lifecycle-write-support'
@@ -65,6 +66,8 @@ export function createSessionActions(input) {
     loadSessionDetail: async () => loadCurrentSessionDetail(input),
 
     createSession: async (title, projectId, workspaceId) => createSessionAndActivate(input, title, projectId, workspaceId),
+
+    createQuickSession: async () => createQuickSession(input),
 
     activateSession: async () => activateCurrentSession(input),
 

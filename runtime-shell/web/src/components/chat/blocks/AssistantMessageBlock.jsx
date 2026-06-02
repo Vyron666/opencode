@@ -8,6 +8,7 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
   const markdownFrameRef = useRef(0)
   const plainText = block.message || (Array.isArray(block.chunks) && block.chunks.length > 0 ? block.chunks.join('') : block.latestChunk || '')
   const [showMarkdown, setShowMarkdown] = useState(() => !block.streaming)
+  const [copied, setCopied] = useState(false)
   const renderPlainText = block.streaming || !showMarkdown
 
   useEffect(() => {
@@ -89,18 +90,41 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
     chunkVersionRef.current = 0
   }, [renderPlainText])
 
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1200)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const handleCopy = async () => {
+    if (!plainText) return
+    await navigator.clipboard.writeText(plainText)
+    setCopied(true)
+  }
+
   return (
-    <div className="flex min-w-0 gap-3 items-start">
+    <div className="group flex min-w-0 gap-3 items-start">
       <div
         className="w-[34px] h-[34px] rounded-[14px] grid place-items-center shrink-0 text-xs font-bold"
         style={{ background: 'linear-gradient(135deg, rgba(212,160,90,0.25), rgba(212,160,90,0.1))', color: '#f0d6a4' }}
       >
         AI
       </div>
-      <div className="grid gap-2 max-w-[88%] min-w-0">
+      <div className="relative grid gap-2 max-w-[88%] min-w-0">
         <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
           <span className="font-bold text-xs text-brand">Assistant</span>
           {block.streaming && <span className="text-[10px] opacity-60">流式输出中...</span>}
+        </div>
+        <div className="pointer-events-none absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            className="pointer-events-auto rounded-full border border-[var(--line)] bg-black/45 px-2.5 py-1 text-[11px] text-[var(--text-dim)] hover:bg-black/60 transition-colors"
+            aria-label="复制 AI 消息"
+            title="复制"
+          >
+            {copied ? '已复制' : '复制'}
+          </button>
         </div>
         <div
           className="min-w-0 max-w-full rounded-[20px] px-4 py-3 text-sm leading-relaxed break-words markdown-body"

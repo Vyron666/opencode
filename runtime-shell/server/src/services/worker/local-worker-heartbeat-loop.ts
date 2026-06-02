@@ -1,7 +1,9 @@
 import { Config } from "../../config"
 import { createLogger } from "../../log"
 import { recordWorkerHeartbeat } from "../runtime-governance/worker-heartbeat-service"
+import { registerWorkerForUser } from "./worker-service"
 import { sessionService, workerService } from "../store/store-singleton"
+import { userService } from "../store/store-singleton"
 
 const log = createLogger("local-worker-heartbeat")
 const CREATED_SESSION_RESERVATION_MS = 30000
@@ -31,9 +33,22 @@ function readHeartbeatIntervalMs() {
 
 async function beatLocalWorker() {
   const sessions = await sessionService.listSessions()
+  const adminUser = userService.findUser(Config.adminUsername)
   await Promise.all(
     Config.localWorkers.map(async (localWorker) => {
-      const worker = await workerService.findWorkerById(localWorker.id)
+      const worker =
+        (await workerService.findWorkerById(localWorker.id)) ||
+        (adminUser
+          ? (await registerWorkerForUser({
+              user: adminUser,
+              workerId: localWorker.id,
+              nodeCode: localWorker.workerCode,
+              endpoint: localWorker.baseUrl,
+              version: localWorker.version,
+              capacityTotal: localWorker.capacity,
+              name: localWorker.name,
+            })).worker
+          : undefined)
       if (!worker) return
       const activeSessionCount = sessions.filter((session) =>
         session.workerId === localWorker.id &&

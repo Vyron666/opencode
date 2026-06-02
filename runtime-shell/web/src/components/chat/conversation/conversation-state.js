@@ -56,6 +56,7 @@ export function appendConversationEvent(state, event, showDebug = false) {
       key: event.eventId || `user-${state.turnCounter}`,
       type: 'user',
       message,
+      timestamp: event.timestamp,
       turnId: state.currentTurnId,
     })
     return state

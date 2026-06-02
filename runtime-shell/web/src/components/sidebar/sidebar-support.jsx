@@ -26,13 +26,13 @@ export function Field({ label, children }) {
   )
 }
 
-export function Select({ id, options, value, onChange, emptyLabel = '\u8bf7\u5148\u6253\u5f00\u4f1a\u8bdd' }) {
+export function Select({ id, options, value, onChange, emptyLabel = '\u8bf7\u5148\u6253\u5f00\u4f1a\u8bdd', disabled = false }) {
   return (
     <select
       id={id}
       value={value}
       onChange={onChange ? (event) => onChange(event.target.value) : undefined}
-      disabled={!Array.isArray(options) || options.length === 0}
+      disabled={disabled || !Array.isArray(options) || options.length === 0}
       className={selectClassName}
       style={{
         backgroundImage:
@@ -61,16 +61,22 @@ export function useSessionCapabilities() {
 
   return useMemo(() => {
     const detailCapabilities = buildCapabilitiesFromSession(sessionDetail?.session)
+    const hasFallbackModels = detailCapabilities.models?.length > 0
+    const hasFallbackCommands = detailCapabilities.availableCommands?.length > 0
     return {
       ...detailCapabilities,
       modeId: capabilities.modeId || detailCapabilities.modeId,
       modelId: capabilities.modelId || detailCapabilities.modelId,
       modes: capabilities.modes?.length ? capabilities.modes : detailCapabilities.modes,
-      models: capabilities.models?.length ? capabilities.models : detailCapabilities.models,
+      models:
+        capabilities.models?.length && (!hasFallbackModels || capabilities.modelId || capabilities.configOptions?.length)
+          ? capabilities.models
+          : detailCapabilities.models,
       configOptions: capabilities.configOptions?.length ? capabilities.configOptions : detailCapabilities.configOptions,
-      availableCommands: capabilities.availableCommands?.length
-        ? capabilities.availableCommands
-        : detailCapabilities.availableCommands,
+      availableCommands:
+        capabilities.availableCommands?.length && (!hasFallbackCommands || capabilities.models?.length || capabilities.configOptions?.length)
+          ? capabilities.availableCommands
+          : detailCapabilities.availableCommands,
       usage: capabilities.usage || detailCapabilities.usage,
       sessionInfo: capabilities.sessionInfo || detailCapabilities.sessionInfo,
     }

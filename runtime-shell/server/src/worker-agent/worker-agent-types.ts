@@ -6,6 +6,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import type { AcpProcessClient } from "../acp/acp-process-client"
 import type { PendingPermission, PendingQuestion } from "../types"
+import type { SandboxHandle } from "./sandbox/sandbox-types"
 
 export type RuntimeSnapshot = {
   configOptions?: NewSessionResponse["configOptions"] | LoadSessionResponse["configOptions"] | ResumeSessionResponse["configOptions"] | ForkSessionResponse["configOptions"]
@@ -18,6 +19,9 @@ export type RuntimeEntry = {
   businessSessionId: string
   workerId: string
   workspacePath: string
+  sandboxPath?: string
+  sandboxHandle?: SandboxHandle
+  closeSandbox?: () => Promise<void>
   client: AcpProcessClient
   snapshot: RuntimeSnapshot
   closing: boolean

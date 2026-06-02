@@ -47,6 +47,35 @@ export class RuntimeShellClient implements Client {
       })),
       createdAt: new Date().toISOString(),
     }
+    const autoRejected = shouldAutoRejectExternalDirectory(this.options.cwd, permission)
+    if (autoRejected) {
+      await this.options.onEvent(createLocalEvent(this.options, this.acpSessionId, "permission_requested", {
+        requestId,
+        toolName: permission.toolName,
+        options: params.options,
+        rawInput: params.toolCall.rawInput,
+        autoRejected: true,
+      }, permission.createdAt))
+      await this.options.onEvent(createLocalEvent(this.options, this.acpSessionId, "permission_resolved", {
+        requestId,
+        outcome: {
+          outcome: "cancelled",
+        },
+        optionKind: "reject",
+        autoRejected: true,
+        deniedPath: autoRejected,
+      }))
+      log.info("auto rejected external_directory permission", {
+        sessionId: this.acpSessionId,
+        businessSessionId: this.options.businessSessionId,
+        deniedPath: autoRejected,
+      })
+      return {
+        outcome: {
+          outcome: "cancelled",
+        },
+      }
+    }
 
     // 中文/English: register the pending resolver before exposing the request to
     // the UI so a fast user click cannot resolve "too early" and get lost.
@@ -186,6 +215,32 @@ function resolveWorkspacePath(cwd: string, targetPath: string) {
     throw new Error(`path is outside workspace: ${targetPath}`)
   }
   return resolved
+}
+
+function shouldAutoRejectExternalDirectory(cwd: string, permission: PendingPermission) {
+  if (permission.toolName !== "external_directory") return
+  const workspaceRoot = path.resolve(cwd)
+  const candidates = extractRequestedPaths(permission.rawInput)
+  if (!candidates.length) return workspaceRoot
+  const denied = candidates.find((candidate) => !isPathInsideWorkspace(workspaceRoot, candidate))
+  return denied
+}
+
+function extractRequestedPaths(rawInput: unknown) {
+  if (!rawInput || typeof rawInput !== "object") return []
+  const input = rawInput as Record<string, unknown>
+  return [
+    input.filepath,
+    input.parentDir,
+    ...(Array.isArray(input.patterns) ? input.patterns : []),
+    ...(Array.isArray(input.paths) ? input.paths : []),
+  ].flatMap((value) => typeof value === "string" && value ? [value] : [])
+}
+
+function isPathInsideWorkspace(workspaceRoot: string, targetPath: string) {
+  const resolved = path.isAbsolute(targetPath) ? path.resolve(targetPath) : path.resolve(workspaceRoot, targetPath)
+  const relative = path.relative(workspaceRoot, resolved)
+  return !relative.startsWith("..") && !path.isAbsolute(relative)
 }
 
 function mapUpdateType(input: string): SessionEvent["eventType"] {

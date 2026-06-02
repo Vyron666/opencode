@@ -6,6 +6,8 @@ export function useConversationPhase() {
   const isSubmitting = useStore((state) => state.isSubmitting)
   const isRunning = useStore((state) => state.isRunning)
   const isCancelling = useStore((state) => state.isCancelling)
+  const isConnected = useStore((state) => state.isConnected)
+  const reconnectAttempt = useStore((state) => state.reconnectAttempt)
   const pendingPermissions = useStore((state) => state.pendingPermissions.length)
   const pendingQuestions = useStore((state) => state.pendingQuestions.length)
   const respondingPermissions = useStore((state) => state.respondingPermissionIds.size)
@@ -17,11 +19,13 @@ export function useConversationPhase() {
         isSubmitting,
         isRunning,
         isCancelling,
+        isConnected,
+        reconnectAttempt,
         pendingPermissions,
         pendingQuestions,
         respondingPermissions,
         respondingQuestions,
       }),
-    [isSubmitting, isRunning, isCancelling, pendingPermissions, pendingQuestions, respondingPermissions, respondingQuestions],
+    [isSubmitting, isRunning, isCancelling, isConnected, reconnectAttempt, pendingPermissions, pendingQuestions, respondingPermissions, respondingQuestions],
   )
 }

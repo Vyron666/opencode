@@ -3,9 +3,8 @@ import { useStore } from '../../store'
 import {
   Field,
   inputClassName,
-  secondaryButtonClassName,
   Select,
-  selectClassName,
+  secondaryButtonClassName,
   stringifyConfigValue,
   useSessionCapabilities,
   useViewerContext,
@@ -17,44 +16,34 @@ export function ModelSettingPanel() {
   const pendingSettingsAction = useStore((state) => state.pendingSettingsAction)
   const capabilities = useSessionCapabilities()
   const { canUpdateModel, isSharedSession } = useViewerContext()
-  const [selected, setSelected] = useState('')
-
-  useEffect(() => {
-    setSelected(capabilities.modelId || capabilities.models?.[0]?.id || '')
-  }, [capabilities.modelId, capabilities.models, currentSessionId])
+  const selected = capabilities.modelId || capabilities.models?.[0]?.id || ''
 
   if (!currentSessionId) return null
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (!selected) return
-        void updateModel(selected)
-      }}
-      className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
-    >
-      <Field label={'\u6a21\u578b'}>
+    <div className="grid gap-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-[var(--text-dim)]">模型</span>
+        {pendingSettingsAction === 'model' ? <span className="text-[11px] text-[var(--text-muted)]">切换中...</span> : null}
+      </div>
+      <Field label="当前模型">
         <Select
           value={selected}
-          onChange={setSelected}
+          onChange={(nextModel) => {
+            if (!nextModel || nextModel === selected || !canUpdateModel || pendingSettingsAction) return
+            void updateModel(nextModel)
+          }}
           options={capabilities.models}
-          emptyLabel={'\u5f53\u524d\u4f1a\u8bdd\u6ca1\u6709\u53ef\u9009\u6a21\u578b'}
+          emptyLabel="当前会话没有可选模型"
+          disabled={!canUpdateModel || Boolean(pendingSettingsAction)}
         />
       </Field>
       {isSharedSession ? (
         <div className="text-[11px] text-[var(--text-muted)]">
-          {'\u5171\u4eab\u5de5\u4f5c\u533a\u4e0b\u7684\u4f1a\u8bdd\u4e0d\u5141\u8bb8\u5207\u6362\u6a21\u578b\u3002'}
+          共享工作区下的会话不允许切换模型。
         </div>
       ) : null}
-      <button
-        type="submit"
-        disabled={!selected || !currentSessionId || Boolean(pendingSettingsAction) || !canUpdateModel}
-        className={secondaryButtonClassName}
-      >
-        {pendingSettingsAction === 'model' ? '\u5207\u6362\u4e2d...' : '\u5207\u6362\u6a21\u578b'}
-      </button>
-    </form>
+    </div>
   )
 }
 
@@ -70,7 +59,7 @@ export function ConfigSettingPanel() {
     [configOptions],
   )
   const [configId, setConfigId] = useState('')
-  const [value, setValue] = useState('')
+  const [draftValue, setDraftValue] = useState('')
   const selectedConfig = useMemo(
     () => userConfigOptions.find((item) => item.id === configId),
     [configId, userConfigOptions],
@@ -82,64 +71,97 @@ export function ConfigSettingPanel() {
   }, [configId, userConfigOptions])
 
   useEffect(() => {
-    setValue(stringifyConfigValue(selectedConfig?.currentValue))
+    setDraftValue(stringifyConfigValue(selectedConfig?.currentValue))
   }, [selectedConfig?.id, selectedConfig?.currentValue])
+
+  const currentValue = stringifyConfigValue(selectedConfig?.currentValue)
 
   if (!currentSessionId) return null
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (!configId) return
-        void updateConfig(configId, value)
-      }}
-      className="grid gap-2.5 pb-3 border-b border-[var(--line)]"
-    >
-      <Field label={'\u914d\u7f6e\u9879'}>
+    <div className="grid gap-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-[var(--text-dim)]">运行时配置</span>
+        {pendingSettingsAction === 'config' ? <span className="text-[11px] text-[var(--text-muted)]">更新中...</span> : null}
+      </div>
+
+      <Field label="配置项">
         <Select
           value={configId}
           onChange={setConfigId}
           options={userConfigOptions}
-          emptyLabel={'\u5f53\u524d\u4f1a\u8bdd\u6ca1\u6709\u53ef\u914d\u7f6e\u9879'}
+          emptyLabel="当前会话没有可配置项"
+          disabled={!canUpdateConfig || Boolean(pendingSettingsAction)}
         />
       </Field>
-      <Field label={'\u914d\u7f6e\u503c'}>
-        {selectedConfig?.type === 'boolean' ? (
-          <select value={value} onChange={(event) => setValue(event.target.value)} className={selectClassName}>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        ) : selectedConfig?.options?.length ? (
-          <select value={value} onChange={(event) => setValue(event.target.value)} className={selectClassName}>
-            {selectedConfig.options.map((option) => (
-              <option key={option.id || option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder={'\u4f8b\u5982 high / true / code'}
-            className={inputClassName}
-          />
-        )}
-      </Field>
+
+      {selectedConfig ? (
+        <div className="grid gap-2">
+          <span className="text-xs font-medium text-[var(--text-dim)]">配置值</span>
+          {selectedConfig.type === 'boolean' ? (
+            <div className="flex items-center gap-2">
+              {[
+                { id: 'true', label: '开启' },
+                { id: 'false', label: '关闭' },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => {
+                    if (option.id === currentValue || !canUpdateConfig || pendingSettingsAction) return
+                    void updateConfig(configId, option.id)
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    currentValue === option.id
+                      ? 'bg-brand text-[#14100d] border-brand'
+                      : 'bg-black/20 text-[var(--text-dim)] border-[var(--line)] hover:bg-black/35'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : selectedConfig.options?.length ? (
+            <Select
+              value={currentValue}
+              onChange={(nextValue) => {
+                if (nextValue === currentValue || !canUpdateConfig || pendingSettingsAction) return
+                void updateConfig(configId, nextValue)
+              }}
+              options={selectedConfig.options}
+              emptyLabel="请选择"
+              disabled={!canUpdateConfig || Boolean(pendingSettingsAction)}
+            />
+          ) : (
+            <div className="grid gap-2">
+              <input
+                value={draftValue}
+                onChange={(event) => setDraftValue(event.target.value)}
+                placeholder="例如 high / true / code"
+                className={inputClassName}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!configId || !canUpdateConfig || pendingSettingsAction) return
+                  void updateConfig(configId, draftValue)
+                }}
+                disabled={!configId || !canUpdateConfig || Boolean(pendingSettingsAction)}
+                className={secondaryButtonClassName}
+              >
+                应用配置
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {selectedConfig?.description ? <div className="text-[11px] text-[var(--text-muted)] -mt-1">{selectedConfig.description}</div> : null}
       {isSharedSession ? (
         <div className="text-[11px] text-[var(--text-muted)]">
-          {'\u5171\u4eab\u5de5\u4f5c\u533a\u4e0b\u7684\u4f1a\u8bdd\u4e0d\u5141\u8bb8\u4fee\u6539\u8fd0\u884c\u65f6\u914d\u7f6e\u3002'}
+          共享工作区下的会话不允许修改运行时配置。
         </div>
       ) : null}
-      <button
-        type="submit"
-        disabled={!configId || !currentSessionId || Boolean(pendingSettingsAction) || !canUpdateConfig}
-        className={secondaryButtonClassName}
-      >
-        {pendingSettingsAction === 'config' ? '\u66f4\u65b0\u4e2d...' : '\u66f4\u65b0\u914d\u7f6e'}
-      </button>
-    </form>
+    </div>
   )
 }

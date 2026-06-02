@@ -76,7 +76,7 @@ function buildCompose(config: LocalWorkerComposeConfig) {
       # 中文/English: local compose needs host auth for runtime-shell over the Docker network.
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "55432:5432"
+      - "5433:5432"
     volumes:
       - ../docker-data/runtime-shell-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -101,6 +101,8 @@ ${dependsOn}
     environment:
       RUNTIME_SHELL_HOST: 0.0.0.0
       RUNTIME_SHELL_PORT: 3000
+      # 中文/English: browser-facing package URLs must use the published host port.
+      RUNTIME_SHELL_PUBLIC_BASE_URL: http://127.0.0.1:3100
       RUNTIME_SHELL_ADMIN_USERNAME: admin
       RUNTIME_SHELL_ADMIN_PASSWORD: change-me
       RUNTIME_SHELL_SESSION_COOKIE: runtime_shell_session
@@ -156,6 +158,13 @@ function buildWorkerService(workerIndex: number) {
       RUNTIME_SHELL_WORKER_AGENT_PORT: "4097"
       RUNTIME_SHELL_INTERNAL_BASE_URL: http://runtime-shell:3000
       RUNTIME_SHELL_WORKER_AGENT_TOKEN: change-me-worker-agent
+      RUNTIME_SHELL_SANDBOX_BACKEND: docker
+      RUNTIME_SHELL_SANDBOX_IMAGE: opencode-local:latest
+      RUNTIME_SHELL_SANDBOX_DOCKER_SOCKET: /var/run/docker.sock
+      # 中文/English: local verification allows outbound access for model APIs, remote MCP, Git and package registries.
+      # Production must replace this with an egress proxy or a network policy allowlist.
+      RUNTIME_SHELL_SANDBOX_NETWORK_MODE: runtime-shell_default
+      RUNTIME_SHELL_SANDBOX_USER: "1000:1000"
     # 中文/English: do not publish the worker port to host by default.
     # runtime-shell connects via the compose network (${`http://${serviceName}:4096`}),
     # avoiding "port already allocated" on developer machines.
@@ -166,6 +175,7 @@ function buildWorkerService(workerIndex: number) {
       - ${readWorkerDataDir(workerIndex)}:/root/.local/share/opencode
       - ../.opencode:/workspace/.opencode
       - ../workspaces:/workspace/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /workspace
     entrypoint: ["bash", "/workspace/runtime-shell/server/src/worker-agent/start-worker.sh"]`
 }

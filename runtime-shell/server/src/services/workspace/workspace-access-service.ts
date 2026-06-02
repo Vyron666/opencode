@@ -1,4 +1,6 @@
+import path from "node:path"
 import { authorizeWorkspaceAccess } from "../access/authorization-service"
+import { Config } from "../../config"
 import { workspaceService } from "../store/store-singleton"
 import type { BusinessSession, User, Workspace, WorkspaceAccessResult } from "../../types"
 
@@ -78,6 +80,19 @@ export async function requireRuntimeSessionWorkspace(input: {
   }
 }
 
+export function canCreateSessionInWorkspace(workspace: Workspace) {
+  const normalizedWorkspacePath = path.resolve(workspace.rootPath)
+  const normalizedWorkspaceRoot = path.resolve(Config.workspaceRootDir)
+  if (normalizedWorkspacePath === normalizedWorkspaceRoot) return false
+  return path.basename(normalizedWorkspacePath) !== ".sandbox"
+}
+
+export async function isSessionWorkspaceReady(workspace: Workspace) {
+  if (!canCreateSessionInWorkspace(workspace)) return false
+  const info = await Bun.file(workspace.rootPath).stat().catch(() => null)
+  return Boolean(info?.isDirectory())
+}
+
 async function requireWorkspaceWithinScope(input: {
   workspace: Workspace
   user: User
@@ -100,7 +115,8 @@ async function requireWorkspaceWithinScope(input: {
     businessSession: input.businessSession,
   })
   if (!authorization.ok) return { ok: false, reason: authorization.reason }
-  const info = await Bun.file(workspace.rootPath).stat().catch(() => null)
-  if (!info?.isDirectory()) return { ok: false, reason: "invalid_path" }
+  // 中文/English: the shared workspace root is only a container for child workspaces.
+  // Running a session directly on it breaks sandbox copy semantics by copying into itself.
+  if (!(await isSessionWorkspaceReady(workspace))) return { ok: false, reason: "invalid_path" }
   return { ok: true, workspace }
 }

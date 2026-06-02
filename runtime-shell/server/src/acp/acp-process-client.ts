@@ -28,6 +28,8 @@ import type { PendingResolver, PermissionResolution, RuntimeClientOptions } from
 
 const log = createLogger("acp")
 
+type RuntimeProcessFactory = (options: RuntimeClientOptions) => ReturnType<typeof spawnAcpProcess>
+
 export class AcpProcessClient {
   private proc
   private client: RuntimeShellClient
@@ -40,10 +42,18 @@ export class AcpProcessClient {
   private pendingPermissions = new Map<string, PendingResolver<PermissionResolution>>()
   private onQuestionRequestedHandler?: (question: PendingQuestion) => void
   private pendingQuestions = new Map<string, PendingResolver<CreateElicitationResponse>>()
+  private stderrTail: string[] = []
 
-  constructor(options: RuntimeClientOptions, waitForPendingEvents: () => Promise<void> = () => Promise.resolve()) {
-    this.proc = spawnAcpProcess(options)
-    logAcpStderr(this.proc)
+  constructor(
+    options: RuntimeClientOptions,
+    waitForPendingEvents: () => Promise<void> = () => Promise.resolve(),
+    processFactory: RuntimeProcessFactory = spawnAcpProcess,
+  ) {
+    this.proc = processFactory(options)
+    logAcpStderr(this.proc, (text) => {
+      this.stderrTail.push(text)
+      if (this.stderrTail.length > 20) this.stderrTail.shift()
+    })
     this.waitForPendingEvents = waitForPendingEvents
 
     const output = Writable.toWeb(this.proc.stdin)
@@ -98,6 +108,8 @@ export class AcpProcessClient {
           writeTextFile: true,
         },
       },
+    }).catch((error) => {
+      throw this.wrapRpcError("initialize", error)
     })
     log.info("initialize succeeded", {
       agent: this.initialized.agentInfo?.name,
@@ -113,7 +125,9 @@ export class AcpProcessClient {
   async createSession(params: NewSessionRequest): Promise<NewSessionResponse> {
     await this.initialize()
     log.info("sending newSession")
-    const result = await this.connection.newSession(params)
+    const result = await this.connection.newSession(params).catch((error) => {
+      throw this.wrapRpcError("newSession", error)
+    })
     this.bindSession(result.sessionId)
     log.info("newSession succeeded", { acpSessionId: result.sessionId })
     return result
@@ -121,21 +135,27 @@ export class AcpProcessClient {
 
   async loadSession(cwd: string, sessionId: string): Promise<LoadSessionResponse> {
     await this.initialize()
-    const result = await this.connection.loadSession({ cwd, sessionId, mcpServers: [] })
+    const result = await this.connection.loadSession({ cwd, sessionId, mcpServers: [] }).catch((error) => {
+      throw this.wrapRpcError("loadSession", error)
+    })
     this.bindSession(sessionId)
     return result
   }
 
   async resumeSession(cwd: string, sessionId: string) {
     await this.initialize()
-    const result = await this.connection.resumeSession({ cwd, sessionId, mcpServers: [] })
+    const result = await this.connection.resumeSession({ cwd, sessionId, mcpServers: [] }).catch((error) => {
+      throw this.wrapRpcError("resumeSession", error)
+    })
     this.bindSession(sessionId)
     return result
   }
 
   async forkSession(cwd: string, sessionId: string): Promise<ForkSessionResponse> {
     await this.initialize()
-    const result = await this.connection.unstable_forkSession({ cwd, sessionId, mcpServers: [] })
+    const result = await this.connection.unstable_forkSession({ cwd, sessionId, mcpServers: [] }).catch((error) => {
+      throw this.wrapRpcError("forkSession", error)
+    })
     this.bindSession(result.sessionId)
     return result
   }
@@ -247,13 +267,16 @@ export class AcpProcessClient {
 
   async close() {
     log.info("closing ACP process", { sessionId: this.sessionId })
-    if (this.sessionId) {
-      await this.closeSession(this.sessionId)
+    try {
+      if (this.sessionId) {
+        await this.closeSession(this.sessionId)
+      }
+    } finally {
+      rejectPending(this.pendingPermissions, "ACP runtime closed")
+      rejectPending(this.pendingQuestions, "ACP runtime closed")
+      this.proc.kill()
+      log.info("ACP process killed")
     }
-    rejectPending(this.pendingPermissions, "ACP runtime closed")
-    rejectPending(this.pendingQuestions, "ACP runtime closed")
-    this.proc.kill()
-    log.info("ACP process killed")
   }
 
   async closeSession(sessionId: string) {
@@ -275,9 +298,48 @@ export class AcpProcessClient {
     this.sessionId = sessionId
     this.client.setSessionId(sessionId)
   }
+
+  private wrapRpcError(step: string, error: unknown) {
+    const detail = describeRpcError(error)
+    const stderr = this.stderrTail.join("\n")
+    const message = [
+      `ACP ${step} failed`,
+      detail,
+      stderr ? `stderr: ${stderr}` : "",
+    ].filter(Boolean).join(" | ")
+    return new Error(message, {
+      cause: error,
+    })
+  }
 }
 
 function rejectPending<T>(pendingMap: Map<string, PendingResolver<T>>, message: string) {
   pendingMap.forEach((pending) => pending.reject(new Error(message)))
   pendingMap.clear()
+}
+
+function describeRpcError(error: unknown) {
+  if (!(error instanceof Error)) return String(error)
+  const detail = error as Error & {
+    code?: unknown
+    data?: unknown
+    cause?: unknown
+  }
+  const parts = [detail.message]
+  if (detail.code !== undefined) parts.push(`code=${String(detail.code)}`)
+  const dataText = serializeUnknown(detail.data)
+  if (dataText) parts.push(`data=${dataText}`)
+  const causeText = serializeUnknown(detail.cause)
+  if (causeText) parts.push(`cause=${causeText}`)
+  return parts.join(" ")
+}
+
+function serializeUnknown(value: unknown) {
+  if (value === undefined) return ""
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
 }

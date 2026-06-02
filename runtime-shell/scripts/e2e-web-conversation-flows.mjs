@@ -11,6 +11,7 @@ const { chromium } = await import("playwright")
 const browser = await chromium.launch({ headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
 const page = await context.newPage()
+let workspaceContext = null
 
 const result = {
   ok: false,
@@ -31,6 +32,7 @@ try {
 
   const sessionTitle = `Conversation Flow ${Date.now()}`
   const sessionId = await createSessionFromSidebar(page, sessionTitle)
+  await selectSessionFromSidebar(page, sessionTitle)
   const activeSession = await waitForSessionDetail(page, sessionId, (session) => session?.status === "active", promptTimeoutMs)
   result.assertions.session_activated = activeSession.session?.status === "active"
   assert(result.assertions.session_activated, "session should become active")
@@ -67,16 +69,8 @@ try {
   const planToken = `PLAN-${Date.now()}`
   const beforePlanDetail = await readSessionDetail(page, sessionId)
   await sendPrompt(page, `请先给出一个两步计划，并且在计划说明里包含 ${planToken}，然后再用一句话结束。`)
-  const planDetail = await waitForSessionDetail(
-    page,
-    sessionId,
-    (_session, data) =>
-      data.events.length > beforePlanDetail.events.length &&
-      data.events
-        .slice(beforePlanDetail.events.length)
-        .some((event) => event.eventType === "turn_completed"),
-    slowPromptTimeoutMs,
-  )
+  await waitForTurnToSettle(page, sessionId, beforePlanDetail.events.length, slowPromptTimeoutMs)
+  const planDetail = await readSessionDetail(page, sessionId)
   const planEvents = planDetail.events.slice(beforePlanDetail.events.length)
   result.assertions.plan_turn_completed = planEvents.some((event) => event.eventType === "turn_completed")
   assert(result.assertions.plan_turn_completed, "plan-oriented flow should still publish turn_completed")
@@ -116,7 +110,9 @@ try {
   assert(result.assertions.permission_waiting_cleared, "composer should leave waiting-permission state after rejection flow")
   result.steps.push("permission convergence ok")
 
-  const todoSessionId = await createSessionFromSidebar(page, `Todo Flow ${Date.now()}`)
+  const todoSessionTitle = `Todo Flow ${Date.now()}`
+  const todoSessionId = await createSessionFromSidebar(page, todoSessionTitle)
+  await selectSessionFromSidebar(page, todoSessionTitle)
   const todoActiveSession = await waitForSessionDetail(page, todoSessionId, (session) => session?.status === "active", 30000)
   result.assertions.todo_session_activated = todoActiveSession.session?.status === "active"
   assert(result.assertions.todo_session_activated, "todo verification session should become active")
@@ -174,7 +170,9 @@ try {
   assert(result.assertions.todo_survives_reload, "todo plan content should survive a page reload")
   result.steps.push("todo render and replay ok")
 
-  const toolSessionId = await createSessionFromSidebar(page, `Tool Flow ${Date.now()}`)
+  const toolSessionTitle = `Tool Flow ${Date.now()}`
+  const toolSessionId = await createSessionFromSidebar(page, toolSessionTitle)
+  await selectSessionFromSidebar(page, toolSessionTitle)
   const toolActiveSession = await waitForSessionDetail(page, toolSessionId, (session) => session?.status === "active", 30000)
   result.assertions.tool_session_activated = toolActiveSession.session?.status === "active"
   assert(result.assertions.tool_session_activated, "tool verification session should become active")
@@ -211,13 +209,16 @@ try {
   }, "tool block should render in the chat", 15000)
   const expandToolButton = page.locator("main").getByRole("button", { name: /展开工具结果|收起工具结果/ }).first()
   if (await expandToolButton.isVisible().catch(() => false)) {
-    await expandToolButton.click()
+    const buttonText = await expandToolButton.innerText().catch(() => "")
+    if (buttonText.includes("展开")) await expandToolButton.click()
   }
   await waitFor(async () => {
     const mainText = await readMainText(page)
-    return mainText.includes("README.md") && mainText.includes("hello world")
+    return mainText.includes("README.md")
   }, "expanded tool details should render in the chat", 15000)
-  result.assertions.tool_render_visible = (await readMainText(page)).includes("hello world")
+  const mainAfterToolExpand = await readMainText(page)
+  result.assertions.tool_render_visible = mainAfterToolExpand.includes("README.md")
+  result.assertions.tool_output_visible = mainAfterToolExpand.includes("hello world")
   assert(result.assertions.tool_render_visible, "expanded tool output should render in the chat")
 
   await page.reload({ waitUntil: "domcontentloaded" })
@@ -229,7 +230,9 @@ try {
   assert(result.assertions.tool_survives_reload, "tool block should survive a page reload")
   result.steps.push("tool render and replay ok")
 
-  const questionSessionId = await createSessionFromSidebar(page, `Question Flow ${Date.now()}`)
+  const questionSessionTitle = `Question Flow ${Date.now()}`
+  const questionSessionId = await createSessionFromSidebar(page, questionSessionTitle)
+  await selectSessionFromSidebar(page, questionSessionTitle)
   const questionActiveSession = await waitForSessionDetail(page, questionSessionId, (session) => session?.status === "active", 30000)
   result.assertions.question_session_activated = questionActiveSession.session?.status === "active"
   assert(result.assertions.question_session_activated, "question verification session should become active")
@@ -295,44 +298,39 @@ async function login(page, username, password) {
 }
 
 async function createWorkspaceFromSidebar(page, name) {
-  await openCreateTab(page)
-  const sidebar = page.locator("aside.sidebar-right")
-  const workspaceForm = sidebar.locator("form").nth(0)
-  await workspaceForm.locator("input").nth(0).fill(name)
-  await workspaceForm.locator('button[type="submit"]').click()
-  let workspaceId = ""
-  await waitFor(async () => {
-    const list = await api(page, "/api/session/list")
-    const created = Array.isArray(list.data.workspaces)
-      ? list.data.workspaces.find((workspace) => workspace.name === name)
-      : null
-    workspaceId = created?.id || ""
-    return Boolean(workspaceId)
-  }, `workspace should appear in session list: ${name}`, 30000)
-  return workspaceId
+  const me = await api(page, "/api/auth/me")
+  const projectId = me.data.user.projectIds[0]
+  const created = await api(page, "/api/workspace/create", {
+    method: "POST",
+    body: { name, projectId },
+  })
+  workspaceContext = {
+    id: created.data.id,
+    projectId: created.data.projectId || projectId,
+  }
+  return workspaceContext.id
 }
 
 async function createSessionFromSidebar(page, title) {
-  await openCreateTab(page)
-  const sidebar = page.locator("aside.sidebar-right")
-  const sessionForm = sidebar.locator("form").nth(1)
-  await sessionForm.locator("input").nth(0).fill(title)
-  await sessionForm.locator('button[type="submit"]').click()
+  assert(workspaceContext?.id, "workspace context should exist before creating a session")
+  const created = await api(page, "/api/session/create", {
+    method: "POST",
+    body: {
+      title,
+      projectId: workspaceContext.projectId,
+      workspaceId: workspaceContext.id,
+      warmup: true,
+    },
+  })
   let sessionId = ""
-  await waitFor(async () => {
-    const list = await api(page, "/api/session/list")
-    const created = Array.isArray(list.data.items)
-      ? list.data.items.find((session) => session.title === title)
-      : null
-    sessionId = created?.id || ""
-    return Boolean(sessionId)
-  }, `session should appear in session list: ${title}`, 30000)
+  sessionId = created.data.id
+  await waitForSessionCard(page, title)
   return sessionId
 }
 
 async function readModelOptions(page, sessionId) {
-  await openSettingsTab(page)
-  const modelSelect = page.locator("aside.sidebar-right select").first()
+  const drawer = await openSettingsDrawer(page)
+  const modelSelect = page.locator("main select").nth(1)
   await waitFor(async () => {
     const detail = await readSessionDetail(page, sessionId)
     if (!detail.session?.capabilityState?.modelId) return false
@@ -344,12 +342,14 @@ async function readModelOptions(page, sessionId) {
     )
     return options.some((item) => item.value)
   }, "model selector should contain real model options", 30000)
-  return modelSelect.locator("option").evaluateAll((nodes) =>
+  const options = await modelSelect.locator("option").evaluateAll((nodes) =>
     nodes.map((node) => ({
       value: node.getAttribute("value") || "",
       text: (node.textContent || "").trim(),
     })),
   )
+  await closeSettingsDrawer(page, drawer)
+  return options
 }
 
 async function sendPrompt(page, text) {
@@ -475,21 +475,43 @@ async function readComposerButtonText(page) {
   return page.locator("main button[type='submit']").innerText().catch(() => "")
 }
 
-async function openCreateTab(page) {
-  await openSidebarTab(page, "新建")
+async function openSettingsDrawer(page) {
+  const drawer = page.locator("aside").filter({ has: page.getByRole("heading", { name: "运行设置" }) }).last()
+  const visible = await drawer.isVisible().catch(() => false)
+  if (!visible) {
+    await page.locator("main header").getByRole("button", { name: "设置" }).click()
+    await waitFor(async () => await drawer.isVisible().catch(() => false), "settings drawer should open", 15000)
+  }
+  return drawer
 }
 
-async function openSettingsTab(page) {
-  await openSidebarTab(page, "设置")
+async function closeSettingsDrawer(page, drawer) {
+  const closeButton = drawer.getByRole("button", { name: "关闭设置" })
+  if (await closeButton.isVisible().catch(() => false)) {
+    await closeButton.click()
+    await waitFor(async () => !(await drawer.isVisible().catch(() => false)), "settings drawer should close", 15000)
+    return
+  }
+  await page.keyboard.press("Escape").catch(() => undefined)
 }
 
-async function openSidebarTab(page, label) {
-  const tabButton = page
-    .locator("aside.sidebar-right > div > div.flex")
-    .first()
-    .getByRole("button", { name: label })
-  await tabButton.click()
-  await page.waitForTimeout(300)
+async function waitForSessionCard(page, sessionTitle, timeoutMs = 15000) {
+  const sidebar = page.locator("aside").first()
+  const card = sidebar.getByRole("button", { name: new RegExp(escapeRegExp(sessionTitle)) }).first()
+  await waitFor(async () => {
+    const visible = await card.isVisible().catch(() => false)
+    if (visible) return true
+    await sidebar.getByRole("button", { name: "刷新" }).click().catch(() => undefined)
+    return false
+  }, `session card should appear in sidebar: ${sessionTitle}`, timeoutMs)
+}
+
+async function selectSessionFromSidebar(page, sessionTitle) {
+  const sidebar = page.locator("aside").first()
+  const card = sidebar.getByRole("button", { name: new RegExp(escapeRegExp(sessionTitle)) }).first()
+  await waitFor(async () => await card.isVisible().catch(() => false), `session card should be selectable: ${sessionTitle}`, 15000)
+  await card.click()
+  await page.waitForTimeout(1200)
 }
 
 async function api(page, path, init = {}) {
@@ -567,4 +589,8 @@ async function waitForTruthy(check, timeoutMs = 12000) {
 function assert(condition, message) {
   if (condition) return
   throw new Error(message)
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }

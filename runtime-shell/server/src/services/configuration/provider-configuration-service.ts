@@ -57,6 +57,32 @@ export async function listUserPrivateStoredProviderConfigs(user: User) {
     .filter((value): value is RuntimeShellStoredProviderConfig => isStoredProviderConfig(value))
 }
 
+export async function listPlatformStoredProviderConfigs(user: User) {
+  const scope = platformSharedScope(user)
+  const items = await ConfigRepo.listConfigItems({
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    scopeLevel: scope.scopeLevel,
+    scopeId: scope.scopeId,
+    namespace: "provider",
+  })
+  return items
+    .map((item) => item.valueJson)
+    .filter((value): value is RuntimeShellStoredProviderConfig => isStoredProviderConfig(value))
+}
+
+export async function listVisibleStoredProviderConfigs(user: User) {
+  const [platformProviders, privateProviders] = await Promise.all([
+    listPlatformStoredProviderConfigs(user),
+    listUserPrivateStoredProviderConfigs(user),
+  ])
+  const platformIds = new Set(platformProviders.map((item) => item.providerId))
+  return [
+    ...platformProviders,
+    ...privateProviders.filter((item) => !platformIds.has(item.providerId)),
+  ]
+}
+
 export async function listVisibleProviderConfigs(user: User) {
   const [platformProviders, privateProviders] = await Promise.all([
     listReservedPlatformProviderConfigs(user),

@@ -23,7 +23,7 @@ className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
 | 区域 | 默认宽度 | xl 宽度 | 组件 | 内容 |
 |------|---------|---------|------|------|
 | **左侧栏** | 260px | 280px | `LeftSidebar` | RS 品牌标识、账号信息、会话操作按钮、最近会话列表 |
-| **聊天区** | min 400px, flex 1fr | min 480px, flex 1fr | `ChatView` | ConversationHeader → PhaseBanner → ConversationSection → ComposerSection |
+| **聊天区** | min 400px, flex 1fr | min 480px, flex 1fr | `ChatView` | `ConversationHeader` → `flash` 横幅（条件显示）→ `ConversationPhaseBanner` → `ConversationSection` → `ComposerSection` |
 | **右侧栏** | 320px | 340px | `RightSidebar` | 4 个 Tab：新建(workspace/session/fork/share) / 设置(worker/model/config/provider/mcp/skill/history) / 检查(metrics/permission/question/detail) / 事件(plan/stream) |
 | **小屏** | `<1100px` 堆叠为单列 | 同左 | 全部 | order-1: 左侧栏 → order-3: 聊天区 → order-2: 右侧栏 |
 
@@ -73,7 +73,7 @@ export const TABS = [
 #### 问题 4：输入区域（ComposerSection）冗长
 
 ```jsx
-// ComposerSection.jsx — 从上到下
+// chat/view/ComposerSection.jsx — 从上到下
 // ① 附件预览条
 // ② textarea (3 行, min-h-[88px])
 // ③ Prompt Mode 配置区 (当有 currentSessionId 时显示)
@@ -489,7 +489,7 @@ code: ({ inline, className, children, ...props }) => {
 
 ### 3.9 StatusBlock / ErrorBlock（状态/错误提示条）
 
-**文件**：`web/src/components/chat/blocks/StatusBlock.jsx` / `ErrorBlock.jsx`
+**文件**：`web/src/components/chat/blocks/StatusBlock.jsx` / `web/src/components/chat/blocks/ErrorBlock.jsx`
 
 **当前实现**：
 
@@ -1388,7 +1388,7 @@ flowchart LR
 ### 7.2 当前 ComposerSection 的问题
 
 ```jsx
-// ComposerSection.jsx — 当前结构（垂直堆叠 4 层）
+// web/src/components/chat/view/ComposerSection.jsx — 当前结构（垂直堆叠 4 层）
 <section className="rounded-[20px] border... p-3">
   {/* ① 附件列表 */}
   {attachments.length > 0 && <div>...</div>}
@@ -1472,7 +1472,7 @@ flowchart LR
 **改造**：将模式选择收拢为底部工具条左侧的 compact 下拉，选择即生效。
 
 ```jsx
-// 改造前（ComposerSection.jsx L253-273）
+// 改造前（web/src/components/chat/view/ComposerSection.jsx）
 {currentSessionId ? (
   <div className="grid gap-2 rounded-[12px] border... px-3 py-2.5">
     <span className="uppercase text-brand">Prompt Mode</span>
@@ -1599,7 +1599,7 @@ function ModelSelector({ models, currentModelId, onChange }) {
 
 #### 7.4.3 发送按钮改造：方形文字 → 圆形图标
 
-**当前**（ComposerSection.jsx L299-321）：
+**当前**（`web/src/components/chat/view/ComposerSection.jsx`）：
 ```jsx
 <button type="submit" disabled={sendDisabled}
   className="rounded-[10px] py-2 px-4 font-semibold text-sm bg-brand text-[#14100d] ...">
@@ -1653,7 +1653,7 @@ function SendButton({ disabled, phase }) {
 
 #### 7.4.4 调试模式隐藏
 
-**当前**：底部操作栏有"调试事件"复选框（ComposerSection.jsx L277-285）。
+**当前**：底部操作栏有"调试事件"复选框（`web/src/components/chat/view/ComposerSection.jsx`）。
 
 **改造**：调试功能移至设置抽屉或默认隐藏，普通用户不暴露。
 
@@ -1667,7 +1667,7 @@ function SendButton({ disabled, phase }) {
 
 #### 7.4.5 附件按钮图标化
 
-**当前**：文字按钮"添加附件"（ComposerSection.jsx L287-296）。
+**当前**：文字按钮"添加附件"（`web/src/components/chat/view/ComposerSection.jsx`）。
 
 **改造**：+ 图标按钮，与图中 UI 一致。
 
@@ -2145,7 +2145,7 @@ className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
 
 ### 11.2 停止生成按钮的位置
 
-**当前**（ConversationHeader.jsx L33-48）：停止生成按钮在对话区顶部的 header 中，与 "重新连接事件流" 按钮并列。用户需要从输入区视线移动到页面顶部才能找到它。
+**当前**（`web/src/components/chat/view/ConversationHeader.jsx`）：停止生成按钮在对话区顶部的 header 中，与 "重新连接事件流" 按钮并列。用户需要从输入区视线移动到页面顶部才能找到它。
 
 **ChatGPT / Claude / Kimi**：停止生成按钮出现在输入区附近（替换发送按钮的位置），或作为浮动按钮在消息底部。
 
@@ -2190,7 +2190,7 @@ className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
 
 ### 11.4 ConversationHeader 信息密度
 
-**当前**（ConversationHeader.jsx）：header 占约 80px 高度，显示 "Conversation" 标签 + 会话标题 + 会话 ID + 状态标签 + "重新连接事件流" 和 "暂停生成" 按钮。
+**当前**（`web/src/components/chat/view/ConversationHeader.jsx`）：header 占约 80px 高度，显示 "Conversation" 标签 + 会话标题 + 会话 ID + 状态标签 + "重新连接事件流" 和 "暂停生成" 按钮。
 
 **问题**：
 1. "Conversation" 标签和会话 ID 对普通用户无意义
@@ -2598,19 +2598,20 @@ runtime-shell 的对话 UX 分析（§3-§4, §10-§12, §14）覆盖了正常�
 
 ### 15.2 当前实现机制
 
-#### 15.2.1 SSE 连接管理（`sse-runtime.js`）
+#### 15.2.1 SSE 连接管理（`web/src/store/sse/sse-runtime.js`）
 
 ```
 connectSSE() 调用链:
-  MainLayout (currentSessionId 变化)
+  MainLayout（currentSessionId / sessionSelectionVersion 变化）
     → activateSession()
-      → openSession / loadSession / resumeSession
+      → openSession / loadHistory / resumeSession 等会话操作
         → loadSessionDetail()
-        → connectSSE(sessionId, afterEventId)
-          → 创建 EventSource → 监听 message/error 事件
+        → store.connectSSE()
+          → createEventSource(currentSessionId, onEvent, onError, lastEventId)
+          → 监听 message/error 事件
 ```
 
-**自动重连**：SSE `onerror` 触发后以指数退避重连（1s → 2s → 4s → 8s → 16s cap），但整个过程对用户**完全静默**。`isConnected` 状态已存入 store 但**没有任何 UI 组件消费它**。
+**自动重连**：SSE `onerror` 触发后会基于 `reconnectAttempt` 做指数退避重连，当前代码实际为 `Math.min(1000 * 2 ** reconnectAttempt, 15000)`，也就是约 1s → 2s → 4s → 8s → 15s 封顶。整个过程对用户**基本静默**；`isConnected` 与 `reconnectAttempt` 已存入 store，但目前没有可见的专用连接状态组件消费它们。
 
 **断连原因**：
 - SSE 自身网络错误（最常见）
@@ -2619,18 +2620,19 @@ connectSSE() 调用链:
 - Provider 配置变更
 - 用户登出
 
-#### 15.2.2 错误展示（ErrorBlock）
+#### 15.2.2 错误展示（`ErrorBlock`）
 
 ```
 ErrorBlock 触发路径:
-  SSE 推送事件: session_failed / worker_disconnected / session_error
-    → conversation-state.js pushBlock({ type: 'error', message: ... })
-      → ErrorBlock 组件渲染（红色文字 + 红色边框，纯文本，无可操作按钮）
+  SSE 推送事件进入 eventBuffer
+    → appendConversationEvent(...)
+    → finalizeConversationView(...)
+    → ErrorBlock 组件渲染（红色文字 + 红色边框，纯文本，无可操作按钮）
 ```
 
 #### 15.2.3 "重新连接事件流"按钮
 
-始终渲染在 ConversationHeader 中，**无任何状态判断**。无论当前是已连接还是已断开，按钮都一样。点击后直接调用 `connectSSE()`，无 loading 反馈。
+始终渲染在 `ConversationHeader` 中，**无任何状态判断**。无论当前是已连接、重连中还是已断开，按钮文案和样式都一样。点击后直接调用 `connectSSE()`，无 loading 反馈。
 
 ### 15.3 设计目标
 
@@ -2724,7 +2726,7 @@ function onError() {
 
 #### 15.4.3 PhaseBanner 融入连接状态
 
-当前 `deriveConversationPhase` 不检查 `isConnected`。当 SSE 断开且之前正在运行时，banner 会错误地保持"模型生成中"。修复：
+当前 `deriveConversationPhase` 不检查 `isConnected`。当 SSE 断开且之前正在运行时，`ConversationPhaseBanner` 可能继续显示"模型生成中"一类状态。这里更准确的表述是：**存在状态感知滞后的风险**，而不是所有断连场景都会稳定复现。可按下面方式修复：
 
 ```jsx
 // runtime-phase.js — 改造后
@@ -2942,7 +2944,7 @@ flowchart LR
 
 ---
 
-*文档基于 runtime-shell 源码分析生成，代码路径：`D:\开发工作\opencode\runtime-shell\web\src\`*
+*文档基于 runtime-shell 源码分析生成，核心代码路径：`D:\开发工作\opencode\runtime-shell\web\src\`。其中聊天视图子组件位于 `components/chat/view/`，SSE 与运行阶段逻辑位于 `store/`。*
 *生成时间：2026-06-01*
 *修订：2026-06-01 — 新增 §9-§13 矛盾修正 + 会话/对话/冷启动 UX 专项*
 *修订：2026-06-01 — §14 工作区与会话创建简化（参考 WorkBuddy）；§2.3/§2.4/§2.7/§5.1/§5.2/§6.3/§8.2 矛盾已实际修正*

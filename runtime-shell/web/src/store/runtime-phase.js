@@ -90,6 +90,16 @@ export function deriveRunningStateFromEvents(events) {
 }
 
 export function deriveConversationPhase(input) {
+  if (!input.isConnected && input.reconnectAttempt > 0 && (input.isSubmitting || input.isRunning)) {
+    return {
+      id: 'reconnecting',
+      label: '重连中',
+      detail: `会话连接已中断，正在进行第 ${input.reconnectAttempt} 次重连。`,
+      canCancel: false,
+      isBusy: true,
+    }
+  }
+
   if (input.isCancelling) {
     return {
       id: 'cancelling',

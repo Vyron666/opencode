@@ -12,6 +12,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { Config, type LocalWorkerConfig } from "../config"
 import { createLogger } from "../log"
+import { getSandboxWorkspace } from "../services/sandbox/sandbox-workspace-service"
 import type { BusinessSession, PendingPermission, PendingQuestion } from "../types"
 import type { ManagedRuntimeClient } from "./runtime-client"
 
@@ -44,10 +45,12 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   onQuestionRequested(_handler: (question: PendingQuestion) => void) {}
 
   async newSession(cwd: string): Promise<NewSessionResponse> {
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/open-session", {
       businessSessionId: this.session.id,
       workerId: this.session.workerId,
       workspacePath: cwd,
+      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
       configContent: this.configContent,
     })
     this.bindRemote(response)
@@ -60,10 +63,12 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async loadSession(cwd: string, sessionId: string): Promise<LoadSessionResponse> {
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/load-session", {
       businessSessionId: this.session.id,
       workerId: this.session.workerId,
       workspacePath: cwd,
+      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
       acpSessionId: sessionId,
       configContent: this.configContent,
     })
@@ -76,10 +81,12 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async resumeSession(cwd: string, sessionId: string): Promise<ResumeSessionResponse> {
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/resume-session", {
       businessSessionId: this.session.id,
       workerId: this.session.workerId,
       workspacePath: cwd,
+      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
       acpSessionId: sessionId,
       configContent: this.configContent,
     })
@@ -92,10 +99,12 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async forkSession(cwd: string, sessionId: string): Promise<ForkSessionResponse> {
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/fork-session", {
       businessSessionId: this.session.id,
       workerId: this.session.workerId,
       workspacePath: cwd,
+      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
       sourceAcpSessionId: sessionId,
       configContent: this.configContent,
     })

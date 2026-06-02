@@ -81,7 +81,7 @@ Bun.serve({
       }
       return json({ message: "not found" }, 404)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = describeError(error)
       log.warn("worker agent request failed", { message })
       return json({ message }, 500)
     }
@@ -101,4 +101,17 @@ function json(payload: unknown, status = 200) {
       "content-type": "application/json; charset=utf-8",
     },
   })
+}
+
+function describeError(error: unknown) {
+  if (!(error instanceof Error)) return String(error)
+  const detail = error as Error & {
+    cause?: unknown
+  }
+  if (detail.cause === undefined) return detail.message
+  try {
+    return `${detail.message} | cause=${JSON.stringify(detail.cause)}`
+  } catch {
+    return `${detail.message} | cause=${String(detail.cause)}`
+  }
 }

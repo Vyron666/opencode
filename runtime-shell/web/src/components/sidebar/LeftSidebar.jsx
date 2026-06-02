@@ -1,141 +1,182 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../../store'
 import ConfirmDialog from '../ConfirmDialog.jsx'
-import { roleLabel, useViewerContext } from './sidebar-support.jsx'
+import { roleLabel, secondaryButtonClassName, useViewerContext } from './sidebar-support.jsx'
 
 export default function LeftSidebar() {
   const user = useStore((state) => state.user)
   const sessions = useStore((state) => state.sessions)
   const currentSessionId = useStore((state) => state.currentSessionId)
+  const createQuickSession = useStore((state) => state.createQuickSession)
   const logout = useStore((state) => state.logout)
-  const openSession = useStore((state) => state.openSession)
   const loadHistory = useStore((state) => state.loadHistory)
   const resumeSession = useStore((state) => state.resumeSession)
   const closeSession = useStore((state) => state.closeSession)
   const loadSessions = useStore((state) => state.loadSessions)
   const setCurrentSession = useStore((state) => state.setCurrentSession)
   const pendingSessionAction = useStore((state) => state.pendingSessionAction)
-  const { canManageSession, canOpenSession, canLoadSession, canResumeSession, isSharedSession, owner } = useViewerContext()
+  const { canManageSession, canLoadSession, canResumeSession, isSharedSession, owner } = useViewerContext()
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const hasCurrentSession = Boolean(currentSessionId)
+  const filteredSessions = useMemo(() => {
+    const trimmedQuery = query.trim().toLowerCase()
+    if (!trimmedQuery) return sessions
+    return sessions.filter((session) => {
+      const title = String(session.title || '').toLowerCase()
+      const preview = String(readSessionPreview(session) || '').toLowerCase()
+      return title.includes(trimmedQuery) || preview.includes(trimmedQuery)
+    })
+  }, [query, sessions])
 
   return (
-    <aside className="min-h-0 h-[calc(100dvh-28px)] grid gap-2.5 content-start overflow-y-auto overflow-x-hidden max-[1100px]:order-1 max-[1100px]:h-auto max-[1100px]:overflow-visible">
-      <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
-        <div className="flex gap-3 items-start">
+    <aside className="min-h-0 h-[calc(100dvh-28px)] flex flex-col gap-2.5 overflow-hidden max-[1024px]:order-1 max-[1024px]:h-auto">
+      <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 grid gap-3">
+        <div className="flex items-center gap-3">
           <div
-            className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
+            className="w-11 h-11 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
             style={{ background: 'linear-gradient(135deg, #d4a05a, #9c6e38)', boxShadow: '0 0 0 1px rgba(212,160,90,0.14), 0 4px 20px rgba(212,160,90,0.08)' }}
             aria-hidden="true"
           >
             RS
           </div>
-          <div>
-            <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Runtime Workspace</span>
-            <h2 className="mt-0.5 text-sm font-bold">{'\u4f1a\u8bdd\u5bfc\u822a'}</h2>
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">{'\u9009\u62e9\u4f1a\u8bdd\u3001\u521b\u5efa\u65b0\u4f1a\u8bdd\uff0c\u6216\u7ee7\u7eed\u5386\u53f2\u4e0a\u4e0b\u6587\u3002'}</p>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Runtime Shell</div>
+            <div className="text-sm font-bold truncate">会话</div>
           </div>
-        </div>
-      </div>
-
-      {user ? (
-        <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div>
-              <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Account</span>
-              <h3 className="text-sm font-bold mt-0.5">{'\u5f53\u524d\u767b\u5f55'}</h3>
-            </div>
-            <button
-              onClick={() => setConfirmLogout(true)}
-              aria-label={'\u9000\u51fa\u767b\u5f55'}
-              className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              {'\u9000\u51fa'}
-            </button>
-          </div>
-          <div className="grid gap-1">
-            <div className="font-bold text-sm">{user.displayName}</div>
-            <div className="text-xs text-[var(--text-muted)]">{roleLabel(user.role)}</div>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
-        <div className="mb-3">
-          <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Actions</span>
-          <h3 className="text-sm font-bold mt-0.5">{'\u4f1a\u8bdd\u64cd\u4f5c'}</h3>
-        </div>
-        <div className="grid gap-2">
-          <button
-            onClick={() => openSession()}
-            aria-label={'\u6253\u5f00\u5f53\u524d\u9009\u4e2d\u4f1a\u8bdd'}
-            disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canOpenSession}
-            className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow focus-visible:ring-2 focus-visible:ring-brand"
-          >
-            {pendingSessionAction === 'open' ? '\u6253\u5f00\u4e2d...' : '\u6253\u5f00\u5f53\u524d\u4f1a\u8bdd'}
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => loadHistory()}
-              aria-label={'\u52a0\u8f7d\u4f1a\u8bdd\u5386\u53f2'}
-              disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canLoadSession}
-              className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {pendingSessionAction === 'load' ? '\u52a0\u8f7d\u4e2d...' : '\u52a0\u8f7d\u5386\u53f2'}
-            </button>
-            <button
-              onClick={() => resumeSession()}
-              aria-label={'\u6062\u590d\u4f1a\u8bdd'}
-              disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canResumeSession}
-              className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {pendingSessionAction === 'resume' ? '\u6062\u590d\u4e2d...' : '\u6062\u590d\u4f1a\u8bdd'}
-            </button>
-          </div>
-          <button
-            onClick={() => setConfirmClose(true)}
-            aria-label={'\u5173\u95ed\u5f53\u524d\u4f1a\u8bdd'}
-            disabled={Boolean(pendingSessionAction) || !canManageSession}
-            className="text-xs px-3 py-1.5 rounded-[8px] bg-danger/10 text-[#e88a7a] border border-danger/20 hover:bg-danger/20 transition-colors focus-visible:ring-2 focus-visible:ring-danger disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {pendingSessionAction === 'close' ? '\u5173\u95ed\u4e2d...' : '\u5173\u95ed\u5f53\u524d\u4f1a\u8bdd'}
-          </button>
-          {isSharedSession ? (
-            <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-              {`\u5f53\u524d\u4f1a\u8bdd\u6765\u81ea\u5171\u4eab\u5de5\u4f5c\u533a\u534f\u4f5c${owner?.displayName ? `\uff0c\u5171\u4eab\u4eba\uff1a${owner.displayName}` : ''}\u3002\u4f60\u53ef\u4ee5\u7ee7\u7eed\u5bf9\u8bdd\u548c\u5904\u7406\u4ea4\u4e92\uff0c\u4f46\u4e0d\u80fd\u5173\u95ed\u8be5\u4f1a\u8bdd\u3002`}
-            </div>
-          ) : !hasCurrentSession ? (
-            <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-              {'\u8bf7\u5148\u4ece\u4e0b\u65b9\u4f1a\u8bdd\u5217\u8868\u4e2d\u9009\u62e9\u4e00\u4e2a\u4f1a\u8bdd\uff0c\u518d\u6267\u884c\u6253\u5f00\u3001\u52a0\u8f7d\u5386\u53f2\u6216\u6062\u590d\u64cd\u4f5c\u3002'}
+          {user ? (
+            <div className="min-w-0 text-right">
+              <div className="text-sm font-semibold truncate">{user.displayName}</div>
+              <div className="text-[11px] text-[var(--text-muted)]">{roleLabel(user.role)}</div>
             </div>
           ) : null}
+          {user ? (
+            <button
+              type="button"
+              onClick={() => setConfirmLogout(true)}
+              aria-label="退出登录"
+              className="shrink-0 text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              退出
+            </button>
+          ) : null}
         </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void createQuickSession()}
+            disabled={Boolean(pendingSessionAction)}
+            className="flex-1 rounded-[14px] px-4 py-3 text-sm font-semibold bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {pendingSessionAction === 'create' ? '创建中...' : '新对话'}
+          </button>
+
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setActionsOpen((current) => !current)}
+              className="h-[46px] px-3 rounded-[14px] border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+              aria-label="打开会话操作"
+            >
+              ...
+            </button>
+
+            {actionsOpen ? (
+              <div className="absolute right-0 top-[52px] z-20 w-48 rounded-[16px] border border-[var(--line)] bg-[var(--surface)] shadow-2xl p-2 grid gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    void loadHistory()
+                  }}
+                  disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canLoadSession}
+                  className={`${secondaryButtonClassName} w-full justify-start text-left`}
+                >
+                  {pendingSessionAction === 'load' ? '加载中...' : '加载历史'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    void resumeSession()
+                  }}
+                  disabled={Boolean(pendingSessionAction) || !hasCurrentSession || !canResumeSession}
+                  className={`${secondaryButtonClassName} w-full justify-start text-left`}
+                >
+                  {pendingSessionAction === 'resume' ? '恢复中...' : '恢复会话'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    setConfirmClose(true)
+                  }}
+                  disabled={Boolean(pendingSessionAction) || !canManageSession}
+                  className="w-full text-left text-xs px-3 py-1.5 rounded-[8px] bg-danger/10 text-[#e88a7a] border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {pendingSessionAction === 'close' ? '关闭中...' : '关闭当前会话'}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {isSharedSession ? (
+          <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            {`当前会话来自共享工作区协作${owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。`}
+          </div>
+        ) : !hasCurrentSession ? (
+          <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            先从会话列表中选择一个会话，再执行加载历史或恢复操作。
+          </div>
+        ) : null}
       </div>
 
-      <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4">
+      <div className="min-h-0 flex-1 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 flex flex-col">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Sessions</span>
-            <h3 className="text-sm font-bold mt-0.5">{'\u6700\u8fd1\u6d3b\u52a8'}</h3>
+            <h3 className="text-sm font-bold mt-0.5">最近活动</h3>
           </div>
           <button
-            onClick={() => loadSessions()}
-            aria-label={'\u5237\u65b0\u4f1a\u8bdd\u5217\u8868'}
+            type="button"
+            onClick={() => void loadSessions()}
+            aria-label="刷新会话列表"
             className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
           >
-            {'\u5237\u65b0'}
+            刷新
           </button>
         </div>
-        {/* 中文/English: navigation must stay available even if the selected session is stuck opening. */}
-        <div className="grid gap-2 max-h-[300px] overflow-y-auto">
-          {sessions.length === 0 ? (
+
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索会话..."
+          className="w-full rounded-[12px] border border-[var(--line-strong)] px-3 py-2 bg-black/35 text-sm outline-none focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
+        />
+
+        <div className="grid gap-2 flex-1 min-h-0 overflow-y-auto mt-3">
+          {filteredSessions.length === 0 ? (
             <div className="text-xs text-[var(--text-muted)] text-center py-4 border border-dashed border-[var(--line-strong)] rounded-[14px]">
-              {'\u6682\u65e0\u4f1a\u8bdd\uff0c\u8bf7\u5148\u521b\u5efa\u3002'}
+              {sessions.length === 0 ? '暂无会话，请先创建。' : '没有匹配的会话。'}
             </div>
           ) : null}
-          {sessions.map((session) => {
+
+          {filteredSessions.map((session) => {
             const isActive = currentSessionId === session.id
+            const statusLabel =
+              session.status === 'active' || session.status === 'waiting_input'
+                ? '进行中'
+                : session.status === 'cancelling'
+                  ? '停止中'
+                  : session.status === 'opening' || session.status === 'created'
+                    ? '准备中'
+                    : session.status === 'completed'
+                      ? '已完成'
+                      : '异常'
             const dotColor =
               session.status === 'active' || session.status === 'waiting_input' || session.status === 'cancelling'
                 ? '#5a9e7c'
@@ -144,31 +185,29 @@ export default function LeftSidebar() {
                   : session.status === 'completed'
                     ? '#7a6e60'
                     : '#c44a3a'
+            const title = session.title || '新对话'
+            const preview = readSessionPreview(session) || (session.visibility === 'workspace_share' ? '共享工作区会话' : '点击继续对话')
+
             return (
               <button
                 key={session.id}
-                onClick={() => setCurrentSession(session.id)}
-                aria-label={`\u9009\u62e9\u4f1a\u8bdd: ${session.title}`}
+                type="button"
+                onClick={() => {
+                  setActionsOpen(false)
+                  setCurrentSession(session.id)
+                }}
+                aria-label={`选择会话: ${title}`}
                 aria-current={isActive ? 'true' : undefined}
                 className={`w-full text-left p-3 rounded-[14px] border text-sm transition-all ${
                   isActive ? 'border-brand bg-brand/10 shadow-glow' : 'border-[var(--line)] bg-black/30 hover:bg-black/50 hover:border-[var(--line-strong)]'
                 }`}
               >
-                <div className="font-semibold text-sm">{session.title}</div>
-                <div className="mt-1.5 text-xs text-[var(--text-muted)] flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} aria-hidden="true"></span>
-                  <span>{session.status}</span>
-                  <span aria-hidden="true">/</span>
-                  <span>{session.binding?.transport || 'unbound'}</span>
-                  <span aria-hidden="true">/</span>
-                  <span>{`${session.eventCount || 0} \u4e8b\u4ef6`}</span>
-                  {session.visibility === 'workspace_share' ? (
-                    <>
-                      <span aria-hidden="true">/</span>
-                      <span>{'\u5171\u4eab\u5de5\u4f5c\u533a'}</span>
-                    </>
-                  ) : null}
+                  <div className="font-semibold text-sm truncate flex-1">{title}</div>
+                  <span className="text-[10px] text-[var(--text-muted)] shrink-0">{statusLabel}</span>
                 </div>
+                <div className="mt-1.5 text-xs text-[var(--text-muted)] truncate">{preview}</div>
               </button>
             )
           })}
@@ -177,9 +216,9 @@ export default function LeftSidebar() {
 
       <ConfirmDialog
         open={confirmLogout}
-        title={'\u9000\u51fa\u767b\u5f55'}
-        message={'\u786e\u5b9a\u8981\u9000\u51fa\u5f53\u524d\u8d26\u53f7\u5417\uff1f'}
-        confirmLabel={'\u9000\u51fa'}
+        title="退出登录"
+        message="确定要退出当前账号吗？"
+        confirmLabel="退出"
         onConfirm={() => {
           setConfirmLogout(false)
           logout()
@@ -189,9 +228,9 @@ export default function LeftSidebar() {
       />
       <ConfirmDialog
         open={confirmClose}
-        title={'\u5173\u95ed\u4f1a\u8bdd'}
-        message={'\u786e\u5b9a\u8981\u5173\u95ed\u5f53\u524d\u4f1a\u8bdd\u5417\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002'}
-        confirmLabel={'\u5173\u95ed'}
+        title="关闭会话"
+        message="确定要关闭当前会话吗？此操作不可撤销。"
+        confirmLabel="关闭"
         onConfirm={() => {
           setConfirmClose(false)
           closeSession()
@@ -201,4 +240,10 @@ export default function LeftSidebar() {
       />
     </aside>
   )
+}
+
+function readSessionPreview(session) {
+  if (typeof session?.lastMessagePreview === 'string' && session.lastMessagePreview) return session.lastMessagePreview
+  if (typeof session?.capabilityState?.sessionInfo?.lastMessagePreview === 'string') return session.capabilityState.sessionInfo.lastMessagePreview
+  return ''
 }
