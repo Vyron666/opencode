@@ -7,7 +7,9 @@ import {
   findSandboxDiffById,
   updateSandboxDiffStatus,
 } from "../../repos/sandbox-diff-repo"
-import type { BusinessSession, SandboxDiff, SandboxDiffPolicyResult, SandboxDiffSummary, User } from "../../types"
+import type { BusinessSession, SandboxDiff, SandboxDiffSummary, User } from "../../types"
+import { auditService } from "../store/store-singleton"
+import { evaluateSandboxDiffPolicy } from "./sandbox-policy-service"
 import { getSandboxWorkspace } from "./sandbox-workspace-service"
 
 export async function createSessionDiff(input: {
@@ -17,7 +19,7 @@ export async function createSessionDiff(input: {
   const sandboxWorkspace = await getSandboxWorkspace(input.session.id)
   if (!sandboxWorkspace || sandboxWorkspace.status !== "ready") return
   const summary = await buildDiffSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath)
-  const policyResult = evaluateDiffPolicy(summary)
+  const policyResult = evaluateSandboxDiffPolicy(summary)
   const artifactDir = path.join(Config.storageDir, "sandbox-diff")
   await mkdir(artifactDir, { recursive: true })
   const artifactPath = path.join(artifactDir, `${input.session.id}.json`)
@@ -42,6 +44,36 @@ export async function createSessionDiff(input: {
     expiresAt: sandboxWorkspace.expiresAt,
   }
   await createSandboxDiff(diff)
+  void auditService.appendAuditLog({
+    tenantId: input.session.tenantId,
+    organizationId: input.session.organizationId,
+    projectId: input.session.projectId,
+    userId: input.user.id,
+    businessSessionId: input.session.id,
+    action: "file.diff.generated",
+    resourceType: "sandbox_diff",
+    resourceId: diff.id,
+    detail: {
+      summary,
+      policyResult,
+    },
+  })
+  if (policyResult.requiresReview) {
+    void auditService.appendAuditLog({
+      tenantId: input.session.tenantId,
+      organizationId: input.session.organizationId,
+      projectId: input.session.projectId,
+      userId: input.user.id,
+      businessSessionId: input.session.id,
+      action: "policy.denied",
+      resourceType: "policy",
+      resourceId: diff.id,
+      detail: {
+        policy: "sandbox_diff_review",
+        reasons: policyResult.reasons,
+      },
+    })
+  }
   return diff
 }
 
@@ -63,6 +95,18 @@ export async function rejectSessionDiff(input: {
     status: "rejected",
     updatedAt: now,
     rejectedAt: now,
+  })
+  void auditService.appendAuditLog({
+    tenantId: diff.tenantId,
+    organizationId: diff.organizationId,
+    projectId: diff.projectId,
+    businessSessionId: diff.businessSessionId,
+    action: "file.diff.rejected",
+    resourceType: "sandbox_diff",
+    resourceId: diff.id,
+    detail: {
+      reasons: diff.policyResult.reasons,
+    },
   })
   return findSandboxDiffById(diff.id)
 }
@@ -98,6 +142,19 @@ export async function applySessionDiff(input: {
     appliedAt: now,
     idempotencyKey: input.idempotencyKey,
   })
+  void auditService.appendAuditLog({
+    tenantId: diff.tenantId,
+    organizationId: diff.organizationId,
+    projectId: diff.projectId,
+    businessSessionId: diff.businessSessionId,
+    action: "file.diff.applied",
+    resourceType: "sandbox_diff",
+    resourceId: diff.id,
+    detail: {
+      idempotencyKey: input.idempotencyKey,
+      summary: diff.summary,
+    },
+  })
   return findSandboxDiffById(diff.id)
 }
 
@@ -121,17 +178,6 @@ async function buildDiffSummary(realPath: string, sandboxPath: string): Promise<
     addedFiles: addedFiles.sort(),
     modifiedFiles: modifiedFiles.sort(),
     deletedFiles: deletedFiles.sort(),
-  }
-}
-
-function evaluateDiffPolicy(summary: SandboxDiffSummary): SandboxDiffPolicyResult {
-  const reasons: string[] = []
-  const touched = [...summary.addedFiles, ...summary.modifiedFiles, ...summary.deletedFiles]
-  if (summary.deletedFiles.length >= 20) reasons.push("too_many_deletions")
-  if (touched.some((file) => isSensitivePath(file))) reasons.push("sensitive_path")
-  return {
-    requiresReview: reasons.length > 0,
-    reasons,
   }
 }
 
@@ -165,16 +211,6 @@ async function listRelativeFiles(root: string, current = root): Promise<string[]
     files.push(relative)
   }
   return files
-}
-
-function isSensitivePath(relativePath: string) {
-  const normalized = relativePath.replace(/\\/g, "/")
-  return normalized === ".env"
-    || normalized.startsWith(".env.")
-    || normalized.endsWith(".pem")
-    || normalized.endsWith(".key")
-    || normalized.startsWith(".opencode/")
-    || normalized.startsWith(".git/")
 }
 
 function requireSafeWorkspacePath(root: string, target: string) {

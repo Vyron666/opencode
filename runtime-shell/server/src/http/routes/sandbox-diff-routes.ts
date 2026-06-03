@@ -72,6 +72,7 @@ export function registerSandboxDiffRoutes(app: Hono) {
 }
 
 function replySandboxDiffError(c: Context, reqId: string, reason: string) {
+  if (reason === "quota_exceeded") return c.json(jsonError("quota exceeded", 429, reqId), 429)
   if (reason === "session_not_found") return c.json(jsonError("session not found", 404, reqId), 404)
   if (reason === "sandbox_workspace_not_found") return c.json(jsonError("sandbox workspace not found", 409, reqId), 409)
   if (reason === "sandbox_diff_not_found") return c.json(jsonError("sandbox diff not found", 404, reqId), 404)

@@ -7,8 +7,17 @@ import {
   getWorkerHeartbeatDetailForUser,
 } from "../../services/system/runtime-governance-query-service"
 import { heartbeatWorkerForUser, registerWorkerForUser } from "../../services/worker/worker-service"
-import { getHealthOverview, getWorkerOverviewForUser } from "../../services/system/system-service"
-import { workerHeartbeatSchema, workerRegisterSchema } from "../schemas"
+import {
+  cleanupSandboxesForUser,
+  getHealthOverview,
+  getQueueOverviewForUser,
+  getQuotaOverviewForUser,
+  getSandboxOverviewForUser,
+  getWorkerOverviewForUser,
+  closeSandboxForUser,
+  updateQuotaForUser,
+} from "../../services/system/system-service"
+import { quotaPolicyUpdateSchema, sandboxCleanupSchema, workerHeartbeatSchema, workerRegisterSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
@@ -46,6 +55,7 @@ export function registerSystemRoutes(app: Hono) {
       version: body.data.version,
       capacityTotal: body.data.capacityTotal,
       name: body.data.name,
+      warmPoolTarget: body.data.warmPoolTarget,
     })
     if (!result.ok) {
       if (result.reason === "forbidden") {
@@ -77,6 +87,8 @@ export function registerSystemRoutes(app: Hono) {
       workerNodeId: body.data.workerNodeId,
       capacityUsed: body.data.capacityUsed,
       status: body.data.status,
+      resourceSummary: body.data.resourceSummary,
+      warmPoolReady: body.data.warmPoolReady,
     })
     if (!result.ok) {
       if (result.reason === "forbidden") {
@@ -88,6 +100,97 @@ export function registerSystemRoutes(app: Hono) {
       return c.json(jsonError("failed to update worker heartbeat", 500, reqId), 500)
     }
     return c.json(jsonOk({ worker: result.worker }, reqId))
+  })
+
+  app.get("/api/system/sandboxes", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const limit = Number(c.req.query("limit") || "100")
+    const result = await getSandboxOverviewForUser(user, limit)
+    if (!result.ok) return c.json(jsonError("forbidden", 403, reqId), 403)
+    return c.json(jsonOk({ items: result.items, summary: result.summary }, reqId))
+  })
+
+  app.post("/api/system/sandbox/:id/close", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const result = await closeSandboxForUser({
+      user,
+      sandboxId: c.req.param("id"),
+    })
+    if (!result.ok) {
+      if (result.reason === "forbidden") return c.json(jsonError("forbidden", 403, reqId), 403)
+      if (result.reason === "sandbox_not_found" || result.reason === "session_not_found" || result.reason === "worker_not_found") {
+        return c.json(jsonError(result.reason, 404, reqId), 404)
+      }
+      return c.json(jsonError(result.reason, 409, reqId), 409)
+    }
+    return c.json(jsonOk(result, reqId))
+  })
+
+  app.post("/api/system/sandbox/cleanup", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = sandboxCleanupSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid sandbox cleanup payload", 400, reqId, body.error.flatten()), 400)
+    }
+    const result = await cleanupSandboxesForUser({
+      user,
+      limit: body.data.limit,
+      recycleWarmPoolReady: body.data.recycleWarmPoolReady,
+    })
+    if (!result.ok) return c.json(jsonError("forbidden", 403, reqId), 403)
+    return c.json(jsonOk({
+      cleanedSessionIds: result.cleanedSessionIds,
+      warmPoolCleanup: result.warmPoolCleanup,
+    }, reqId))
+  })
+
+  app.get("/api/system/queues", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const limit = Number(c.req.query("limit") || "100")
+    const result = await getQueueOverviewForUser(user, limit)
+    if (!result.ok) return c.json(jsonError("forbidden", 403, reqId), 403)
+    return c.json(jsonOk({ items: result.items }, reqId))
+  })
+
+  app.get("/api/system/quotas", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const result = await getQuotaOverviewForUser(user)
+    if (!result.ok) return c.json(jsonError("forbidden", 403, reqId), 403)
+    return c.json(jsonOk({ items: result.items }, reqId))
+  })
+
+  app.post("/api/system/quotas/update", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = quotaPolicyUpdateSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid quota update payload", 400, reqId, body.error.flatten()), 400)
+    }
+    const result = await updateQuotaForUser({
+      user,
+      tenantId: body.data.tenantId,
+      organizationId: body.data.organizationId,
+      scopeType: body.data.scopeType,
+      scopeId: body.data.scopeId,
+      enabled: body.data.enabled,
+      maxActiveSessions: body.data.maxActiveSessions,
+      maxQueuedOperations: body.data.maxQueuedOperations,
+      maxRunningSandboxes: body.data.maxRunningSandboxes,
+      maxWarmPoolPerWorker: body.data.maxWarmPoolPerWorker,
+    })
+    if (!result.ok) return c.json(jsonError("forbidden", 403, reqId), 403)
+    return c.json(jsonOk(result.item, reqId))
   })
 
   app.post("/api/runtime-governance/cleanup", async (c) => {

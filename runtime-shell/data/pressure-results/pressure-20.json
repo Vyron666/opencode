@@ -1,0 +1,1032 @@
+﻿{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:3100",
+  "username": "admin",
+  "projectId": "default",
+  "baseline": {
+    "collectedAt": "2026-06-02T14:13:41.824Z",
+    "workerCount": 3,
+    "workers": [
+      {
+        "id": "worker_local",
+        "workerCode": "worker_local",
+        "status": "ready",
+        "capacity": 8,
+        "activeSessionCount": 0,
+        "warmPoolReady": 2,
+        "warmPoolTarget": 2,
+        "queuedOperationCount": 2,
+        "runningSandboxCount": 2
+      },
+      {
+        "id": "worker_local_2",
+        "workerCode": "worker_local_2",
+        "status": "ready",
+        "capacity": 8,
+        "activeSessionCount": 0,
+        "warmPoolReady": 2,
+        "warmPoolTarget": 2,
+        "queuedOperationCount": 3,
+        "runningSandboxCount": 0
+      },
+      {
+        "id": "worker_local_3",
+        "workerCode": "worker_local_3",
+        "status": "ready",
+        "capacity": 8,
+        "activeSessionCount": 0,
+        "warmPoolReady": 2,
+        "warmPoolTarget": 2,
+        "queuedOperationCount": 2,
+        "runningSandboxCount": 9
+      }
+    ],
+    "sandboxSummary": {
+      "running": 1,
+      "warm": 6,
+      "leased": 1,
+      "preparing": 0,
+      "closing": 0,
+      "closed": 113,
+      "failed": 0
+    },
+    "queueCount": 109,
+    "quotaCount": 1
+  },
+  "scenarios": [
+    {
+      "concurrency": 20,
+      "scenarioLabel": "pressure-20-1780409621825",
+      "startedAt": "2026-06-02T14:13:41.825Z",
+      "finishedAt": "2026-06-02T14:15:35.810Z",
+      "summary": {
+        "createdSessions": 20,
+        "openedSessions": 20,
+        "activeSessions": 20,
+        "createStatuses": {
+          "200": 20
+        },
+        "openStatuses": {
+          "200": 20
+        },
+        "terminalStatuses": {
+          "active": 20
+        },
+        "workerSpread": {
+          "worker_local_3": 17,
+          "worker_local": 3
+        },
+        "createMs": {
+          "count": 20,
+          "avg": 5175,
+          "p50": 5224,
+          "p95": 5261,
+          "max": 5264
+        },
+        "openRequestMs": {
+          "count": 20,
+          "avg": 30539,
+          "p50": 31694,
+          "p95": 38303,
+          "max": 38462
+        },
+        "openToActiveMs": {
+          "count": 20,
+          "avg": 39997,
+          "p50": 39997,
+          "p95": 39997,
+          "max": 40001
+        },
+        "createToActiveMs": {
+          "count": 20,
+          "avg": 45262,
+          "p50": 45262,
+          "p95": 45262,
+          "max": 45266
+        },
+        "operationQueueDelayMs": {
+          "count": 20,
+          "avg": 704,
+          "p50": 725,
+          "p95": 760,
+          "max": 768
+        },
+        "operationRunMs": {
+          "count": 20,
+          "avg": 28436,
+          "p50": 30701,
+          "p95": 36733,
+          "max": 36913
+        },
+        "operationTotalMs": {
+          "count": 20,
+          "avg": 29140,
+          "p50": 31395,
+          "p95": 37446,
+          "max": 37655
+        },
+        "sandboxCreateToRunningMs": {
+          "count": 20,
+          "avg": 28909,
+          "p50": 31172,
+          "p95": 37251,
+          "max": 37495
+        },
+        "maxQueuedOperations": 0,
+        "maxRunningOperations": 7,
+        "maxPreparingSandboxes": 0,
+        "maxRunningSandboxes": 21,
+        "finalSandboxSummary": {
+          "running": 21,
+          "warm": 6,
+          "leased": 4,
+          "preparing": 0,
+          "closing": 0,
+          "closed": 113,
+          "failed": 0
+        },
+        "finalWorkers": [
+          {
+            "id": "worker_local",
+            "status": "ready",
+            "activeSessionCount": 3,
+            "queuedOperationCount": 2,
+            "runningSandboxCount": 4,
+            "warmPoolReady": 2
+          },
+          {
+            "id": "worker_local_2",
+            "status": "ready",
+            "activeSessionCount": 0,
+            "queuedOperationCount": 3,
+            "runningSandboxCount": 0,
+            "warmPoolReady": 2
+          },
+          {
+            "id": "worker_local_3",
+            "status": "busy",
+            "activeSessionCount": 17,
+            "queuedOperationCount": 2,
+            "runningSandboxCount": 17,
+            "warmPoolReady": 2
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "index": 0,
+          "sessionId": "bs_45a1cd4d986e4b608ce1c9d80c9140ec",
+          "workspaceId": "workspace_42bbed9c6b6d4f2180da92ca4d2411fd",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5244,
+          "openRequestMs": 38101,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 759,
+          "operationRunMs": 31002,
+          "operationTotalMs": 31761,
+          "sandboxCreateToRunningMs": 31440
+        },
+        {
+          "index": 1,
+          "sessionId": "bs_f936a5b867954fa88a91f2c9182a4e6d",
+          "workspaceId": "workspace_65038754bef64698818ea0a759af344c",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5205,
+          "openRequestMs": 38303,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 713,
+          "operationRunMs": 36733,
+          "operationTotalMs": 37446,
+          "sandboxCreateToRunningMs": 37251
+        },
+        {
+          "index": 2,
+          "sessionId": "bs_39a53861b13841c1b0fe0acb1078395b",
+          "workspaceId": "workspace_7d69d90c6d4b447db0844f8d77a86529",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5212,
+          "openRequestMs": 17176,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 601,
+          "operationRunMs": 17547,
+          "operationTotalMs": 18148,
+          "sandboxCreateToRunningMs": 18007
+        },
+        {
+          "index": 3,
+          "sessionId": "bs_58ebda23b30f43a7851e3c5493826feb",
+          "workspaceId": "workspace_12109712bb774c53b7fe08f332ab7566",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 4150,
+          "openRequestMs": 31944,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 729,
+          "operationRunMs": 30928,
+          "operationTotalMs": 31657,
+          "sandboxCreateToRunningMs": 31395
+        },
+        {
+          "index": 4,
+          "sessionId": "bs_2548d3a6d07e458e823a0dce49cedb7f",
+          "workspaceId": "workspace_cfd08f1c084542b4ae57499d364b3f96",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5249,
+          "openRequestMs": 27838,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 612,
+          "operationRunMs": 27335,
+          "operationTotalMs": 27947,
+          "sandboxCreateToRunningMs": 27685
+        },
+        {
+          "index": 5,
+          "sessionId": "bs_5d6c2ef4a40344f9bf5d90540163cff8",
+          "workspaceId": "workspace_be13aff9670540fbbe18dd0f759967ce",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5200,
+          "openRequestMs": 12565,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 473,
+          "operationRunMs": 10843,
+          "operationTotalMs": 11316,
+          "sandboxCreateToRunningMs": 11179
+        },
+        {
+          "index": 6,
+          "sessionId": "bs_373edc04308d49f48cf6fccb0a26d4df",
+          "workspaceId": "workspace_e40af18c2c3245aa8365e90f593ffb8a",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5207,
+          "openRequestMs": 31971,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 716,
+          "operationRunMs": 30946,
+          "operationTotalMs": 31662,
+          "sandboxCreateToRunningMs": 31404
+        },
+        {
+          "index": 7,
+          "sessionId": "bs_3fdf23623162438ab3b8edf5a93cdbaa",
+          "workspaceId": "workspace_1aebc11ce4e843709ac8800acc1cdfbb",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5193,
+          "openRequestMs": 31991,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 746,
+          "operationRunMs": 30899,
+          "operationTotalMs": 31645,
+          "sandboxCreateToRunningMs": 31389
+        },
+        {
+          "index": 8,
+          "sessionId": "bs_6a04c6e892be473eacb46f4e98fe3fa9",
+          "workspaceId": "workspace_130ab7e03ebc41ab8b790b4ad43378d4",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local",
+          "createMs": 5224,
+          "openRequestMs": 27847,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 768,
+          "operationRunMs": 27169,
+          "operationTotalMs": 27937,
+          "sandboxCreateToRunningMs": 27645
+        },
+        {
+          "index": 9,
+          "sessionId": "bs_0749ea221a9d43a4adc659c04682a6d0",
+          "workspaceId": "workspace_629c3b0a4f9f4e0d8c74774aaa89247b",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5264,
+          "openRequestMs": 38462,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 742,
+          "operationRunMs": 36913,
+          "operationTotalMs": 37655,
+          "sandboxCreateToRunningMs": 37495
+        },
+        {
+          "index": 10,
+          "sessionId": "bs_916cd79d037e4a4382cf11d6708ed8ab",
+          "workspaceId": "workspace_d6757ae3a0ad41499413d398a3a427d3",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5218,
+          "openRequestMs": 27898,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 645,
+          "operationRunMs": 27303,
+          "operationTotalMs": 27948,
+          "sandboxCreateToRunningMs": 27677
+        },
+        {
+          "index": 11,
+          "sessionId": "bs_6f6dd4e4640e452bb1afb6aa0439d746",
+          "workspaceId": "workspace_785c4a4471c44640abb601ecfeb716dc",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5235,
+          "openRequestMs": 31602,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 752,
+          "operationRunMs": 30599,
+          "operationTotalMs": 31351,
+          "sandboxCreateToRunningMs": 31096
+        },
+        {
+          "index": 12,
+          "sessionId": "bs_4f372274dde4437ca8fd44de624f8ce8",
+          "workspaceId": "workspace_dad44cd9e1b1413c9020aa066c098c40",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5257,
+          "openRequestMs": 37951,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 741,
+          "operationRunMs": 30900,
+          "operationTotalMs": 31641,
+          "sandboxCreateToRunningMs": 31389
+        },
+        {
+          "index": 13,
+          "sessionId": "bs_b90c758cb6404101b1cfa3b973ad9370",
+          "workspaceId": "workspace_843b2e5bbd244405a112f1e877eea787",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5228,
+          "openRequestMs": 28005,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 728,
+          "operationRunMs": 27398,
+          "operationTotalMs": 28126,
+          "sandboxCreateToRunningMs": 27969
+        },
+        {
+          "index": 14,
+          "sessionId": "bs_c148d1b4b69f427ba95677da87451ab7",
+          "workspaceId": "workspace_f8b334277dac40678ecfb0a2f8edefd4",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5222,
+          "openRequestMs": 32008,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 725,
+          "operationRunMs": 30925,
+          "operationTotalMs": 31650,
+          "sandboxCreateToRunningMs": 31396
+        },
+        {
+          "index": 15,
+          "sessionId": "bs_b2ef0d3029de453189c270a9339ee0c7",
+          "workspaceId": "workspace_1fe2f41785404c0d9b5456c8445574b7",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5197,
+          "openRequestMs": 31694,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 694,
+          "operationRunMs": 30701,
+          "operationTotalMs": 31395,
+          "sandboxCreateToRunningMs": 31172
+        },
+        {
+          "index": 16,
+          "sessionId": "bs_8499779156a3439fae835b702b508612",
+          "workspaceId": "workspace_db9cda0e96e74458887625428a2ee8e9",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5231,
+          "openRequestMs": 37919,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 724,
+          "operationRunMs": 30925,
+          "operationTotalMs": 31649,
+          "sandboxCreateToRunningMs": 31395
+        },
+        {
+          "index": 17,
+          "sessionId": "bs_72ca7a6955de45d0b55e24ddb688b587",
+          "workspaceId": "workspace_3d6255d1026c4db29cf3885539a317f0",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local",
+          "createMs": 5261,
+          "openRequestMs": 21639,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 754,
+          "operationRunMs": 21527,
+          "operationTotalMs": 22281,
+          "sandboxCreateToRunningMs": 22124
+        },
+        {
+          "index": 18,
+          "sessionId": "bs_3e4767d93388426ab2169b57b0f45b03",
+          "workspaceId": "workspace_c5867414452745c1821e53e0799fa363",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local",
+          "createMs": 5241,
+          "openRequestMs": 27884,
+          "openToActiveMs": 39997,
+          "createToActiveMs": 45262,
+          "queueDelayMs": 760,
+          "operationRunMs": 27171,
+          "operationTotalMs": 27931,
+          "sandboxCreateToRunningMs": 27647
+        },
+        {
+          "index": 19,
+          "sessionId": "bs_1d089dd8e65945d3be5cd4519d28a2fa",
+          "workspaceId": "workspace_ed86e0f53c58489996aa662b7e5777d6",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 5253,
+          "openRequestMs": 37985,
+          "openToActiveMs": 40001,
+          "createToActiveMs": 45266,
+          "queueDelayMs": 700,
+          "operationRunMs": 30948,
+          "operationTotalMs": 31648,
+          "sandboxCreateToRunningMs": 31416
+        }
+      ],
+      "operationMetrics": {
+        "items": [
+          {
+            "id": "rop_cdf0faf28ff1460f876c42bd271aacfe",
+            "sessionId": "bs_b2ef0d3029de453189c270a9339ee0c7",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 694,
+            "runMs": 30701,
+            "totalMs": 31395,
+            "createdAt": "2026-06-02T14:13:47.837Z",
+            "startedAt": "2026-06-02T14:13:48.531Z",
+            "completedAt": "2026-06-02T14:14:19.232Z"
+          },
+          {
+            "id": "rop_cb129102dc714f7e9bf76ed26110ed12",
+            "sessionId": "bs_3e4767d93388426ab2169b57b0f45b03",
+            "workerId": "worker_local",
+            "status": "completed",
+            "queueDelayMs": 760,
+            "runMs": 27171,
+            "totalMs": 27931,
+            "createdAt": "2026-06-02T14:13:47.836Z",
+            "startedAt": "2026-06-02T14:13:48.596Z",
+            "completedAt": "2026-06-02T14:14:15.767Z"
+          },
+          {
+            "id": "rop_4bb4efbacca34c2e90ae73aa5eb49ff9",
+            "sessionId": "bs_4f372274dde4437ca8fd44de624f8ce8",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 741,
+            "runMs": 30900,
+            "totalMs": 31641,
+            "createdAt": "2026-06-02T14:13:47.836Z",
+            "startedAt": "2026-06-02T14:13:48.577Z",
+            "completedAt": "2026-06-02T14:14:19.477Z"
+          },
+          {
+            "id": "rop_bb878a1877904371bb633ae3bb560376",
+            "sessionId": "bs_0749ea221a9d43a4adc659c04682a6d0",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 742,
+            "runMs": 36913,
+            "totalMs": 37655,
+            "createdAt": "2026-06-02T14:13:47.835Z",
+            "startedAt": "2026-06-02T14:13:48.577Z",
+            "completedAt": "2026-06-02T14:14:25.490Z"
+          },
+          {
+            "id": "rop_cfc1d2ba2ad749e8a3245e3837f9f370",
+            "sessionId": "bs_3fdf23623162438ab3b8edf5a93cdbaa",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 746,
+            "runMs": 30899,
+            "totalMs": 31645,
+            "createdAt": "2026-06-02T14:13:47.831Z",
+            "startedAt": "2026-06-02T14:13:48.577Z",
+            "completedAt": "2026-06-02T14:14:19.476Z"
+          },
+          {
+            "id": "rop_a9320d0303774843ad47ccd98eb774c8",
+            "sessionId": "bs_1d089dd8e65945d3be5cd4519d28a2fa",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 700,
+            "runMs": 30948,
+            "totalMs": 31648,
+            "createdAt": "2026-06-02T14:13:47.830Z",
+            "startedAt": "2026-06-02T14:13:48.530Z",
+            "completedAt": "2026-06-02T14:14:19.478Z"
+          },
+          {
+            "id": "rop_7e9ab0f842974ddd849963687680b719",
+            "sessionId": "bs_6a04c6e892be473eacb46f4e98fe3fa9",
+            "workerId": "worker_local",
+            "status": "completed",
+            "queueDelayMs": 768,
+            "runMs": 27169,
+            "totalMs": 27937,
+            "createdAt": "2026-06-02T14:13:47.829Z",
+            "startedAt": "2026-06-02T14:13:48.597Z",
+            "completedAt": "2026-06-02T14:14:15.766Z"
+          },
+          {
+            "id": "rop_58e036c6d4f3417b87f8669f914f1390",
+            "sessionId": "bs_8499779156a3439fae835b702b508612",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 724,
+            "runMs": 30925,
+            "totalMs": 31649,
+            "createdAt": "2026-06-02T14:13:47.828Z",
+            "startedAt": "2026-06-02T14:13:48.552Z",
+            "completedAt": "2026-06-02T14:14:19.477Z"
+          },
+          {
+            "id": "rop_e887eacf893245ddbf8fadb3036aba53",
+            "sessionId": "bs_72ca7a6955de45d0b55e24ddb688b587",
+            "workerId": "worker_local",
+            "status": "completed",
+            "queueDelayMs": 754,
+            "runMs": 21527,
+            "totalMs": 22281,
+            "createdAt": "2026-06-02T14:13:47.828Z",
+            "startedAt": "2026-06-02T14:13:48.582Z",
+            "completedAt": "2026-06-02T14:14:10.109Z"
+          },
+          {
+            "id": "rop_4f7cbdd61c9b487e8d2cd49a596dcabc",
+            "sessionId": "bs_c148d1b4b69f427ba95677da87451ab7",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 725,
+            "runMs": 30925,
+            "totalMs": 31650,
+            "createdAt": "2026-06-02T14:13:47.826Z",
+            "startedAt": "2026-06-02T14:13:48.551Z",
+            "completedAt": "2026-06-02T14:14:19.476Z"
+          },
+          {
+            "id": "rop_cc7a081f88d44bfcaa300e286f950ca6",
+            "sessionId": "bs_916cd79d037e4a4382cf11d6708ed8ab",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 645,
+            "runMs": 27303,
+            "totalMs": 27948,
+            "createdAt": "2026-06-02T14:13:47.826Z",
+            "startedAt": "2026-06-02T14:13:48.471Z",
+            "completedAt": "2026-06-02T14:14:15.774Z"
+          },
+          {
+            "id": "rop_6183f839719a47b0a2edc0e4e9c8bc54",
+            "sessionId": "bs_6f6dd4e4640e452bb1afb6aa0439d746",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 752,
+            "runMs": 30599,
+            "totalMs": 31351,
+            "createdAt": "2026-06-02T14:13:47.825Z",
+            "startedAt": "2026-06-02T14:13:48.577Z",
+            "completedAt": "2026-06-02T14:14:19.176Z"
+          },
+          {
+            "id": "rop_e92ed05ed71c4cc1aa66f6ad9a5bb14f",
+            "sessionId": "bs_b90c758cb6404101b1cfa3b973ad9370",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 728,
+            "runMs": 27398,
+            "totalMs": 28126,
+            "createdAt": "2026-06-02T14:13:47.823Z",
+            "startedAt": "2026-06-02T14:13:48.551Z",
+            "completedAt": "2026-06-02T14:14:15.949Z"
+          },
+          {
+            "id": "rop_41b35083f5c14239aa1f00ff50961d57",
+            "sessionId": "bs_45a1cd4d986e4b608ce1c9d80c9140ec",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 759,
+            "runMs": 31002,
+            "totalMs": 31761,
+            "createdAt": "2026-06-02T14:13:47.819Z",
+            "startedAt": "2026-06-02T14:13:48.578Z",
+            "completedAt": "2026-06-02T14:14:19.580Z"
+          },
+          {
+            "id": "rop_26c0578c8cd24537916f651de4587cdc",
+            "sessionId": "bs_58ebda23b30f43a7851e3c5493826feb",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 729,
+            "runMs": 30928,
+            "totalMs": 31657,
+            "createdAt": "2026-06-02T14:13:47.818Z",
+            "startedAt": "2026-06-02T14:13:48.547Z",
+            "completedAt": "2026-06-02T14:14:19.475Z"
+          },
+          {
+            "id": "rop_a23bb7c5a233489b86a151ca8ccc5c3d",
+            "sessionId": "bs_2548d3a6d07e458e823a0dce49cedb7f",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 612,
+            "runMs": 27335,
+            "totalMs": 27947,
+            "createdAt": "2026-06-02T14:13:47.817Z",
+            "startedAt": "2026-06-02T14:13:48.429Z",
+            "completedAt": "2026-06-02T14:14:15.764Z"
+          },
+          {
+            "id": "rop_6f22565db203413b9a3517c47cff77c6",
+            "sessionId": "bs_f936a5b867954fa88a91f2c9182a4e6d",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 713,
+            "runMs": 36733,
+            "totalMs": 37446,
+            "createdAt": "2026-06-02T14:13:47.816Z",
+            "startedAt": "2026-06-02T14:13:48.529Z",
+            "completedAt": "2026-06-02T14:14:25.262Z"
+          },
+          {
+            "id": "rop_5646160920954d8287850b671e304555",
+            "sessionId": "bs_39a53861b13841c1b0fe0acb1078395b",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 601,
+            "runMs": 17547,
+            "totalMs": 18148,
+            "createdAt": "2026-06-02T14:13:47.815Z",
+            "startedAt": "2026-06-02T14:13:48.416Z",
+            "completedAt": "2026-06-02T14:14:05.963Z"
+          },
+          {
+            "id": "rop_ff1d341bea434e3f910f9bc6e9e156ba",
+            "sessionId": "bs_373edc04308d49f48cf6fccb0a26d4df",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 716,
+            "runMs": 30946,
+            "totalMs": 31662,
+            "createdAt": "2026-06-02T14:13:47.814Z",
+            "startedAt": "2026-06-02T14:13:48.530Z",
+            "completedAt": "2026-06-02T14:14:19.476Z"
+          },
+          {
+            "id": "rop_43e059c9fca3484d923bce389ea1e684",
+            "sessionId": "bs_5d6c2ef4a40344f9bf5d90540163cff8",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 473,
+            "runMs": 10843,
+            "totalMs": 11316,
+            "createdAt": "2026-06-02T14:13:47.807Z",
+            "startedAt": "2026-06-02T14:13:48.280Z",
+            "completedAt": "2026-06-02T14:13:59.123Z"
+          }
+        ],
+        "stats": {
+          "queueDelayMs": {
+            "count": 20,
+            "avg": 704,
+            "p50": 725,
+            "p95": 760,
+            "max": 768
+          },
+          "runMs": {
+            "count": 20,
+            "avg": 28436,
+            "p50": 30701,
+            "p95": 36733,
+            "max": 36913
+          },
+          "totalMs": {
+            "count": 20,
+            "avg": 29140,
+            "p50": 31395,
+            "p95": 37446,
+            "max": 37655
+          }
+        }
+      },
+      "sandboxMetrics": {
+        "items": [
+          {
+            "id": "sbi_bs_0749ea221a9d43a4adc659c04682a6d0",
+            "sessionId": "bs_0749ea221a9d43a4adc659c04682a6d0",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 37495,
+            "createdAt": "2026-06-02T14:13:47.980Z",
+            "openedAt": "2026-06-02T14:14:25.475Z"
+          },
+          {
+            "id": "sbi_bs_f936a5b867954fa88a91f2c9182a4e6d",
+            "sessionId": "bs_f936a5b867954fa88a91f2c9182a4e6d",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 37251,
+            "createdAt": "2026-06-02T14:13:47.964Z",
+            "openedAt": "2026-06-02T14:14:25.215Z"
+          },
+          {
+            "id": "sbi_bs_45a1cd4d986e4b608ce1c9d80c9140ec",
+            "sessionId": "bs_45a1cd4d986e4b608ce1c9d80c9140ec",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31440,
+            "createdAt": "2026-06-02T14:13:47.981Z",
+            "openedAt": "2026-06-02T14:14:19.421Z"
+          },
+          {
+            "id": "sbi_bs_1d089dd8e65945d3be5cd4519d28a2fa",
+            "sessionId": "bs_1d089dd8e65945d3be5cd4519d28a2fa",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31416,
+            "createdAt": "2026-06-02T14:13:47.964Z",
+            "openedAt": "2026-06-02T14:14:19.380Z"
+          },
+          {
+            "id": "sbi_bs_c148d1b4b69f427ba95677da87451ab7",
+            "sessionId": "bs_c148d1b4b69f427ba95677da87451ab7",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31396,
+            "createdAt": "2026-06-02T14:13:47.974Z",
+            "openedAt": "2026-06-02T14:14:19.370Z"
+          },
+          {
+            "id": "sbi_bs_4f372274dde4437ca8fd44de624f8ce8",
+            "sessionId": "bs_4f372274dde4437ca8fd44de624f8ce8",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31389,
+            "createdAt": "2026-06-02T14:13:47.981Z",
+            "openedAt": "2026-06-02T14:14:19.370Z"
+          },
+          {
+            "id": "sbi_bs_8499779156a3439fae835b702b508612",
+            "sessionId": "bs_8499779156a3439fae835b702b508612",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31395,
+            "createdAt": "2026-06-02T14:13:47.975Z",
+            "openedAt": "2026-06-02T14:14:19.370Z"
+          },
+          {
+            "id": "sbi_bs_3fdf23623162438ab3b8edf5a93cdbaa",
+            "sessionId": "bs_3fdf23623162438ab3b8edf5a93cdbaa",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31389,
+            "createdAt": "2026-06-02T14:13:47.980Z",
+            "openedAt": "2026-06-02T14:14:19.369Z"
+          },
+          {
+            "id": "sbi_bs_58ebda23b30f43a7851e3c5493826feb",
+            "sessionId": "bs_58ebda23b30f43a7851e3c5493826feb",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31395,
+            "createdAt": "2026-06-02T14:13:47.974Z",
+            "openedAt": "2026-06-02T14:14:19.369Z"
+          },
+          {
+            "id": "sbi_bs_373edc04308d49f48cf6fccb0a26d4df",
+            "sessionId": "bs_373edc04308d49f48cf6fccb0a26d4df",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31404,
+            "createdAt": "2026-06-02T14:13:47.965Z",
+            "openedAt": "2026-06-02T14:14:19.369Z"
+          },
+          {
+            "id": "sbi_bs_b2ef0d3029de453189c270a9339ee0c7",
+            "sessionId": "bs_b2ef0d3029de453189c270a9339ee0c7",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31172,
+            "createdAt": "2026-06-02T14:13:47.966Z",
+            "openedAt": "2026-06-02T14:14:19.138Z"
+          },
+          {
+            "id": "sbi_bs_6f6dd4e4640e452bb1afb6aa0439d746",
+            "sessionId": "bs_6f6dd4e4640e452bb1afb6aa0439d746",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 31096,
+            "createdAt": "2026-06-02T14:13:47.981Z",
+            "openedAt": "2026-06-02T14:14:19.077Z"
+          },
+          {
+            "id": "sbi_bs_b90c758cb6404101b1cfa3b973ad9370",
+            "sessionId": "bs_b90c758cb6404101b1cfa3b973ad9370",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 27969,
+            "createdAt": "2026-06-02T14:13:47.974Z",
+            "openedAt": "2026-06-02T14:14:15.943Z"
+          },
+          {
+            "id": "sbi_bs_916cd79d037e4a4382cf11d6708ed8ab",
+            "sessionId": "bs_916cd79d037e4a4382cf11d6708ed8ab",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 27677,
+            "createdAt": "2026-06-02T14:13:47.954Z",
+            "openedAt": "2026-06-02T14:14:15.631Z"
+          },
+          {
+            "id": "sbi_bs_6a04c6e892be473eacb46f4e98fe3fa9",
+            "sessionId": "bs_6a04c6e892be473eacb46f4e98fe3fa9",
+            "workerId": "worker_local",
+            "status": "running",
+            "createToRunningMs": 27645,
+            "createdAt": "2026-06-02T14:13:47.985Z",
+            "openedAt": "2026-06-02T14:14:15.630Z"
+          },
+          {
+            "id": "sbi_bs_2548d3a6d07e458e823a0dce49cedb7f",
+            "sessionId": "bs_2548d3a6d07e458e823a0dce49cedb7f",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 27685,
+            "createdAt": "2026-06-02T14:13:47.945Z",
+            "openedAt": "2026-06-02T14:14:15.630Z"
+          },
+          {
+            "id": "sbi_bs_3e4767d93388426ab2169b57b0f45b03",
+            "sessionId": "bs_3e4767d93388426ab2169b57b0f45b03",
+            "workerId": "worker_local",
+            "status": "running",
+            "createToRunningMs": 27647,
+            "createdAt": "2026-06-02T14:13:47.983Z",
+            "openedAt": "2026-06-02T14:14:15.630Z"
+          },
+          {
+            "id": "sbi_bs_72ca7a6955de45d0b55e24ddb688b587",
+            "sessionId": "bs_72ca7a6955de45d0b55e24ddb688b587",
+            "workerId": "worker_local",
+            "status": "running",
+            "createToRunningMs": 22124,
+            "createdAt": "2026-06-02T14:13:47.982Z",
+            "openedAt": "2026-06-02T14:14:10.106Z"
+          },
+          {
+            "id": "sbi_bs_39a53861b13841c1b0fe0acb1078395b",
+            "sessionId": "bs_39a53861b13841c1b0fe0acb1078395b",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 18007,
+            "createdAt": "2026-06-02T14:13:47.945Z",
+            "openedAt": "2026-06-02T14:14:05.952Z"
+          },
+          {
+            "id": "sbi_bs_5d6c2ef4a40344f9bf5d90540163cff8",
+            "sessionId": "bs_5d6c2ef4a40344f9bf5d90540163cff8",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 11179,
+            "createdAt": "2026-06-02T14:13:47.933Z",
+            "openedAt": "2026-06-02T14:13:59.112Z"
+          }
+        ],
+        "stats": {
+          "createToRunningMs": {
+            "count": 20,
+            "avg": 28909,
+            "p50": 31172,
+            "p95": 37251,
+            "max": 37495
+          }
+        }
+      },
+      "systemSnapshots": [
+        {
+          "at": 1780409667427,
+          "queuedOperations": 0,
+          "runningOperations": 7,
+          "preparingSandboxes": 0,
+          "runningSandboxes": 21,
+          "workerLoads": [
+            {
+              "id": "worker_local_3",
+              "status": "busy",
+              "activeSessionCount": 17,
+              "queuedOperationCount": 14,
+              "runningSandboxCount": 5,
+              "warmPoolReady": 2
+            },
+            {
+              "id": "worker_local",
+              "status": "ready",
+              "activeSessionCount": 3,
+              "queuedOperationCount": 2,
+              "runningSandboxCount": 4,
+              "warmPoolReady": 2
+            },
+            {
+              "id": "worker_local_2",
+              "status": "ready",
+              "activeSessionCount": 0,
+              "queuedOperationCount": 3,
+              "runningSandboxCount": 0,
+              "warmPoolReady": 2
+            }
+          ]
+        }
+      ],
+      "recovery": {
+        "skipped": false,
+        "concurrency": 20,
+        "workerId": "worker_local_3",
+        "workerContainer": "opencode-worker-3",
+        "sessionId": "bs_45a1cd4d986e4b608ce1c9d80c9140ec",
+        "failureTypes": [
+          "worker_offline"
+        ],
+        "orphanedStatus": "orphaned",
+        "recoveredStatus": "active",
+        "recoveredWorkerId": "worker_local",
+        "orphanDetectMs": 42048,
+        "reopenToActiveMs": 9367,
+        "reopenQueueDelayMs": 41,
+        "reopenRunMs": 8446,
+        "reopenTotalMs": 8487
+      }
+    }
+  ]
+}

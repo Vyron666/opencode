@@ -371,8 +371,8 @@ async function waitForAssistantText(page, expectedText, timeoutMs) {
 
 async function waitForPermissionState(page, sessionId, timeoutMs) {
   await waitFor(async () => {
-    const mainText = await readMainText(page)
-    if (mainText.includes("等待权限审批") || mainText.includes("权限请求")) return true
+    const rejectButton = page.locator("main").getByRole("button", { name: /^拒绝$/ }).first()
+    if (await rejectButton.isVisible().catch(() => false)) return true
     const detail = await readSessionDetail(page, sessionId)
     return (detail.session?.pendingPermissions || []).length > 0
   }, "permission request should appear", timeoutMs)
@@ -389,8 +389,8 @@ async function requestPermissionFlow(page, sessionId) {
     const beforeDetail = await readSessionDetail(page, sessionId)
     await sendPrompt(page, prompt)
     const requested = await waitForTruthy(async () => {
-      const mainText = await readMainText(page)
-      if (mainText.includes("等待权限审批") || mainText.includes("权限请求")) return true
+      const rejectButton = page.locator("main").getByRole("button", { name: /^拒绝$/ }).first()
+      if (await rejectButton.isVisible().catch(() => false)) return true
       const detail = await readSessionDetail(page, sessionId)
       return (detail.session?.pendingPermissions || []).length > 0
     }, 12000)

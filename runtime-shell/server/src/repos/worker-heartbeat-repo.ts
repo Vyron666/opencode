@@ -9,6 +9,7 @@ type WorkerHeartbeatRow = {
   status: WorkerStatus
   reported_at: string
   created_at: string
+  resource_summary_json: string | null
 }
 
 function toWorkerHeartbeat(row: WorkerHeartbeatRow): WorkerHeartbeat {
@@ -19,6 +20,9 @@ function toWorkerHeartbeat(row: WorkerHeartbeatRow): WorkerHeartbeat {
     status: row.status,
     reportedAt: row.reported_at,
     createdAt: row.created_at,
+    resourceSummary: row.resource_summary_json
+      ? JSON.parse(row.resource_summary_json) as WorkerHeartbeat["resourceSummary"]
+      : undefined,
   }
 }
 
@@ -27,6 +31,7 @@ export async function createWorkerHeartbeat(input: {
   capacityUsed: number
   status: WorkerStatus
   reportedAt?: string
+  resourceSummary?: WorkerHeartbeat["resourceSummary"]
 }) {
   const db = getRuntimeDatabaseClient()
   const timestamp = input.reportedAt ?? now()
@@ -37,6 +42,7 @@ export async function createWorkerHeartbeat(input: {
     status: input.status,
     reportedAt: timestamp,
     createdAt: timestamp,
+    resourceSummary: input.resourceSummary,
   }
   await db.execute(
     `
@@ -46,8 +52,9 @@ export async function createWorkerHeartbeat(input: {
         capacity_used,
         status,
         reported_at,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        created_at,
+        resource_summary_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     [
       heartbeat.id,
@@ -56,6 +63,7 @@ export async function createWorkerHeartbeat(input: {
       heartbeat.status,
       heartbeat.reportedAt,
       heartbeat.createdAt,
+      heartbeat.resourceSummary ? JSON.stringify(heartbeat.resourceSummary) : null,
     ],
   )
   return heartbeat
@@ -71,7 +79,8 @@ export async function listLatestHeartbeats(workerId: string, limit = 20) {
         capacity_used,
         status,
         reported_at,
-        created_at
+        created_at,
+        resource_summary_json
       FROM worker_heartbeat
       WHERE worker_node_id = ?
       ORDER BY reported_at DESC

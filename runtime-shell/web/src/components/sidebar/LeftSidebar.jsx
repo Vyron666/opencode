@@ -3,9 +3,10 @@ import { useStore } from '../../store'
 import ConfirmDialog from '../ConfirmDialog.jsx'
 import { roleLabel, secondaryButtonClassName, useViewerContext } from './sidebar-support.jsx'
 
-export default function LeftSidebar() {
+export default function LeftSidebar({ onOpenSettings }) {
   const user = useStore((state) => state.user)
   const sessions = useStore((state) => state.sessions)
+  const workspaces = useStore((state) => state.workspaces)
   const currentSessionId = useStore((state) => state.currentSessionId)
   const createQuickSession = useStore((state) => state.createQuickSession)
   const logout = useStore((state) => state.logout)
@@ -32,35 +33,39 @@ export default function LeftSidebar() {
   }, [query, sessions])
 
   return (
-    <aside className="min-h-0 h-[calc(100dvh-28px)] flex flex-col gap-2.5 overflow-hidden max-[1024px]:order-1 max-[1024px]:h-auto">
-      <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 grid gap-3">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-11 h-11 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
-            style={{ background: 'linear-gradient(135deg, #d4a05a, #9c6e38)', boxShadow: '0 0 0 1px rgba(212,160,90,0.14), 0 4px 20px rgba(212,160,90,0.08)' }}
-            aria-hidden="true"
-          >
-            RS
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Runtime Shell</div>
-            <div className="text-sm font-bold truncate">会话</div>
-          </div>
-          {user ? (
-            <div className="min-w-0 text-right">
-              <div className="text-sm font-semibold truncate">{user.displayName}</div>
-              <div className="text-[11px] text-[var(--text-muted)]">{roleLabel(user.role)}</div>
-            </div>
-          ) : null}
-          {user ? (
-            <button
-              type="button"
-              onClick={() => setConfirmLogout(true)}
-              aria-label="退出登录"
-              className="shrink-0 text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+    <aside className="min-h-0 h-[calc(100dvh-28px)] min-w-0 flex flex-col gap-2.5 overflow-visible max-[1024px]:order-1 max-[1024px]:h-auto">
+      <div className="relative z-20 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 grid gap-3">
+        <div className="grid gap-3">
+          <div className="flex items-start gap-3">
+            <div
+              className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
+              style={{ background: 'linear-gradient(135deg, #d4a05a, #9c6e38)', boxShadow: '0 0 0 1px rgba(212,160,90,0.14), 0 4px 20px rgba(212,160,90,0.08)' }}
+              aria-hidden="true"
             >
-              退出
-            </button>
+              RS
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Runtime Shell</div>
+              <div className="text-[15px] font-bold leading-tight mt-1">会话中心</div>
+            </div>
+          </div>
+
+          {user ? (
+            <div className="flex items-start justify-between gap-3 rounded-[16px] border border-[var(--line)] bg-black/15 px-3.5 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-brand/80">当前账号</div>
+                <div className="text-sm font-semibold break-words leading-tight mt-1">{user.displayName}</div>
+                <div className="text-[11px] text-[var(--text-muted)] mt-1">{roleLabel(user.role)}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmLogout(true)}
+                aria-label="退出登录"
+                className="mt-0.5 shrink-0 text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                退出
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -69,23 +74,31 @@ export default function LeftSidebar() {
             type="button"
             onClick={() => void createQuickSession()}
             disabled={Boolean(pendingSessionAction)}
-            className="flex-1 rounded-[14px] px-4 py-3 text-sm font-semibold bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 min-w-0 rounded-[13px] px-3.5 py-2.5 text-sm font-semibold bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {pendingSessionAction === 'create' ? '创建中...' : '新对话'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="shrink-0 rounded-[13px] px-3 py-2.5 text-xs font-semibold border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+          >
+            工作区
           </button>
 
           <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setActionsOpen((current) => !current)}
-              className="h-[46px] px-3 rounded-[14px] border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+              className="h-[42px] w-[42px] rounded-[13px] border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
               aria-label="打开会话操作"
             >
-              ...
+              ⋯
             </button>
 
             {actionsOpen ? (
-              <div className="absolute right-0 top-[52px] z-20 w-48 rounded-[16px] border border-[var(--line)] bg-[var(--surface)] shadow-2xl p-2 grid gap-1">
+              <div className="absolute right-0 top-[48px] z-40 w-48 rounded-[16px] border border-[var(--line)] bg-[var(--surface)] shadow-2xl p-2 grid gap-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -124,6 +137,18 @@ export default function LeftSidebar() {
           </div>
         </div>
 
+        <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[rgba(181,148,116,0.14)] bg-[rgba(12,9,7,0.42)] px-3.5 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold text-[var(--text-dim)]">工作区</div>
+            <div className="text-[11px] text-[var(--text-muted)] mt-1">
+              {workspaces.length > 0 ? `已配置 ${workspaces.length} 个工作区，可继续新建或切换会话。` : '还没有工作区，先创建一个再开始对话。'}
+            </div>
+          </div>
+          <button type="button" onClick={onOpenSettings} className={secondaryButtonClassName}>
+            新建
+          </button>
+        </div>
+
         {isSharedSession ? (
           <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
             {`当前会话来自共享工作区协作${owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。`}
@@ -158,7 +183,7 @@ export default function LeftSidebar() {
           className="w-full rounded-[12px] border border-[var(--line-strong)] px-3 py-2 bg-black/35 text-sm outline-none focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
         />
 
-        <div className="grid gap-2 flex-1 min-h-0 overflow-y-auto mt-3">
+        <div className="grid gap-2 flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-3 pr-1">
           {filteredSessions.length === 0 ? (
             <div className="text-xs text-[var(--text-muted)] text-center py-4 border border-dashed border-[var(--line-strong)] rounded-[14px]">
               {sessions.length === 0 ? '暂无会话，请先创建。' : '没有匹配的会话。'}
@@ -198,16 +223,22 @@ export default function LeftSidebar() {
                 }}
                 aria-label={`选择会话: ${title}`}
                 aria-current={isActive ? 'true' : undefined}
-                className={`w-full text-left p-3 rounded-[14px] border text-sm transition-all ${
-                  isActive ? 'border-brand bg-brand/10 shadow-glow' : 'border-[var(--line)] bg-black/30 hover:bg-black/50 hover:border-[var(--line-strong)]'
+                className={`w-full text-left px-3.5 py-3 rounded-[16px] border text-sm transition-all ${
+                  isActive
+                    ? 'border-brand bg-[rgba(212,160,90,0.12)] shadow-[0_12px_32px_rgba(212,160,90,0.08)]'
+                    : 'border-[rgba(181,148,116,0.14)] bg-[rgba(14,11,9,0.72)] hover:bg-black/45 hover:border-[var(--line-strong)]'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} aria-hidden="true"></span>
-                  <div className="font-semibold text-sm truncate flex-1">{title}</div>
-                  <span className="text-[10px] text-[var(--text-muted)] shrink-0">{statusLabel}</span>
+                <div className="flex items-start gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full shrink-0 mt-1" style={{ background: dotColor, boxShadow: `0 0 0 4px ${isActive ? 'rgba(212,160,90,0.08)' : 'rgba(255,255,255,0.03)'}` }} aria-hidden="true"></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-[13px] leading-tight break-words">{title}</div>
+                    <div className="mt-1.5 text-[11px] text-[var(--text-muted)] leading-relaxed line-clamp-2">{preview}</div>
+                  </div>
+                  <span className="text-[10px] text-[var(--text-muted)] shrink-0 rounded-full border border-[rgba(181,148,116,0.14)] bg-black/25 px-2 py-1">
+                    {statusLabel}
+                  </span>
                 </div>
-                <div className="mt-1.5 text-xs text-[var(--text-muted)] truncate">{preview}</div>
               </button>
             )
           })}

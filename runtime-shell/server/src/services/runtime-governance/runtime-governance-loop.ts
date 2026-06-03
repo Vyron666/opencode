@@ -3,6 +3,7 @@ import { createLogger } from "../../log"
 import { closeRuntime } from "../../acp-runtime-manager"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
 import { sessionService, workerService } from "../store/store-singleton"
+import { cleanupExpiredSandboxWorkspaces, cleanupStalePreparedSandboxWorkspaces } from "../sandbox/sandbox-workspace-service"
 import { markRuntimeBindingLost } from "./runtime-binding-service"
 import { recordRuntimeFailure } from "./runtime-failure-service"
 import { listExpiredRuntimeLeases, releaseRuntimeLease } from "./runtime-lease-service"
@@ -26,6 +27,8 @@ export function startRuntimeGovernanceLoop() {
 export async function runRuntimeGovernanceTick() {
   await markHeartbeatExpiredWorkersOffline()
   await cleanupExpiredRuntimeLeases()
+  await cleanupExpiredSandboxWorkspaces()
+  await cleanupStalePreparedSandboxWorkspaces()
 }
 
 async function markHeartbeatExpiredWorkersOffline() {

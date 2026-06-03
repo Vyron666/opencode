@@ -15,7 +15,10 @@ const WORKER_SELECT = `
     active_session_count,
     last_heartbeat_at,
     updated_at,
-    version
+    version,
+    resource_summary_json,
+    warm_pool_target,
+    warm_pool_ready
   FROM worker_node
 `
 

@@ -32,8 +32,8 @@ export function SkillConfigPanel() {
   if (!canManageProviderSettings) return null
 
   return (
-    <div className="grid gap-2.5">
-      <div className="text-xs font-semibold text-[var(--text-dim)]">
+    <div className="grid gap-3">
+      <div className="text-xs font-semibold tracking-[0.08em] uppercase text-[var(--text-dim)]">
         {canManagePlatformSettings ? '平台 Skill 配置' : '我的 Skill 配置'}
       </div>
 
@@ -66,9 +66,9 @@ export function SkillConfigPanel() {
             setConfigItems(Array.isArray(data.items) ? data.items : [])
             setFlash('Skill 配置已保存')
           }}
-          className="grid gap-2.5 animate-fade-in"
+          className="grid gap-3 animate-fade-in"
         >
-          <div className="grid gap-2 rounded-[12px] border border-[var(--line)] p-3 bg-black/10">
+          <div className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3.5 bg-[rgba(12,9,7,0.44)]">
             <div className="text-xs font-semibold text-[var(--text-dim)]">包管理</div>
 
             <Field label="Skill ZIP">
@@ -112,7 +112,7 @@ export function SkillConfigPanel() {
               <span className="text-xs font-medium text-[var(--text-dim)]">{canManagePlatformSettings ? '当前平台 Skill 包' : '我的 Skill 包'}</span>
               {packages.length === 0 ? <div className="text-[11px] text-[var(--text-muted)]">当前还没有已上传的 Skill 包</div> : null}
               {packages.map((item) => (
-                <div key={item.id} className="grid gap-1.5 rounded-[12px] border border-[var(--line)] p-2.5 bg-black/20">
+                <div key={item.id} className="grid gap-1.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-[var(--text-primary)]">{item.displayName || item.skillName}</span>
                     <span className="text-[11px] text-[var(--text-muted)]">{item.sourceLabel}</span>
@@ -181,14 +181,14 @@ export function SkillConfigPanel() {
             </div>
           </div>
 
-          <div className="grid gap-2 rounded-[12px] border border-[var(--line)] p-3 bg-black/10">
+          <div className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3.5 bg-[rgba(12,9,7,0.44)]">
             <div className="text-xs font-semibold text-[var(--text-dim)]">配置管理</div>
 
             <div className="grid gap-2">
               <span className="text-xs font-medium text-[var(--text-dim)]">当前已配置的 Skill 条目</span>
               {configItems.length === 0 ? <div className="text-[11px] text-[var(--text-muted)]">当前没有已配置的 Skill 路径或 URL</div> : null}
               {configItems.map((item) => (
-                <div key={`${item.type}:${item.value}:${item.source}`} className="grid gap-1.5 rounded-[12px] border border-[var(--line)] p-2.5 bg-black/20">
+                <div key={`${item.type}:${item.value}:${item.source}`} className="grid gap-1.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-[var(--text-primary)]">{item.type === 'path' ? 'Path' : 'URL'}</span>
                     <span className="text-[11px] text-[var(--text-muted)]">{item.source === 'platform_shared' ? '平台共享' : '用户私有'}</span>

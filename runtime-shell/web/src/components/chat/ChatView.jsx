@@ -6,7 +6,7 @@ import { ConversationPhaseBanner } from './view/ConversationPhaseBanner'
 import { ConversationSection } from './view/ConversationSection'
 import { ComposerSection } from './view/ComposerSection'
 
-export default function ChatView() {
+export default function ChatView({ settingsOpen, onOpenSettings, onCloseSettings }) {
   const currentSessionId = useStore((state) => state.currentSessionId)
   const flash = useStore((state) => state.flash)
   const sessionTitle = useStore((state) =>
@@ -17,11 +17,10 @@ export default function ChatView() {
       : ''),
   )
   const [showDebug, setShowDebug] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <main className="chat-shell min-h-0 h-[calc(100dvh-28px)] flex flex-col gap-2.5 overflow-hidden max-[1024px]:order-3 max-[1024px]:h-auto">
-      <ConversationHeader currentSessionId={currentSessionId} sessionTitle={sessionTitle} onOpenSettings={() => setSettingsOpen(true)} />
+      <ConversationHeader currentSessionId={currentSessionId} sessionTitle={sessionTitle} onOpenSettings={onOpenSettings} />
       {flash ? (
         <div className="shrink-0 rounded-[14px] px-3.5 py-2 bg-brand/10 border border-[var(--line)] text-xs text-[var(--text-dim)] animate-slide-down">
           {flash}
@@ -46,7 +45,7 @@ export default function ChatView() {
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={onOpenSettings}
                   className="rounded-[12px] px-4 py-2.5 text-sm font-semibold bg-black/20 text-[var(--text-dim)] border border-[var(--line)] hover:bg-black/35 transition-colors"
                 >
                   打开设置
@@ -60,9 +59,9 @@ export default function ChatView() {
         currentSessionId={currentSessionId}
         showDebug={showDebug}
         setShowDebug={setShowDebug}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={onOpenSettings}
       />
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDrawer open={settingsOpen} onClose={onCloseSettings} />
     </main>
   )
 }

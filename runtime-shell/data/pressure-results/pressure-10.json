@@ -1,0 +1,652 @@
+﻿{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:3100",
+  "username": "admin",
+  "projectId": "default",
+  "baseline": {
+    "collectedAt": "2026-06-02T14:12:14.107Z",
+    "workerCount": 3,
+    "workers": [
+      {
+        "id": "worker_local_2",
+        "workerCode": "worker_local_2",
+        "status": "ready",
+        "capacity": 8,
+        "activeSessionCount": 0,
+        "warmPoolReady": 2,
+        "warmPoolTarget": 2,
+        "queuedOperationCount": 3,
+        "runningSandboxCount": 0
+      },
+      {
+        "id": "worker_local_3",
+        "workerCode": "worker_local_3",
+        "status": "ready",
+        "capacity": 8,
+        "activeSessionCount": 0,
+        "warmPoolReady": 2,
+        "warmPoolTarget": 2,
+        "queuedOperationCount": 2,
+        "runningSandboxCount": 0
+      },
+      {
+        "id": "worker_local",
+        "workerCode": "worker_local",
+        "status": "ready",
+        "capacity": 8,
+        "activeSessionCount": 0,
+        "warmPoolReady": 2,
+        "warmPoolTarget": 2,
+        "queuedOperationCount": 2,
+        "runningSandboxCount": 1
+      }
+    ],
+    "sandboxSummary": {
+      "running": 1,
+      "warm": 6,
+      "leased": 0,
+      "preparing": 0,
+      "closing": 0,
+      "closed": 103,
+      "failed": 0
+    },
+    "queueCount": 98,
+    "quotaCount": 1
+  },
+  "scenarios": [
+    {
+      "concurrency": 10,
+      "scenarioLabel": "pressure-10-1780409534108",
+      "startedAt": "2026-06-02T14:12:14.108Z",
+      "finishedAt": "2026-06-02T14:13:33.502Z",
+      "summary": {
+        "createdSessions": 10,
+        "openedSessions": 10,
+        "activeSessions": 10,
+        "createStatuses": {
+          "200": 10
+        },
+        "openStatuses": {
+          "200": 10
+        },
+        "terminalStatuses": {
+          "active": 10
+        },
+        "workerSpread": {
+          "worker_local_3": 10
+        },
+        "createMs": {
+          "count": 10,
+          "avg": 3924,
+          "p50": 3977,
+          "p95": 3991,
+          "max": 3991
+        },
+        "openRequestMs": {
+          "count": 10,
+          "avg": 13645,
+          "p50": 14431,
+          "p95": 14659,
+          "max": 14659
+        },
+        "openToActiveMs": {
+          "count": 10,
+          "avg": 14909,
+          "p50": 14909,
+          "p95": 14909,
+          "max": 14909
+        },
+        "createToActiveMs": {
+          "count": 10,
+          "avg": 18900,
+          "p50": 18900,
+          "p95": 18900,
+          "max": 18900
+        },
+        "operationQueueDelayMs": {
+          "count": 10,
+          "avg": 576,
+          "p50": 599,
+          "p95": 602,
+          "max": 602
+        },
+        "operationRunMs": {
+          "count": 10,
+          "avg": 14900,
+          "p50": 15599,
+          "p95": 15831,
+          "max": 15831
+        },
+        "operationTotalMs": {
+          "count": 10,
+          "avg": 15477,
+          "p50": 16201,
+          "p95": 16429,
+          "max": 16429
+        },
+        "sandboxCreateToRunningMs": {
+          "count": 10,
+          "avg": 15204,
+          "p50": 14502,
+          "p95": 16344,
+          "max": 16344
+        },
+        "maxQueuedOperations": 0,
+        "maxRunningOperations": 7,
+        "maxPreparingSandboxes": 0,
+        "maxRunningSandboxes": 11,
+        "finalSandboxSummary": {
+          "running": 11,
+          "warm": 6,
+          "leased": 2,
+          "preparing": 0,
+          "closing": 0,
+          "closed": 103,
+          "failed": 0
+        },
+        "finalWorkers": [
+          {
+            "id": "worker_local_3",
+            "status": "busy",
+            "activeSessionCount": 10,
+            "queuedOperationCount": 12,
+            "runningSandboxCount": 0,
+            "warmPoolReady": 2
+          },
+          {
+            "id": "worker_local_2",
+            "status": "ready",
+            "activeSessionCount": 0,
+            "queuedOperationCount": 3,
+            "runningSandboxCount": 0,
+            "warmPoolReady": 2
+          },
+          {
+            "id": "worker_local",
+            "status": "ready",
+            "activeSessionCount": 0,
+            "queuedOperationCount": 2,
+            "runningSandboxCount": 1,
+            "warmPoolReady": 2
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "index": 0,
+          "sessionId": "bs_cf1201648dec4fd6a176f1dd4e4bc463",
+          "workspaceId": "workspace_13ef8660ab044456971d703e86181515",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3977,
+          "openRequestMs": 12129,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 542,
+          "operationRunMs": 13493,
+          "operationTotalMs": 14035,
+          "sandboxCreateToRunningMs": 13935
+        },
+        {
+          "index": 1,
+          "sessionId": "bs_e66928616200433dae41fbb5078aff2a",
+          "workspaceId": "workspace_a1a333ae23114a03a1a5139c150ed989",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3428,
+          "openRequestMs": 12241,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 540,
+          "operationRunMs": 13643,
+          "operationTotalMs": 14183,
+          "sandboxCreateToRunningMs": 14078
+        },
+        {
+          "index": 2,
+          "sessionId": "bs_1b51aff1c1c144b19131634e77ed72bd",
+          "workspaceId": "workspace_b4ed06f1d2484f989bba0b5977ff7d43",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3982,
+          "openRequestMs": 14543,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 541,
+          "operationRunMs": 15777,
+          "operationTotalMs": 16318,
+          "sandboxCreateToRunningMs": 16192
+        },
+        {
+          "index": 3,
+          "sessionId": "bs_8ec2f1373a5e4920b50881cbbd55a2f8",
+          "workspaceId": "workspace_0d192274868d411fb24025b6174c546c",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3968,
+          "openRequestMs": 14431,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 602,
+          "operationRunMs": 15599,
+          "operationTotalMs": 16201,
+          "sandboxCreateToRunningMs": 14502
+        },
+        {
+          "index": 4,
+          "sessionId": "bs_a03d6d6f273c49a5aed95053d751f05a",
+          "workspaceId": "workspace_9e82998da2ab475fb212b509ac8bbc72",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3988,
+          "openRequestMs": 14503,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 601,
+          "operationRunMs": 15679,
+          "operationTotalMs": 16280,
+          "sandboxCreateToRunningMs": 16125
+        },
+        {
+          "index": 5,
+          "sessionId": "bs_8d56d6d6dc7a4b5ba5926750d6e1856d",
+          "workspaceId": "workspace_fa12aa278670441f80b00734ef0ab23e",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3986,
+          "openRequestMs": 14574,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 538,
+          "operationRunMs": 15831,
+          "operationTotalMs": 16369,
+          "sandboxCreateToRunningMs": 16254
+        },
+        {
+          "index": 6,
+          "sessionId": "bs_0ee5daa14d1a4b95b20890bad8422a2e",
+          "workspaceId": "workspace_767df5d8f57b46509f45e390bc209d04",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3979,
+          "openRequestMs": 12269,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 599,
+          "operationRunMs": 13588,
+          "operationTotalMs": 14187,
+          "sandboxCreateToRunningMs": 14073
+        },
+        {
+          "index": 7,
+          "sessionId": "bs_c55340c95d824ff090be5a707372ea3d",
+          "workspaceId": "workspace_f56b92645cc94a4894645f09494ef664",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3965,
+          "openRequestMs": 14655,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 601,
+          "operationRunMs": 15828,
+          "operationTotalMs": 16429,
+          "sandboxCreateToRunningMs": 16337
+        },
+        {
+          "index": 8,
+          "sessionId": "bs_eb03e59028694b269cb5577549eadfa4",
+          "workspaceId": "workspace_d2b5e7e3794f43ada56bc83d9e9bd56f",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3991,
+          "openRequestMs": 12443,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 600,
+          "operationRunMs": 13737,
+          "operationTotalMs": 14337,
+          "sandboxCreateToRunningMs": 14202
+        },
+        {
+          "index": 9,
+          "sessionId": "bs_082736dcb61d49f0b9ad2cce69ffe00a",
+          "workspaceId": "workspace_2856144ceb51415fb72a830f0366e205",
+          "createStatus": 200,
+          "openStatus": 200,
+          "terminalStatus": "active",
+          "workerId": "worker_local_3",
+          "createMs": 3975,
+          "openRequestMs": 14659,
+          "openToActiveMs": 14909,
+          "createToActiveMs": 18900,
+          "queueDelayMs": 599,
+          "operationRunMs": 15829,
+          "operationTotalMs": 16428,
+          "sandboxCreateToRunningMs": 16344
+        }
+      ],
+      "operationMetrics": {
+        "items": [
+          {
+            "id": "rop_ff7263f730334839a6692af04837e6b2",
+            "sessionId": "bs_082736dcb61d49f0b9ad2cce69ffe00a",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 599,
+            "runMs": 15829,
+            "totalMs": 16428,
+            "createdAt": "2026-06-02T14:12:17.573Z",
+            "startedAt": "2026-06-02T14:12:18.172Z",
+            "completedAt": "2026-06-02T14:12:34.001Z"
+          },
+          {
+            "id": "rop_b4234396d14647d6bff9bf4d96e1dbcb",
+            "sessionId": "bs_a03d6d6f273c49a5aed95053d751f05a",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 601,
+            "runMs": 15679,
+            "totalMs": 16280,
+            "createdAt": "2026-06-02T14:12:17.572Z",
+            "startedAt": "2026-06-02T14:12:18.173Z",
+            "completedAt": "2026-06-02T14:12:33.852Z"
+          },
+          {
+            "id": "rop_478f6f5d13ad4f8c9339db092cd217c8",
+            "sessionId": "bs_0ee5daa14d1a4b95b20890bad8422a2e",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 599,
+            "runMs": 13588,
+            "totalMs": 14187,
+            "createdAt": "2026-06-02T14:12:17.572Z",
+            "startedAt": "2026-06-02T14:12:18.171Z",
+            "completedAt": "2026-06-02T14:12:31.759Z"
+          },
+          {
+            "id": "rop_c550c536e7294b9eaf87d5c3793cd6bf",
+            "sessionId": "bs_c55340c95d824ff090be5a707372ea3d",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 601,
+            "runMs": 15828,
+            "totalMs": 16429,
+            "createdAt": "2026-06-02T14:12:17.571Z",
+            "startedAt": "2026-06-02T14:12:18.172Z",
+            "completedAt": "2026-06-02T14:12:34.000Z"
+          },
+          {
+            "id": "rop_13370c3cd7ca4f48a5e21ab5776bb724",
+            "sessionId": "bs_eb03e59028694b269cb5577549eadfa4",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 600,
+            "runMs": 13737,
+            "totalMs": 14337,
+            "createdAt": "2026-06-02T14:12:17.571Z",
+            "startedAt": "2026-06-02T14:12:18.171Z",
+            "completedAt": "2026-06-02T14:12:31.908Z"
+          },
+          {
+            "id": "rop_0e34a00ff59249a08de7efdd4b14cefa",
+            "sessionId": "bs_8d56d6d6dc7a4b5ba5926750d6e1856d",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 538,
+            "runMs": 15831,
+            "totalMs": 16369,
+            "createdAt": "2026-06-02T14:12:17.570Z",
+            "startedAt": "2026-06-02T14:12:18.108Z",
+            "completedAt": "2026-06-02T14:12:33.939Z"
+          },
+          {
+            "id": "rop_13c7ffbcd2804f66911485325dd26276",
+            "sessionId": "bs_8ec2f1373a5e4920b50881cbbd55a2f8",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 602,
+            "runMs": 15599,
+            "totalMs": 16201,
+            "createdAt": "2026-06-02T14:12:17.569Z",
+            "startedAt": "2026-06-02T14:12:18.171Z",
+            "completedAt": "2026-06-02T14:12:33.770Z"
+          },
+          {
+            "id": "rop_59002958f79c49838600138e3bfba576",
+            "sessionId": "bs_1b51aff1c1c144b19131634e77ed72bd",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 541,
+            "runMs": 15777,
+            "totalMs": 16318,
+            "createdAt": "2026-06-02T14:12:17.567Z",
+            "startedAt": "2026-06-02T14:12:18.108Z",
+            "completedAt": "2026-06-02T14:12:33.885Z"
+          },
+          {
+            "id": "rop_bf0b5fdd85d04039b17b3e34e383449e",
+            "sessionId": "bs_e66928616200433dae41fbb5078aff2a",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 540,
+            "runMs": 13643,
+            "totalMs": 14183,
+            "createdAt": "2026-06-02T14:12:17.567Z",
+            "startedAt": "2026-06-02T14:12:18.107Z",
+            "completedAt": "2026-06-02T14:12:31.750Z"
+          },
+          {
+            "id": "rop_2de5363866e24bb9a2a5c148a1de8432",
+            "sessionId": "bs_cf1201648dec4fd6a176f1dd4e4bc463",
+            "workerId": "worker_local_3",
+            "status": "completed",
+            "queueDelayMs": 542,
+            "runMs": 13493,
+            "totalMs": 14035,
+            "createdAt": "2026-06-02T14:12:17.565Z",
+            "startedAt": "2026-06-02T14:12:18.107Z",
+            "completedAt": "2026-06-02T14:12:31.600Z"
+          }
+        ],
+        "stats": {
+          "queueDelayMs": {
+            "count": 10,
+            "avg": 576,
+            "p50": 599,
+            "p95": 602,
+            "max": 602
+          },
+          "runMs": {
+            "count": 10,
+            "avg": 14900,
+            "p50": 15599,
+            "p95": 15831,
+            "max": 15831
+          },
+          "totalMs": {
+            "count": 10,
+            "avg": 15477,
+            "p50": 16201,
+            "p95": 16429,
+            "max": 16429
+          }
+        }
+      },
+      "sandboxMetrics": {
+        "items": [
+          {
+            "id": "sbi_bs_082736dcb61d49f0b9ad2cce69ffe00a",
+            "sessionId": "bs_082736dcb61d49f0b9ad2cce69ffe00a",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 16344,
+            "createdAt": "2026-06-02T14:12:17.644Z",
+            "openedAt": "2026-06-02T14:12:33.988Z"
+          },
+          {
+            "id": "sbi_bs_c55340c95d824ff090be5a707372ea3d",
+            "sessionId": "bs_c55340c95d824ff090be5a707372ea3d",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 16337,
+            "createdAt": "2026-06-02T14:12:17.649Z",
+            "openedAt": "2026-06-02T14:12:33.986Z"
+          },
+          {
+            "id": "sbi_bs_8d56d6d6dc7a4b5ba5926750d6e1856d",
+            "sessionId": "bs_8d56d6d6dc7a4b5ba5926750d6e1856d",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 16254,
+            "createdAt": "2026-06-02T14:12:17.637Z",
+            "openedAt": "2026-06-02T14:12:33.891Z"
+          },
+          {
+            "id": "sbi_bs_1b51aff1c1c144b19131634e77ed72bd",
+            "sessionId": "bs_1b51aff1c1c144b19131634e77ed72bd",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 16192,
+            "createdAt": "2026-06-02T14:12:17.638Z",
+            "openedAt": "2026-06-02T14:12:33.830Z"
+          },
+          {
+            "id": "sbi_bs_a03d6d6f273c49a5aed95053d751f05a",
+            "sessionId": "bs_a03d6d6f273c49a5aed95053d751f05a",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 16125,
+            "createdAt": "2026-06-02T14:12:17.651Z",
+            "openedAt": "2026-06-02T14:12:33.776Z"
+          },
+          {
+            "id": "sbi_bs_8ec2f1373a5e4920b50881cbbd55a2f8",
+            "sessionId": "bs_8ec2f1373a5e4920b50881cbbd55a2f8",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 14502,
+            "createdAt": "2026-06-02T14:12:17.644Z",
+            "openedAt": "2026-06-02T14:12:32.146Z"
+          },
+          {
+            "id": "sbi_bs_eb03e59028694b269cb5577549eadfa4",
+            "sessionId": "bs_eb03e59028694b269cb5577549eadfa4",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 14202,
+            "createdAt": "2026-06-02T14:12:17.642Z",
+            "openedAt": "2026-06-02T14:12:31.844Z"
+          },
+          {
+            "id": "sbi_bs_e66928616200433dae41fbb5078aff2a",
+            "sessionId": "bs_e66928616200433dae41fbb5078aff2a",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 14078,
+            "createdAt": "2026-06-02T14:12:17.637Z",
+            "openedAt": "2026-06-02T14:12:31.715Z"
+          },
+          {
+            "id": "sbi_bs_0ee5daa14d1a4b95b20890bad8422a2e",
+            "sessionId": "bs_0ee5daa14d1a4b95b20890bad8422a2e",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 14073,
+            "createdAt": "2026-06-02T14:12:17.642Z",
+            "openedAt": "2026-06-02T14:12:31.715Z"
+          },
+          {
+            "id": "sbi_bs_cf1201648dec4fd6a176f1dd4e4bc463",
+            "sessionId": "bs_cf1201648dec4fd6a176f1dd4e4bc463",
+            "workerId": "worker_local_3",
+            "status": "running",
+            "createToRunningMs": 13935,
+            "createdAt": "2026-06-02T14:12:17.637Z",
+            "openedAt": "2026-06-02T14:12:31.572Z"
+          }
+        ],
+        "stats": {
+          "createToRunningMs": {
+            "count": 10,
+            "avg": 15204,
+            "p50": 14502,
+            "p95": 16344,
+            "max": 16344
+          }
+        }
+      },
+      "systemSnapshots": [
+        {
+          "at": 1780409553120,
+          "queuedOperations": 0,
+          "runningOperations": 7,
+          "preparingSandboxes": 0,
+          "runningSandboxes": 11,
+          "workerLoads": [
+            {
+              "id": "worker_local_3",
+              "status": "busy",
+              "activeSessionCount": 10,
+              "queuedOperationCount": 12,
+              "runningSandboxCount": 0,
+              "warmPoolReady": 2
+            },
+            {
+              "id": "worker_local_2",
+              "status": "ready",
+              "activeSessionCount": 0,
+              "queuedOperationCount": 3,
+              "runningSandboxCount": 0,
+              "warmPoolReady": 2
+            },
+            {
+              "id": "worker_local",
+              "status": "ready",
+              "activeSessionCount": 0,
+              "queuedOperationCount": 2,
+              "runningSandboxCount": 1,
+              "warmPoolReady": 2
+            }
+          ]
+        }
+      ],
+      "recovery": {
+        "skipped": false,
+        "concurrency": 10,
+        "workerId": "worker_local_3",
+        "workerContainer": "opencode-worker-3",
+        "sessionId": "bs_cf1201648dec4fd6a176f1dd4e4bc463",
+        "failureTypes": [
+          "worker_offline",
+          "worker_offline"
+        ],
+        "orphanedStatus": "orphaned",
+        "recoveredStatus": "active",
+        "recoveredWorkerId": "worker_local",
+        "orphanDetectMs": 46167,
+        "reopenToActiveMs": 3207,
+        "reopenQueueDelayMs": 43,
+        "reopenRunMs": 2808,
+        "reopenTotalMs": 2851
+      }
+    }
+  ]
+}

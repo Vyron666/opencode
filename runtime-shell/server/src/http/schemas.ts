@@ -218,12 +218,39 @@ export const workerRegisterSchema = z.object({
   version: z.string().min(1).optional(),
   capacityTotal: z.number().int().positive(),
   name: z.string().min(1).optional(),
+  warmPoolTarget: z.number().int().min(0).optional(),
 })
 
 export const workerHeartbeatSchema = z.object({
   workerNodeId: z.string().min(1),
   capacityUsed: z.number().int().min(0),
   status: z.enum(["registering", "ready", "busy", "degraded", "offline", "draining"]),
+  warmPoolReady: z.number().int().min(0).optional(),
+  resourceSummary: z.object({
+    runningSandboxCount: z.number().int().min(0),
+    warmSandboxCount: z.number().int().min(0),
+    queuedOperationCount: z.number().int().min(0),
+    cpuPercent: z.number().min(0).max(100).optional(),
+    memoryBytes: z.number().int().min(0).optional(),
+    diskBytes: z.number().int().min(0).optional(),
+  }).optional(),
+})
+
+export const quotaPolicyUpdateSchema = z.object({
+  tenantId: z.string().min(1),
+  organizationId: z.string().min(1),
+  scopeType: z.enum(["tenant", "organization", "project", "user"]),
+  scopeId: z.string().min(1),
+  enabled: z.boolean(),
+  maxActiveSessions: z.number().int().min(0).optional(),
+  maxQueuedOperations: z.number().int().min(0).optional(),
+  maxRunningSandboxes: z.number().int().min(0).optional(),
+  maxWarmPoolPerWorker: z.number().int().min(0).optional(),
+})
+
+export const sandboxCleanupSchema = z.object({
+  limit: z.number().int().min(1).max(500).optional().default(100),
+  recycleWarmPoolReady: z.boolean().optional().default(true),
 })
 
 export const sessionRecoverSchema = z.object({

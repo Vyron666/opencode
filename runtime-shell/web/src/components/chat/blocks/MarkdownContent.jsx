@@ -51,8 +51,8 @@ function CodeBlock({ children, ...props }) {
   }, [copied])
 
   return (
-    <div className="my-3 overflow-hidden rounded-[12px] border border-[var(--line)] bg-black/45">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2 text-[11px]">
+    <div className="my-3 overflow-hidden rounded-[14px] border border-[rgba(181,148,116,0.14)] bg-[rgba(8,6,5,0.78)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[rgba(181,148,116,0.12)] px-3.5 py-2.5 text-[11px]">
         <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{language}</span>
         <button
           type="button"
@@ -61,12 +61,12 @@ function CodeBlock({ children, ...props }) {
             await navigator.clipboard.writeText(codeText)
             setCopied(true)
           }}
-          className="rounded-full border border-[var(--line)] bg-black/20 px-2.5 py-1 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+          className="rounded-full border border-[rgba(181,148,116,0.18)] bg-black/20 px-2.5 py-1 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
         >
           {copied ? '已复制' : '复制'}
         </button>
       </div>
-      <pre {...props} className="max-w-full overflow-x-auto p-3 text-sm">{children}</pre>
+      <pre {...props} className="max-w-full overflow-x-auto px-3.5 py-3 text-sm">{children}</pre>
     </div>
   )
 }

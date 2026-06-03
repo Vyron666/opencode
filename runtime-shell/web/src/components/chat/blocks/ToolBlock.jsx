@@ -4,7 +4,6 @@ import { ToolData } from './ToolData'
 export function ToolBlock({ block }) {
   const statusColor = block.status === 'completed' ? '#5a9e7c' : block.status === 'failed' ? '#c44a3a' : '#d4a05a'
   const [expanded, setExpanded] = useState(block.status === 'pending' || block.status === 'failed')
-  const openByDefault = block.status === 'pending' || block.status === 'failed'
   const hasDetails = Boolean(block.input || block.output || (block.content?.length > 0) || (block.locations?.length > 0))
   const isOpen = expanded
   const summary = useMemo(() => {
@@ -17,8 +16,8 @@ export function ToolBlock({ block }) {
 
   return (
     <div
-      className="min-w-0 rounded-[16px] px-3.5 py-3 border border-[var(--line)] grid gap-2 max-w-[680px] w-full"
-      style={{ background: block.status === 'failed' ? 'rgba(196,74,58,0.08)' : 'rgba(20,16,13,0.35)' }}
+      className="min-w-0 rounded-[18px] px-4 py-3.5 border border-[rgba(181,148,116,0.12)] grid gap-2.5 max-w-[700px] w-full shadow-[0_10px_28px_rgba(0,0,0,0.1)]"
+      style={{ background: block.status === 'failed' ? 'rgba(196,74,58,0.08)' : 'rgba(20,16,13,0.42)' }}
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: statusColor }} />
@@ -30,7 +29,7 @@ export function ToolBlock({ block }) {
           <button
             type="button"
             onClick={() => setExpanded((current) => !current)}
-            className="ml-auto text-[10px] px-2 py-1 rounded-full border border-[var(--line)] bg-black/25 text-[var(--text-muted)] hover:bg-black/35 transition-colors"
+            className="ml-auto text-[10px] px-2.5 py-1 rounded-full border border-[rgba(181,148,116,0.18)] bg-black/25 text-[var(--text-muted)] hover:bg-black/35 transition-colors"
             aria-label={isOpen ? '收起工具结果' : '展开工具结果'}
           >
             {isOpen ? '收起' : '展开'}
@@ -38,18 +37,18 @@ export function ToolBlock({ block }) {
         ) : null}
       </div>
 
-      <div className="min-w-0 text-xs font-semibold text-[var(--text-dim)] break-words line-clamp-2">{block.title}</div>
+      <div className="min-w-0 text-[13px] font-semibold text-[var(--text-dim)] break-words line-clamp-2">{block.title}</div>
 
       {!isOpen && summary ? (
-        <div className="text-[10px] text-[var(--text-muted)] truncate">{summary}</div>
+        <div className="text-[11px] text-[var(--text-muted)] truncate">{summary}</div>
       ) : null}
 
       {isOpen ? (
-        <div className="grid gap-2 max-h-[400px] overflow-y-auto pr-1">
+        <div className="grid gap-2.5 max-h-[400px] overflow-y-auto pr-1">
           {block.locations?.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {block.locations.map((location, index) => (
-                <span key={`${location.path}-${index}`} className="text-[10px] px-2 py-1 rounded-full bg-black/30 text-[var(--text-muted)] border border-[var(--line)]">
+                <span key={`${location.path}-${index}`} className="text-[10px] px-2.5 py-1 rounded-full bg-black/30 text-[var(--text-muted)] border border-[rgba(181,148,116,0.16)]">
                   {location.path}
                   {location.line ? `:${location.line}` : ''}
                 </span>

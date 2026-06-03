@@ -86,6 +86,7 @@ export function registerAcpSessionRuntimeRoutes(app: Hono) {
       parts: body.data.parts,
     })
     if (!result.ok) {
+      if (result.reason === "quota_exceeded") return c.json(jsonError("quota exceeded", 429, reqId), 429)
       if (result.reason === "session_not_found") return c.json(jsonError("session not found", 404, reqId), 404)
       if (isRuntimeWorkspaceReason(result.reason)) {
         const mapped = mapRuntimeWorkspaceError(result.reason, reqId)

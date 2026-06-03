@@ -19,6 +19,6 @@ export type RuntimeProcessFactory = (options: RuntimeClientOptions) => SandboxAc
 
 export function createSandboxManager(backend: string): SandboxManager {
   if (backend === "local-process") return createLocalProcessSandboxManager()
-  if (backend === "docker") return createDockerSandboxManager()
+  if (backend === "docker" || backend === "gvisor" || backend === "kata") return createDockerSandboxManager()
   throw new Error(`unsupported sandbox backend: ${backend}`)
 }

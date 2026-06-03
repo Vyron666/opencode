@@ -1,4 +1,5 @@
 import { createLogger } from "../log"
+import { cleanupDockerWarmPool, closeDockerWarmPoolSlot, ensureDockerWarmPool, getDockerWarmPoolSnapshot } from "./sandbox/docker-sandbox-manager"
 import { queryFailure, queryHeartbeat, queryLease, queryRuntime } from "./worker-agent-query"
 import { createRuntimeHandlers } from "./worker-agent-runtime"
 
@@ -33,6 +34,10 @@ Bun.serve({
       if (request.method === "GET" && url.pathname === "/runtime/query-heartbeat") {
         return json(queryHeartbeat(url))
       }
+      if (request.method === "GET" && url.pathname === "/runtime/query-warm-pool") {
+        const workerId = url.searchParams.get("workerId") || undefined
+        return json(getDockerWarmPoolSnapshot(workerId))
+      }
       if (request.method === "GET" && url.pathname === "/runtime/query-failure") {
         return json(queryFailure(url))
       }
@@ -61,6 +66,29 @@ Bun.serve({
       if (url.pathname === "/runtime/close-session") {
         await runtimeHandlers.closeSession(await request.json())
         return json({ success: true })
+      }
+      if (url.pathname === "/runtime/pool/ensure") {
+        const body = await request.json() as Record<string, unknown>
+        const workerId = typeof body.workerId === "string" ? body.workerId : ""
+        const target = typeof body.target === "number" ? body.target : Number(body.target || 0)
+        return json(await ensureDockerWarmPool({
+          workerId,
+          target: Number.isFinite(target) && target >= 0 ? target : 0,
+        }))
+      }
+      if (url.pathname === "/runtime/pool/close-slot") {
+        const body = await request.json() as Record<string, unknown>
+        return json(await closeDockerWarmPoolSlot({
+          workerId: typeof body.workerId === "string" ? body.workerId : "",
+          slotId: typeof body.slotId === "string" ? body.slotId : "",
+        }))
+      }
+      if (url.pathname === "/runtime/pool/cleanup") {
+        const body = await request.json() as Record<string, unknown>
+        return json(await cleanupDockerWarmPool({
+          workerId: typeof body.workerId === "string" ? body.workerId : undefined,
+          recycleReady: body.recycleReady === true,
+        }))
       }
       if (url.pathname === "/runtime/set-mode") {
         return json(await runtimeHandlers.setMode(await request.json()))

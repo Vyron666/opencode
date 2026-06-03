@@ -34,8 +34,8 @@ export function McpConfigPanel() {
   if (!canManageProviderSettings) return null
 
   return (
-    <div className="grid gap-2.5">
-      <div className="text-xs font-semibold text-[var(--text-dim)]">
+    <div className="grid gap-3">
+      <div className="text-xs font-semibold tracking-[0.08em] uppercase text-[var(--text-dim)]">
         {canManagePlatformSettings ? '平台 MCP 配置' : '我的 MCP 配置'}
       </div>
 
@@ -109,10 +109,10 @@ export function McpConfigPanel() {
             }
             setFlash('MCP 配置已保存')
           }}
-          className="grid gap-2.5 animate-fade-in"
+          className="grid gap-3 animate-fade-in"
         >
           {servers.map((server, index) => (
-            <div key={`mcp-server-${index}`} className="grid gap-2 rounded-[12px] border border-[var(--line)] p-2.5 bg-black/20">
+            <div key={`mcp-server-${index}`} className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
               <Field label="Server Name">
                 <input value={server.name} onChange={(event) => setServers((current) => current.map((item, currentIndex) => (currentIndex === index ? { ...item, name: event.target.value } : item)))} placeholder="例如 deepseek-docs" className={inputClassName} />
               </Field>

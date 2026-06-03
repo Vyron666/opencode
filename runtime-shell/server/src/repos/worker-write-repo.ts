@@ -3,6 +3,10 @@ import { now, nextId } from "../store/state-support"
 import type { WorkerNode } from "../types"
 import { findWorkerByCode, findWorkerById } from "./worker-query-repo"
 
+function stringifyWorkerResourceSummary(summary: WorkerNode["resourceSummary"]) {
+  return summary ? JSON.stringify(summary) : null
+}
+
 export async function registerWorker(input: {
   workerId?: string
   tenantId?: string
@@ -12,6 +16,7 @@ export async function registerWorker(input: {
   baseUrl: string
   capacity: number
   version?: string
+  warmPoolTarget?: number
 }) {
   const existing = await findWorkerByCode(input.workerCode)
   if (existing) {
@@ -23,6 +28,7 @@ export async function registerWorker(input: {
       capacity: input.capacity,
       status: "ready",
       version: input.version,
+      warmPoolTarget: input.warmPoolTarget ?? existing.warmPoolTarget ?? 0,
     })
   }
   const timestamp = now()
@@ -40,6 +46,8 @@ export async function registerWorker(input: {
     activeSessionCount: 0,
     lastHeartbeatAt: timestamp,
     version: input.version,
+    warmPoolTarget: input.warmPoolTarget ?? 0,
+    warmPoolReady: 0,
   }
   await getRuntimeDatabaseClient().execute(
     `
@@ -54,13 +62,16 @@ export async function registerWorker(input: {
         capacity,
         active_session_count,
         last_heartbeat_at,
+        resource_summary_json,
+        warm_pool_target,
+        warm_pool_ready,
         created_at,
         created_by,
         updated_at,
         updated_by,
         deleted_at,
         version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       worker.id,
@@ -73,6 +84,9 @@ export async function registerWorker(input: {
       worker.capacity,
       worker.activeSessionCount,
       worker.lastHeartbeatAt,
+      stringifyWorkerResourceSummary(worker.resourceSummary),
+      worker.warmPoolTarget ?? 0,
+      worker.warmPoolReady ?? 0,
       timestamp,
       "system_worker",
       timestamp,
@@ -104,6 +118,9 @@ export async function updateWorker(workerId: string, patch: Partial<WorkerNode>)
         capacity = ?,
         active_session_count = ?,
         last_heartbeat_at = ?,
+        resource_summary_json = ?,
+        warm_pool_target = ?,
+        warm_pool_ready = ?,
         updated_at = ?,
         updated_by = ?,
         version = ?
@@ -119,6 +136,9 @@ export async function updateWorker(workerId: string, patch: Partial<WorkerNode>)
       updated.capacity,
       updated.activeSessionCount,
       updated.lastHeartbeatAt,
+      stringifyWorkerResourceSummary(updated.resourceSummary),
+      updated.warmPoolTarget ?? 0,
+      updated.warmPoolReady ?? 0,
       now(),
       "system_worker",
       updated.version ?? null,

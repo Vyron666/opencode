@@ -32,6 +32,7 @@ export class StoreWorkerService {
     baseUrl: string
     capacity: number
     version?: string
+    warmPoolTarget?: number
   }) {
     return WorkerRepo.registerWorker(input)
   }

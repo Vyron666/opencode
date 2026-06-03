@@ -23,7 +23,6 @@ export function createRuntimeEntry(input: {
   configContent?: string
 }) {
   const remoteRuntimeId = `rrt_${crypto.randomUUID().replace(/-/g, "")}`
-  const runtimeCwd = input.sandboxPath || input.workspacePath
   const upstreamDrain = createUpstreamDrainController()
   const sandboxManager = createSandboxManager(Config.sandboxBackend)
   const sandboxHandle = sandboxManager.prepare({
@@ -32,6 +31,7 @@ export function createRuntimeEntry(input: {
     workspacePath: input.workspacePath,
     sandboxPath: input.sandboxPath,
   })
+  const runtimeCwd = sandboxHandle.runtimeCwd || input.sandboxPath || input.workspacePath
   const entry: RuntimeEntry = {
     remoteRuntimeId,
     businessSessionId: input.businessSessionId,

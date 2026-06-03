@@ -1,7 +1,8 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import type { Socket } from "node:net"
 import type { RuntimeClientOptions } from "../../acp/types"
 
-export type SandboxBackend = "local-process" | "docker"
+export type SandboxBackend = "local-process" | "docker" | "gvisor" | "kata"
 
 export type SandboxPrepareInput = {
   businessSessionId: string
@@ -16,6 +17,10 @@ export type SandboxHandle = {
   containerName?: string
   workspacePath?: string
   sandboxPath?: string
+  runtimeCwd?: string
+  poolSlotId?: string
+  activeSocket?: Socket
+  invalidPoolSlot?: boolean
   bootPromise?: Promise<void>
   closePromise?: Promise<void>
 }

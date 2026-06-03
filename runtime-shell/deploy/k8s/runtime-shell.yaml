@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runtime-shell
+  labels:
+    app: runtime-shell
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: runtime-shell
+  template:
+    metadata:
+      labels:
+        app: runtime-shell
+    spec:
+      containers:
+        - name: runtime-shell
+          image: your-registry/runtime-shell:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: RUNTIME_SHELL_HOST
+              value: "0.0.0.0"
+            - name: RUNTIME_SHELL_PORT
+              value: "3000"
+            - name: RUNTIME_SHELL_PUBLIC_BASE_URL
+              value: "https://runtime-shell.example.com"
+            - name: RUNTIME_SHELL_DB_DIALECT
+              value: "postgres"
+            - name: RUNTIME_SHELL_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: runtime-shell-secret
+                  key: db_url
+            - name: RUNTIME_SHELL_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: runtime-shell-secret
+                  key: session_secret
+            - name: RUNTIME_SHELL_WORKER_EXECUTION_MODE
+              value: "remote"
+            - name: RUNTIME_SHELL_WORKER_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: runtime-shell-secret
+                  key: worker_agent_token
+            - name: RUNTIME_SHELL_SANDBOX_BACKEND
+              value: "gvisor"
+            - name: RUNTIME_SHELL_SANDBOX_RUNTIME_CLASS
+              value: "gvisor"
+            - name: RUNTIME_SHELL_SANDBOX_ISOLATION_MODE
+              value: "runtime-class"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runtime-shell
+spec:
+  selector:
+    app: runtime-shell
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

@@ -16,7 +16,7 @@ import {
 import { stopRuntimeLeaseAutoRenew } from "../../services/runtime-governance/runtime-lease-renewal-service"
 import { resetSessionRuntime } from "../../services/session/session-lifecycle-service"
 import { recordRuntimeFailure } from "../../services/runtime-governance/runtime-failure-service"
-import { sessionService } from "../../services/store/store-singleton"
+import { auditService, sessionService } from "../../services/store/store-singleton"
 
 type RuntimeEventPushBody = {
   event: SessionEvent
@@ -137,12 +137,53 @@ export function registerInternalRuntimeRoutes(app: Hono) {
           remote: true,
         },
       })
+      await auditSandboxExit(body.event)
     }
 
     await syncSessionStatusForSyntheticEvent(body.event)
     await persistAndFanout(body.event)
     return c.json(jsonOk({ success: true }, reqId))
   })
+}
+
+async function auditSandboxExit(event: SessionEvent) {
+  const session = await sessionService.getSession(event.businessSessionId)
+  if (!session) return
+  const detail = {
+    workerId: event.workerId,
+    acpSessionId: event.acpSessionId,
+    code: event.payload.code,
+    signal: event.payload.signal,
+    message: event.payload.message,
+  }
+  void auditService.appendAuditLog({
+    tenantId: session.tenantId,
+    organizationId: session.organizationId,
+    projectId: session.projectId,
+    businessSessionId: session.id,
+    action: "sandbox.exit",
+    resourceType: "sandbox_instance",
+    resourceId: `sbi_${session.id}`,
+    detail,
+  })
+  if (!isResourceExceededExit(event)) return
+  void auditService.appendAuditLog({
+    tenantId: session.tenantId,
+    organizationId: session.organizationId,
+    projectId: session.projectId,
+    businessSessionId: session.id,
+    action: "sandbox.resource_exceeded",
+    resourceType: "sandbox_instance",
+    resourceId: `sbi_${session.id}`,
+    detail,
+  })
+}
+
+function isResourceExceededExit(event: SessionEvent) {
+  const code = typeof event.payload.code === "number" ? event.payload.code : undefined
+  const signal = typeof event.payload.signal === "string" ? event.payload.signal : ""
+  const message = typeof event.payload.message === "string" ? event.payload.message.toLowerCase() : ""
+  return code === 137 || signal === "SIGKILL" || message.includes("oom") || message.includes("resource")
 }
 
 function isWorkerAgentAuthorized(token: string | undefined) {

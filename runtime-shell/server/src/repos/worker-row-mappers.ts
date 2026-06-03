@@ -13,6 +13,9 @@ export type WorkerRow = {
   last_heartbeat_at: string
   updated_at: string
   version: string | null
+  resource_summary_json: string | null
+  warm_pool_target: number | null
+  warm_pool_ready: number | null
 }
 
 export function toWorker(row: WorkerRow): WorkerNode {
@@ -28,5 +31,10 @@ export function toWorker(row: WorkerRow): WorkerNode {
     activeSessionCount: row.active_session_count,
     lastHeartbeatAt: row.last_heartbeat_at,
     version: row.version || undefined,
+    resourceSummary: row.resource_summary_json
+      ? JSON.parse(row.resource_summary_json) as WorkerNode["resourceSummary"]
+      : undefined,
+    warmPoolTarget: row.warm_pool_target ?? undefined,
+    warmPoolReady: row.warm_pool_ready ?? undefined,
   }
 }

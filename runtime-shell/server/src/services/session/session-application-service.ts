@@ -3,6 +3,8 @@ import { waitForSessionEventWrites } from "../../runtime/runtime-events"
 import { createLogger } from "../../log"
 import type { User } from "../../types"
 import { buildAccessContext } from "../access/access-context-service"
+import { requireQuotaForRuntimeOperation, requireQuotaForSessionCreate } from "../sandbox/sandbox-quota-service"
+import { markRuntimeOperationCompleted, markRuntimeOperationFailed, markRuntimeOperationRunning, startRuntimeOperation } from "../sandbox/sandbox-queue-service"
 import { createRuntimeBinding } from "../runtime-governance/runtime-binding-service"
 import { auditService, sessionService } from "../store/store-singleton"
 import { isSessionWorkspaceReady, requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
@@ -12,10 +14,17 @@ import { markSessionClosing, markSessionOpening } from "./session-status-machine
 import { buildSessionViewForUser } from "./session-summary-service"
 import { listWorkspaceSharesForWorkspace } from "./workspace-share-application-service"
 import { openSessionWithFallback, preopenSessionRuntime } from "./session-runtime-service"
-import { assignWorkerForNewSession, ensureWorkerForSessionOpen, reassignWorkerForSessionOpen } from "./session-worker-assignment-service"
-import { closeSandboxWorkspace, ensureSandboxWorkspace, markSandboxWorkspaceClosing } from "../sandbox/sandbox-workspace-service"
+import {
+  assignWorkerForNewSession,
+  assignWorkerForNewSessionWithReservation,
+  ensureWorkerForSessionOpen,
+  reassignWorkerForSessionOpen,
+} from "./session-worker-assignment-service"
+import { releaseWorkerSelectionReservation } from "../scheduler/scheduler-service"
+import { closeSandboxWorkspace, ensureSandboxWorkspace, markSandboxWorkspaceClosing, markSandboxWorkspaceRunning } from "../sandbox/sandbox-workspace-service"
 
 const log = createLogger("session-application-service")
+const sessionOpenRequests = new Map<string, ReturnType<typeof openSessionForUserInner>>()
 
 export async function listUserSessionOverview(user: User) {
   const context = await buildAccessContext(user)
@@ -48,6 +57,11 @@ export async function createSessionForUser(input: {
   workspaceId: string
   warmup?: boolean
 }) {
+  const quota = await requireQuotaForSessionCreate({
+    user: input.user,
+    projectId: input.projectId,
+  })
+  if (!quota.ok) return { ok: false as const, reason: quota.reason }
   const workspaceResult = await ensureWorkspaceForUser({
     user: input.user,
     projectId: input.projectId,
@@ -55,16 +69,27 @@ export async function createSessionForUser(input: {
   })
   if (!workspaceResult.ok) return workspaceResult
 
-  const worker = input.warmup ? await assignWorkerForNewSession(input.user) : undefined
+  const sessionCreateReservationId = input.warmup ? `session-create:${crypto.randomUUID()}` : undefined
+  const worker = input.warmup && sessionCreateReservationId
+    ? await assignWorkerForNewSessionWithReservation(input.user, sessionCreateReservationId)
+    : undefined
   if (input.warmup && !worker) return { ok: false as const, reason: "worker_not_found" }
 
-  const session = await sessionService.createSession({
-    title: input.title,
-    projectId: input.projectId,
-    workspace: workspaceResult.workspace,
-    user: input.user,
-    workerId: worker?.id || "",
-  })
+  const session = await (async () => {
+    try {
+      return await sessionService.createSession({
+        title: input.title,
+        projectId: input.projectId,
+        workspace: workspaceResult.workspace,
+        user: input.user,
+        workerId: worker?.id || "",
+      })
+    } finally {
+      if (sessionCreateReservationId) {
+        releaseWorkerSelectionReservation(sessionCreateReservationId)
+      }
+    }
+  })()
   if (worker) {
     await createRuntimeBinding({
       businessSessionId: session.id,
@@ -75,6 +100,7 @@ export async function createSessionForUser(input: {
   const auditLogTask = auditService.appendAuditLog({
     tenantId: input.user.tenantId,
     organizationId: input.user.organizationId,
+    projectId: input.projectId,
     userId: input.user.id,
     businessSessionId: session.id,
     requestId: input.requestId,
@@ -92,8 +118,22 @@ export async function createSessionForUser(input: {
   // 中文/English: session creation must not wait for audit durability before responding.
   void auditLogTask
   if (input.warmup) {
+    const warmupOperation = await startRuntimeOperation({
+      user: input.user,
+      projectId: input.projectId,
+      businessSessionId: session.id,
+      workerId: worker?.id,
+      operationType: "session_warmup",
+      detail: {
+        workspaceId: workspaceResult.workspace.id,
+      },
+    })
     void ensureSandboxWorkspace(session)
+      .then(async () => {
+        await markRuntimeOperationRunning(warmupOperation.id, worker?.id)
+      })
       .then(() => preopenSessionRuntime(session))
+      .then(() => markRuntimeOperationCompleted(warmupOperation.id))
       .catch((error) => {
         log.warn("session warmup sandbox prepare failed", {
           businessSessionId: session.id,
@@ -101,6 +141,10 @@ export async function createSessionForUser(input: {
           workerId: session.workerId,
           message: error instanceof Error ? error.message : String(error),
         })
+        void markRuntimeOperationFailed(
+          warmupOperation.id,
+          error instanceof Error ? error.message : String(error),
+        )
       })
   }
 
@@ -151,6 +195,7 @@ export async function closeSessionForUser(input: {
   const auditLogTask = auditService.appendAuditLog({
     tenantId: result.session.tenantId,
     organizationId: result.session.organizationId,
+    projectId: result.session.projectId,
     userId: input.user.id,
     businessSessionId: result.session.id,
     requestId: input.requestId,
@@ -187,8 +232,47 @@ export async function openSessionForUser(input: {
     session: result.session,
   })
   if (!workspaceResult.ok) return workspaceResult
+  const quota = await requireQuotaForRuntimeOperation({
+    user: input.user,
+    projectId: workspaceResult.session.projectId,
+    businessSessionId: workspaceResult.session.id,
+  })
+  if (!quota.ok) return { ok: false as const, reason: quota.reason }
 
-  const recoverableSession = await prepareSessionForOpen(workspaceResult.session)
+  const inFlight = sessionOpenRequests.get(workspaceResult.session.id)
+  if (inFlight) return inFlight
+
+  const task = openSessionForUserInner({
+    user: input.user,
+    requestId: input.requestId,
+    session: workspaceResult.session,
+  })
+  sessionOpenRequests.set(workspaceResult.session.id, task)
+  try {
+    return await task
+  } finally {
+    if (sessionOpenRequests.get(workspaceResult.session.id) === task) {
+      sessionOpenRequests.delete(workspaceResult.session.id)
+    }
+  }
+}
+
+async function openSessionForUserInner(input: {
+  user: User
+  requestId: string
+  session: import("../../types").BusinessSession
+}) {
+  const operation = await startRuntimeOperation({
+    user: input.user,
+    projectId: input.session.projectId,
+    businessSessionId: input.session.id,
+    workerId: input.session.workerId || undefined,
+    operationType: "session_open",
+  })
+
+  // 中文/English: concurrent open/load clicks for the same business session should
+  // converge on one runtime bootstrap instead of racing duplicate binding records.
+  const recoverableSession = await prepareSessionForOpen(input.session)
   try {
     const sandboxWorkspace = await ensureSandboxWorkspace(recoverableSession)
     log.info("session sandbox workspace prepared", {
@@ -202,6 +286,7 @@ export async function openSessionForUser(input: {
       workspacePath: recoverableSession.workspacePath,
       message: error instanceof Error ? error.message : String(error),
     })
+    await markRuntimeOperationFailed(operation.id, error instanceof Error ? error.message : String(error))
     await resetSessionRuntime(recoverableSession.id, "created")
     return { ok: false as const, reason: "open_failed" }
   }
@@ -216,6 +301,7 @@ export async function openSessionForUser(input: {
       workerId: recoverableSession.workerId,
       message: error instanceof Error ? error.message : String(error),
     })
+    await markRuntimeOperationFailed(operation.id, error instanceof Error ? error.message : String(error))
     await resetSessionRuntime(recoverableSession.id, "created")
     return undefined
   })
@@ -225,9 +311,11 @@ export async function openSessionForUser(input: {
       workspacePath: recoverableSession.workspacePath,
       workerId: recoverableSession.workerId,
     })
+    await markRuntimeOperationFailed(operation.id, "worker not found")
     await resetSessionRuntime(recoverableSession.id, "created")
     return { ok: false as const, reason: "worker_not_found" }
   }
+  await markRuntimeOperationRunning(operation.id, worker.id)
 
   const reopenedSession = (await sessionService.getSession(recoverableSession.id)) || recoverableSession
   const firstOpenAttempt = await openSessionWithFallback(reopenedSession).catch(async (error) => {
@@ -244,20 +332,27 @@ export async function openSessionForUser(input: {
     session: reopenedSession,
     failedWorkerId: worker.id,
   })
-  if (!opened) return { ok: false as const, reason: "open_failed" }
+  if (!opened) {
+    await markRuntimeOperationFailed(operation.id, "session open failed")
+    return { ok: false as const, reason: "open_failed" }
+  }
 
   const openedWorker = await ensureWorkerForSessionOpen({
     user: input.user,
     session: opened,
   })
   if (!openedWorker) {
+    await markRuntimeOperationFailed(operation.id, "worker not found")
     await resetSessionRuntime(opened.id, "created")
     return { ok: false as const, reason: "worker_not_found" }
   }
+  await markSandboxWorkspaceRunning(opened)
+  await markRuntimeOperationCompleted(operation.id)
 
   const auditLogTask = auditService.appendAuditLog({
     tenantId: opened.tenantId,
     organizationId: opened.organizationId,
+    projectId: opened.projectId,
     userId: input.user.id,
     businessSessionId: opened.id,
     requestId: input.requestId,

@@ -1,7 +1,7 @@
 import { authorizeSystemWorkersAccess } from "../access/authorization-service"
 import { recordWorkerHeartbeat } from "../runtime-governance/worker-heartbeat-service"
 import { workerService } from "../store/store-singleton"
-import type { User } from "../../types"
+import type { User, WorkerHeartbeat } from "../../types"
 
 export async function registerWorkerForUser(input: {
   user: User
@@ -13,6 +13,7 @@ export async function registerWorkerForUser(input: {
   version?: string
   capacityTotal: number
   name?: string
+  warmPoolTarget?: number
 }) {
   const authorization = authorizeSystemWorkersAccess(input.user)
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
@@ -25,6 +26,7 @@ export async function registerWorkerForUser(input: {
     baseUrl: input.endpoint,
     capacity: input.capacityTotal,
     version: input.version,
+    warmPoolTarget: input.warmPoolTarget,
   })
   if (!worker) return { ok: false as const, reason: "register_failed" }
   return { ok: true as const, worker }
@@ -35,6 +37,8 @@ export async function heartbeatWorkerForUser(input: {
   workerNodeId: string
   capacityUsed: number
   status: "registering" | "ready" | "busy" | "degraded" | "offline" | "draining"
+  resourceSummary?: WorkerHeartbeat["resourceSummary"]
+  warmPoolReady?: number
 }) {
   const authorization = authorizeSystemWorkersAccess(input.user)
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
@@ -51,10 +55,13 @@ export async function heartbeatWorkerForUser(input: {
     workerId: input.workerNodeId,
     capacityUsed: input.capacityUsed,
     status: input.status,
+    resourceSummary: input.resourceSummary,
   })
   const updated = await workerService.reportWorkerHeartbeat(input.workerNodeId, {
     activeSessionCount: input.capacityUsed,
     status: input.status,
+    resourceSummary: input.resourceSummary,
+    warmPoolReady: input.warmPoolReady,
   })
   if (!updated) return { ok: false as const, reason: "worker_not_found" }
   return { ok: true as const, worker: updated }

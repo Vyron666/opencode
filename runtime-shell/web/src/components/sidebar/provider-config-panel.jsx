@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import { readErrorMessage } from '../../store/actions/interaction-action-support'
-import { Field, inputClassName, secondaryButtonClassName, useViewerContext } from './sidebar-support'
+import { Field, inputClassName, primeConfiguredProviderModels, secondaryButtonClassName, useViewerContext } from './sidebar-support'
 
 const PROVIDER_PRESETS = [
   {
@@ -65,6 +65,7 @@ export function ProviderConfigPanel() {
 
   useEffect(() => {
     api.providerConfig.get().then((data) => {
+      primeConfiguredProviderModels(data.items)
       const preferred =
         data.items.find((item) => item.source === 'user_private') ||
         data.items.find((item) => item.source === 'platform_shared') ||
@@ -91,8 +92,8 @@ export function ProviderConfigPanel() {
   if (!canManageProviderSettings) return null
 
   return (
-    <div className="grid gap-2.5">
-      <div className="text-xs font-semibold text-[var(--text-dim)]">
+    <div className="grid gap-3">
+      <div className="text-xs font-semibold tracking-[0.08em] uppercase text-[var(--text-dim)]">
         {canManagePlatformSettings ? '平台 Provider 配置' : '我的 Provider 配置'}
       </div>
 
@@ -136,6 +137,20 @@ export function ProviderConfigPanel() {
             throw saveResult.error
           }
 
+          // 中文/English: refresh the cached Provider models immediately so the model picker
+          // reflects the latest saved config before the next session capability refresh finishes.
+          const configuredProviders = await api.providerConfig.get().then(
+            (data) => data.items,
+            () => [
+              {
+                providerId: providerId.trim(),
+                name: providerName.trim(),
+                defaultModel: defaultModel.trim(),
+                models: cleanedModels,
+              },
+            ],
+          )
+          primeConfiguredProviderModels(configuredProviders)
           setApiKey('')
           setFlash('Provider 配置已保存，正在刷新会话')
           disconnectSSE()
@@ -178,9 +193,9 @@ export function ProviderConfigPanel() {
           }
           useStore.setState({ pendingSettingsAction: '' })
         }}
-        className="grid gap-2.5 animate-fade-in"
+        className="grid gap-2 animate-fade-in"
       >
-        <div className="grid gap-2 rounded-[12px] border border-[var(--line)] bg-black/20 p-3">
+        <div className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] bg-[rgba(12,9,7,0.52)] p-3.5">
           <span className="text-xs font-medium text-[var(--text-dim)]">常用预设</span>
           <div className="flex flex-wrap gap-2">
             {PROVIDER_PRESETS.map((preset) => (
@@ -245,7 +260,7 @@ export function ProviderConfigPanel() {
         <div className="grid gap-2">
           <span className="text-xs font-medium text-[var(--text-dim)]">模型列表</span>
           {models.map((model, index) => (
-            <div key={`provider-model-${index}`} className="grid gap-2 rounded-[12px] border border-[var(--line)] p-2.5 bg-black/20">
+            <div key={`provider-model-${index}`} className="grid gap-2 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
               <input
                 value={model.id}
                 onChange={(event) => setModels((current) => current.map((item, currentIndex) => (currentIndex === index ? { ...item, id: event.target.value } : item)))}

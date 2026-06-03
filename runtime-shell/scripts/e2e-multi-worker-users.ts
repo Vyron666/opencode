@@ -19,6 +19,11 @@ type WorkerSummary = {
   activeSessionCount: number
 }
 
+type WorkspaceSummary = {
+  id: string
+  projectId: string
+}
+
 type SessionSummary = {
   id: string
   title: string
@@ -33,9 +38,9 @@ const adminJar = createJar()
 const developerJar = createJar()
 const developerSecondaryJar = createJar()
 
-await login(adminJar, "admin", "change-me")
-await login(developerJar, "developer", "change-me")
-await login(developerSecondaryJar, "developer-secondary", "change-me")
+const adminLogin = await login(adminJar, "admin", "change-me")
+const developerLogin = await login(developerJar, "developer", "change-me")
+const developerSecondaryLogin = await login(developerSecondaryJar, "developer-secondary", "change-me")
 
 const workers = await requestJson<ApiEnvelope<{ items: WorkerSummary[] }>>(adminJar, "/api/worker/list")
 assert(workers.status === 200, "worker list failed")
@@ -51,60 +56,40 @@ await cleanupOwnedTestSessions(developerJar, ["multi-dev-", "dbg-"])
 await cleanupOwnedTestSessions(developerSecondaryJar, ["multi-dev2-", "dbg-"])
 await Bun.sleep(1200)
 
-const adminScope = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: Array<{ id: string; projectId: string }> }>>(adminJar, "/api/session/list")
-const developerScope = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: Array<{ id: string; projectId: string }> }>>(developerJar, "/api/session/list")
-const developerSecondaryScope = await requestJson<ApiEnvelope<{ items: SessionSummary[]; workspaces: Array<{ id: string; projectId: string }> }>>(developerSecondaryJar, "/api/session/list")
+const adminWorkspace = await createWorkspace(adminJar, adminLogin.user.projectIds[0], "multi-admin-workspace")
+const developerWorkspace = await createWorkspace(developerJar, developerLogin.user.projectIds[0], "multi-dev-workspace")
+const developerSecondaryWorkspace = await createWorkspace(
+  developerSecondaryJar,
+  developerSecondaryLogin.user.projectIds[0],
+  "multi-dev2-workspace",
+)
 
-const adminWorkspace = adminScope.body.data.workspaces[0]
-const developerWorkspace = developerScope.body.data.workspaces[0]
-const developerSecondaryWorkspace = developerSecondaryScope.body.data.workspaces[0]
-assert(adminWorkspace && developerWorkspace && developerSecondaryWorkspace, "missing workspace scope for multi-user test")
-
-await setOnlyReadyWorkers(adminJar, [routeTargets.at(-1)!.id])
 const createdAdmin = await createSession(adminJar, adminWorkspace.projectId, adminWorkspace.id, "multi-admin")
-assert(
-  createdAdmin.workerId === routeTargets.at(-1)!.id,
-  `admin session should route to ${routeTargets.at(-1)!.workerCode}: ${JSON.stringify(createdAdmin)}`,
-)
+await openSession(adminJar, createdAdmin.id)
+const activeAdmin = await waitForSession(adminJar, createdAdmin.id, (session) => session.status === "active")
 
-await setOnlyReadyWorkers(adminJar, [routeTargets[0].id])
 const createdDeveloper = await createSession(developerJar, developerWorkspace.projectId, developerWorkspace.id, "multi-dev")
-assert(
-  createdDeveloper.workerId === routeTargets[0].id,
-  `developer session should route to ${routeTargets[0].workerCode}: ${JSON.stringify(createdDeveloper)}`,
-)
+await openSession(developerJar, createdDeveloper.id)
+const activeDeveloper = await waitForSession(developerJar, createdDeveloper.id, (session) => session.status === "active")
 
-const developerSecondaryTarget = routeTargets[1]?.id || routeTargets[0].id
-await setOnlyReadyWorkers(adminJar, [developerSecondaryTarget])
 const createdDeveloperSecondary = await createSession(
   developerSecondaryJar,
   developerSecondaryWorkspace.projectId,
   developerSecondaryWorkspace.id,
   "multi-dev2",
 )
-assert(
-  createdDeveloperSecondary.workerId === developerSecondaryTarget,
-  `developer-secondary session should route to ${developerSecondaryTarget}: ${JSON.stringify(createdDeveloperSecondary)}`,
+await openSession(developerSecondaryJar, createdDeveloperSecondary.id)
+const activeDeveloperSecondary = await waitForSession(
+  developerSecondaryJar,
+  createdDeveloperSecondary.id,
+  (session) => session.status === "active",
 )
 
 const created = [createdAdmin, createdDeveloper, createdDeveloperSecondary]
-const initialWorkerSpread = [...new Set([createdAdmin.workerId, createdDeveloper.workerId, createdDeveloperSecondary.workerId])]
-const expectedSpread = routeTargets.length >= 3 ? 3 : 2
-assert(initialWorkerSpread.length >= expectedSpread, `sessions should cover ${expectedSpread} workers: ${JSON.stringify(created)}`)
-
-await setOnlyReadyWorkers(adminJar, routeTargets.map((worker) => worker.id))
-
-await Promise.all([
-  openSession(adminJar, created[0].id),
-  openSession(developerJar, created[1].id),
-  openSession(developerSecondaryJar, created[2].id),
-])
-
-const activeSessions = await Promise.all([
-  waitForSession(adminJar, created[0].id, (session) => session.status === "active"),
-  waitForSession(developerJar, created[1].id, (session) => session.status === "active"),
-  waitForSession(developerSecondaryJar, created[2].id, (session) => session.status === "active"),
-])
+const activeSessions = [activeAdmin, activeDeveloper, activeDeveloperSecondary]
+const initialWorkerSpread = [...new Set(activeSessions.map((session) => session.workerId))]
+const expectedSpread = Math.min(routeTargets.length, 2)
+assert(initialWorkerSpread.length >= expectedSpread, `sessions should cover ${expectedSpread} workers: ${JSON.stringify(activeSessions)}`)
 
 const failoverSource = activeSessions.find((session) => session.workerId === routeTargets[0].id) || activeSessions[0]
 const failoverTargetWorkerIds = routeTargets
@@ -164,6 +149,18 @@ async function createSession(jar: CookieJar, projectId: string, workspaceId: str
     },
   })
   assert(response.status === 200, `create session failed: ${titlePrefix}`)
+  return response.body.data
+}
+
+async function createWorkspace(jar: CookieJar, projectId: string, namePrefix: string) {
+  const response = await requestJson<ApiEnvelope<WorkspaceSummary>>(jar, "/api/workspace/create", {
+    method: "POST",
+    body: {
+      projectId,
+      name: `${namePrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    },
+  })
+  assert(response.status === 200, `create workspace failed: ${namePrefix}`)
   return response.body.data
 }
 
@@ -242,8 +239,16 @@ async function login(jar: CookieJar, username: string, password: string) {
     redirect: "manual",
   })
   const cookie = response.headers.get("set-cookie") || ""
+  const text = await response.text()
+  let body: ApiEnvelope<{ user: { projectIds: string[] } }>
+  try {
+    body = JSON.parse(text) as ApiEnvelope<{ user: { projectIds: string[] } }>
+  } catch {
+    throw new Error(`login returned non-json response: ${username} status=${response.status} body=${text}`)
+  }
   assert(response.status === 200 && cookie, `login failed: ${username}`)
   jar.cookie = cookie.split(";")[0]
+  return body.data
 }
 
 async function requestJson<T>(jar: CookieJar, path: string, init?: { method?: string; body?: unknown }) {

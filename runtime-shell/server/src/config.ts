@@ -9,6 +9,7 @@ export type LocalWorkerConfig = {
   agentBaseUrl?: string
   capacity: number
   version?: string
+  warmPoolTarget?: number
 }
 
 function parseLocalWorkers(raw: string | undefined) {
@@ -29,6 +30,7 @@ function parseLocalWorkers(raw: string | undefined) {
     const workerCode = typeof item.workerCode === "string" ? item.workerCode : id
     const name = typeof item.name === "string" ? item.name : workerCode
     const capacity = Number(item.capacity)
+    const warmPoolTarget = Number(item.warmPoolTarget)
     if (!id || !workerCode || !name || !baseUrl || !Number.isFinite(capacity) || capacity <= 0) return []
     return [{
       id,
@@ -38,6 +40,7 @@ function parseLocalWorkers(raw: string | undefined) {
       agentBaseUrl,
       capacity,
       version: typeof item.version === "string" ? item.version : undefined,
+      warmPoolTarget: Number.isFinite(warmPoolTarget) && warmPoolTarget >= 0 ? warmPoolTarget : undefined,
     } satisfies LocalWorkerConfig]
   })
 }
@@ -53,6 +56,7 @@ function readLocalWorkers() {
     agentBaseUrl: (process.env.RUNTIME_SHELL_WORKER_AGENT_BASE_URL || "http://127.0.0.1:4097").replace(/\/+$/, ""),
     capacity: 16,
     version: "local",
+    warmPoolTarget: Number(process.env.RUNTIME_SHELL_SANDBOX_WARM_POOL_TARGET || "0"),
   }] satisfies LocalWorkerConfig[]
 }
 
@@ -92,12 +96,16 @@ export const Config = {
   sandboxDockerPidsLimit: Number(process.env.RUNTIME_SHELL_SANDBOX_PIDS_LIMIT || "512"),
   sandboxWorkspaceMountMode: process.env.RUNTIME_SHELL_SANDBOX_WORKSPACE_MOUNT_MODE || "rw",
   sandboxRuntimeHomeDir: process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_HOME_DIR || "/tmp/runtime-shell-home",
+  sandboxRuntimeClass: process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_CLASS || "",
+  sandboxIsolationMode: process.env.RUNTIME_SHELL_SANDBOX_ISOLATION_MODE || "",
+  sandboxWorkspacePrepareConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_PREPARE_CONCURRENCY || "4"),
+  sandboxRuntimeBootConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_BOOT_CONCURRENCY || "6"),
   // 中文/English: keep a small explicit local worker list so scheduler and governance
   // can exercise multi-node behavior before remote execution is fully separated.
   localWorkers: readLocalWorkers(),
-  workerHeartbeatTimeoutMs: Number(process.env.RUNTIME_SHELL_WORKER_HEARTBEAT_TIMEOUT_MS || "30000"),
+  workerHeartbeatTimeoutMs: Number(process.env.RUNTIME_SHELL_WORKER_HEARTBEAT_TIMEOUT_MS || "15000"),
   // 中文/English: keep runtime lease much longer than a brief user idle period so
   // reopening the same session/workspace usually continues without manual recovery.
   runtimeLeaseDurationMs: Number(process.env.RUNTIME_SHELL_RUNTIME_LEASE_DURATION_MS || "600000"),
-  runtimeGovernanceIntervalMs: Number(process.env.RUNTIME_SHELL_RUNTIME_GOVERNANCE_INTERVAL_MS || "10000"),
+  runtimeGovernanceIntervalMs: Number(process.env.RUNTIME_SHELL_RUNTIME_GOVERNANCE_INTERVAL_MS || "5000"),
 }

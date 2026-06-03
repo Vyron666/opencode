@@ -2,6 +2,21 @@ export type SandboxWorkspaceStatus = "ready" | "closing" | "closed" | "failed"
 
 export type SandboxDiffStatus = "created" | "pending_review" | "applied" | "rejected" | "expired" | "failed"
 
+export type SandboxInstanceStatus = "preparing" | "ready" | "running" | "warm" | "leased" | "closing" | "closed" | "failed"
+
+export type SandboxBackend = "local-process" | "docker" | "gvisor" | "kata"
+
+export type RuntimeOperationType =
+  | "session_warmup"
+  | "session_open"
+  | "session_prompt"
+  | "session_diff_create"
+  | "session_diff_apply"
+
+export type RuntimeOperationStatus = "queued" | "running" | "completed" | "failed" | "rejected"
+
+export type QuotaScopeType = "tenant" | "organization" | "project" | "user"
+
 export type SandboxWorkspace = {
   id: string
   businessSessionId: string
@@ -46,4 +61,59 @@ export type SandboxDiff = {
   appliedAt?: string
   rejectedAt?: string
   expiresAt?: string
+}
+
+export type SandboxInstance = {
+  id: string
+  tenantId: string
+  organizationId: string
+  projectId: string
+  workspaceId: string
+  businessSessionId: string
+  workerId: string
+  backend: SandboxBackend
+  runtimeClass?: string
+  isolationMode?: string
+  status: SandboxInstanceStatus
+  sandboxPath: string
+  createdAt: string
+  updatedAt: string
+  openedAt?: string
+  closedAt?: string
+  detail?: Record<string, unknown>
+}
+
+export type RuntimeOperationQueueItem = {
+  id: string
+  tenantId: string
+  organizationId: string
+  projectId: string
+  userId: string
+  businessSessionId?: string
+  workerId?: string
+  operationType: RuntimeOperationType
+  status: RuntimeOperationStatus
+  idempotencyKey?: string
+  detail?: Record<string, unknown>
+  errorMessage?: string
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+}
+
+export type QuotaPolicy = {
+  id: string
+  tenantId: string
+  organizationId: string
+  scopeType: QuotaScopeType
+  scopeId: string
+  enabled: boolean
+  maxActiveSessions?: number
+  maxQueuedOperations?: number
+  maxRunningSandboxes?: number
+  maxWarmPoolPerWorker?: number
+  createdAt: string
+  updatedAt: string
+  updatedBy: string
 }

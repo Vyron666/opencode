@@ -68,14 +68,15 @@ export async function loadRealRuntime(session: BusinessSession) {
   const sessionId = session.binding?.acpSessionId
   if (!sessionId) throw new Error("acp session is not bound")
   const client = await createClientWithConfig(session)
-  const task = client.loadSession(session.workspacePath, sessionId).then((loaded) =>
-    bindRuntime(session, client, {
-      sessionId,
-      configOptions: loaded.configOptions,
-      models: loaded.models,
-      modes: loaded.modes,
-    }, "loaded"),
-  )
+  const task = client.loadSession(session.workspacePath, sessionId)
+    .then((loaded) =>
+      bindRuntime(session, client, {
+        sessionId,
+        configOptions: loaded.configOptions,
+        models: loaded.models,
+        modes: loaded.modes,
+      }, "loaded"))
+    .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "loadSession"))
   pendingRuntimeLoads.set(session.id, task)
   return task.finally(() => pendingRuntimeLoads.delete(session.id))
 }
@@ -88,14 +89,15 @@ export async function resumeRealRuntime(session: BusinessSession) {
   const sessionId = session.binding?.acpSessionId
   if (!sessionId) throw new Error("acp session is not bound")
   const client = await createClientWithConfig(session)
-  const task = client.resumeSession(session.workspacePath, sessionId).then((resumed) =>
-    bindRuntime(session, client, {
-      sessionId,
-      configOptions: resumed.configOptions,
-      models: resumed.models,
-      modes: resumed.modes,
-    }, "resumed"),
-  )
+  const task = client.resumeSession(session.workspacePath, sessionId)
+    .then((resumed) =>
+      bindRuntime(session, client, {
+        sessionId,
+        configOptions: resumed.configOptions,
+        models: resumed.models,
+        modes: resumed.modes,
+      }, "resumed"))
+    .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "resumeSession"))
   pendingRuntimeLoads.set(session.id, task)
   return task.finally(() => pendingRuntimeLoads.delete(session.id))
 }
@@ -123,6 +125,38 @@ async function createClientWithConfig(session: BusinessSession) {
     ...override,
   })
   return createClient(session, configContent)
+}
+
+async function recoverMissingAcpSession(
+  session: BusinessSession,
+  client: Awaited<ReturnType<typeof createClientWithConfig>>,
+  acpSessionId: string,
+  error: unknown,
+  step: "loadSession" | "resumeSession",
+) {
+  if (!isAcpSessionNotFound(error)) throw error
+  log.warn("persisted ACP session missing, opening a fresh runtime session", {
+    businessSessionId: session.id,
+    workerId: session.workerId,
+    workspacePath: session.workspacePath,
+    acpSessionId,
+    step,
+  })
+  // 中文/English: rebuilding images or switching sandbox workspaces can leave a
+  // business session pointing at an ACP session that no longer exists on disk.
+  // Keep the business history, but bind a fresh ACP session so capabilities reload.
+  const created = await client.newSession(session.workspacePath)
+  return bindRuntime(session, client, {
+    sessionId: created.sessionId,
+    configOptions: created.configOptions,
+    models: created.models,
+    modes: created.modes,
+  }, "opened")
+}
+
+function isAcpSessionNotFound(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return /Session not found:\s*ses_/i.test(error.message)
 }
 
 export async function cancelRuntimePrompt(sessionId: string) {

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runtime-shell-worker
+  labels:
+    app: runtime-shell-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: runtime-shell-worker
+  template:
+    metadata:
+      labels:
+        app: runtime-shell-worker
+    spec:
+      containers:
+        - name: worker-agent
+          image: your-registry/opencode-worker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4096
+              name: opencode
+            - containerPort: 4097
+              name: agent
+          env:
+            - name: RUNTIME_SHELL_INTERNAL_BASE_URL
+              value: "http://runtime-shell:3000"
+            - name: RUNTIME_SHELL_WORKER_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: runtime-shell-secret
+                  key: worker_agent_token
+            - name: RUNTIME_SHELL_SANDBOX_BACKEND
+              value: "gvisor"
+            - name: RUNTIME_SHELL_SANDBOX_RUNTIME_CLASS
+              value: "gvisor"
+            - name: RUNTIME_SHELL_SANDBOX_ISOLATION_MODE
+              value: "runtime-class"
+            - name: RUNTIME_SHELL_SANDBOX_NETWORK_MODE
+              value: "runtime-shell-worker"
+            - name: RUNTIME_SHELL_SANDBOX_WARM_POOL_TARGET
+              value: "2"
+          volumeMounts:
+            - name: workspaces
+              mountPath: /workspace/workspaces
+            - name: opencode-config
+              mountPath: /workspace/.opencode
+              readOnly: true
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: runtime-shell-workspaces
+        - name: opencode-config
+          secret:
+            secretName: runtime-shell-opencode-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runtime-shell-worker
+spec:
+  selector:
+    app: runtime-shell-worker
+  ports:
+    - name: opencode
+      port: 4096
+      targetPort: opencode
+    - name: agent
+      port: 4097
+      targetPort: agent

@@ -4,6 +4,8 @@ import { createLogger } from "../../log"
 import type { User } from "../../types"
 import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { requireSessionAction } from "../session/session-access-service"
+import { requireQuotaForRuntimeOperation } from "../sandbox/sandbox-quota-service"
+import { markRuntimeOperationCompleted, markRuntimeOperationFailed, markRuntimeOperationRunning, startRuntimeOperation } from "../sandbox/sandbox-queue-service"
 import { createSessionEvent } from "../session/session-event-service"
 import { markSessionCancelling, markSessionWaitingInput } from "../session/session-status-machine-service"
 import { renewRuntimeLeaseForSession } from "../runtime-governance/runtime-lease-service"
@@ -37,11 +39,29 @@ export async function submitPromptForUser(input: {
     session: result.session,
   })
   if (!workspaceResult.ok) return workspaceResult
+  const quota = await requireQuotaForRuntimeOperation({
+    user: input.user,
+    projectId: workspaceResult.session.projectId,
+    businessSessionId: workspaceResult.session.id,
+  })
+  if (!quota.ok) return { ok: false as const, reason: quota.reason }
+  const operation = await startRuntimeOperation({
+    user: input.user,
+    projectId: workspaceResult.session.projectId,
+    businessSessionId: workspaceResult.session.id,
+    workerId: workspaceResult.session.workerId || undefined,
+    operationType: "session_prompt",
+    detail: {
+      partCount: input.parts.length,
+    },
+  })
   const hadLiveRuntime = Boolean(getRuntime(result.session.id))
   const runtime = getRuntime(result.session.id) ?? (await openRealRuntime(workspaceResult.session))
   if (!runtime || runtime.transport !== "real") {
+    await markRuntimeOperationFailed(operation.id, "runtime not active")
     return { ok: false as const, reason: "runtime_not_active" }
   }
+  await markRuntimeOperationRunning(operation.id, workspaceResult.session.workerId || undefined)
   await renewRuntimeLeaseForSession(result.session.id)
 
   const liveSession = await requireLiveSession(result.session.id)
@@ -90,6 +110,7 @@ export async function submitPromptForUser(input: {
         acpSessionId: runtime.client.getSessionId(),
         stopReason: promptResult?.stopReason || "unknown",
       })
+      await markRuntimeOperationCompleted(operation.id)
     },
     async (error) => {
       log.warn("prompt call rejected", {
@@ -117,9 +138,11 @@ export async function submitPromptForUser(input: {
           acpSessionId: runtime.client.getSessionId(),
           stopReason: "cancelled",
         })
+        await markRuntimeOperationFailed(operation.id, "prompt cancelled")
         return
       }
       const message = error instanceof Error ? error.message : String(error)
+      await markRuntimeOperationFailed(operation.id, message)
       const failedSession = await markSessionFailedIfRunning(liveSession.id)
       if (!failedSession) return
       await publishRuntimeEvent(
@@ -141,6 +164,7 @@ export async function submitPromptForUser(input: {
   const auditLogTask = auditService.appendAuditLog({
     tenantId: liveSession.tenantId,
     organizationId: liveSession.organizationId,
+    projectId: liveSession.projectId,
     userId: input.user.id,
     businessSessionId: liveSession.id,
     requestId: input.requestId,
@@ -179,6 +203,7 @@ export async function cancelPromptForUser(input: {
   const auditLogTask = auditService.appendAuditLog({
     tenantId: result.session.tenantId,
     organizationId: result.session.organizationId,
+    projectId: result.session.projectId,
     userId: input.user.id,
     businessSessionId: result.session.id,
     requestId: input.requestId,

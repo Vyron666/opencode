@@ -29,7 +29,7 @@ export class StoreService {
     log,
   )
   readonly workspaceShareService = new StoreWorkspaceShareService()
-  readonly auditService = new StoreAuditService(() => this.stateService.readState(), () => this.stateService.save())
+  readonly auditService = new StoreAuditService()
 
   async load() {
     await this.stateService.load()

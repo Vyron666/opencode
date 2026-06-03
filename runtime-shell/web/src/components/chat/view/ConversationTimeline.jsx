@@ -8,7 +8,7 @@ export function ConversationTimeline({ blocks, currentSessionId }) {
   if (blocks.length === 0) return <EmptyConversation currentSessionId={currentSessionId} />
 
   return (
-    <div className="grid min-w-0 content-start gap-4 pb-4">
+    <div className="grid min-w-0 content-start gap-5 pb-5">
       {blocks.map((block) => (
         <ConversationBlockRow key={block.key} block={block} />
       ))}
@@ -56,7 +56,7 @@ export function DebugConversationTimeline() {
 
   // 中文/English: keep expensive raw-event replay inside debug mode only.
   return (
-    <div className="grid min-w-0 content-start gap-4 pb-4">
+    <div className="grid min-w-0 content-start gap-5 pb-5">
       {blocks.map((block) => (
         <ConversationBlockRow key={block.key} block={block} />
       ))}
@@ -75,7 +75,7 @@ const ConversationBlockRow = memo(function ConversationBlockRow({ block }) {
 function EmptyConversation({ currentSessionId }) {
   return (
     <div className="h-full grid place-items-center px-6 text-center">
-      <div className="max-w-md grid gap-3">
+      <div className="max-w-md rounded-[24px] border border-[rgba(181,148,116,0.12)] bg-[rgba(18,14,11,0.76)] px-6 py-7 grid gap-3 shadow-[0_18px_50px_rgba(0,0,0,0.16)]">
         <div className="text-base font-bold text-[var(--text)]">{currentSessionId ? '\u5f00\u59cb\u65b0\u7684\u5bf9\u8bdd' : '\u8bf7\u9009\u62e9\u4e00\u4e2a\u4f1a\u8bdd'}</div>
         <div className="text-sm text-[var(--text-muted)] leading-relaxed">
           {currentSessionId

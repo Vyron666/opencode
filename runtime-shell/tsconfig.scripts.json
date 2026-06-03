@@ -10,5 +10,14 @@
     "checkJs": false,
     "types": ["bun"]
   },
-  "files": ["scripts/e2e-web-regression.ts"]
+  "files": [
+    "scripts/e2e-web-regression.ts",
+    "scripts/e2e-sandbox-basic.ts",
+    "scripts/e2e-sandbox-diff.ts",
+    "scripts/e2e-sandbox-capacity.ts",
+    "scripts/e2e-sandbox-warm-pool.ts",
+    "scripts/e2e-sandbox-quota.ts",
+    "scripts/e2e-sandbox-security.ts",
+    "scripts/bench-sandbox-capacity.ts"
+  ]
 }

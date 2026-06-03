@@ -1,4 +1,8 @@
+import { statfsSync } from "node:fs"
+import os from "node:os"
+import { Config } from "../config"
 import type { RuntimeEntry } from "./worker-agent-types"
+import { getDockerWarmPoolSnapshot } from "./sandbox/docker-sandbox-manager"
 import { findRuntimeForQuery, listRuntimes } from "./worker-agent-store"
 
 export function queryRuntime(url: URL) {
@@ -39,6 +43,8 @@ export function queryLease(url: URL) {
 export function queryHeartbeat(url: URL) {
   const workerId = url.searchParams.get("workerId")
   const runtimes = listRuntimes().filter((entry) => !workerId || entry.workerId === workerId)
+  const warmPoolSnapshot = workerId ? getDockerWarmPoolSnapshot(workerId) : undefined
+  const workerWarmPool = warmPoolSnapshot && "readyCount" in warmPoolSnapshot ? warmPoolSnapshot : undefined
   const lastEventAt = runtimes
     .map((entry) => entry.lastEventAt)
     .filter((value): value is string => Boolean(value))
@@ -49,8 +55,12 @@ export function queryHeartbeat(url: URL) {
     observedAt: new Date().toISOString(),
     activeRuntimeCount: runtimes.length,
     activePromptCount: runtimes.filter((entry) => entry.client.hasActivePrompt()).length,
+    warmPoolReady: workerWarmPool?.readyCount ?? 0,
+    warmPoolLeased: workerWarmPool?.leasedCount ?? 0,
+    warmPoolTarget: workerWarmPool?.target ?? 0,
     lastEventAt,
     status: runtimes.some((entry) => entry.client.hasActivePrompt()) ? "busy" : "ready",
+    ...readWorkerResourceUsage(),
   }
 }
 
@@ -75,4 +85,24 @@ export function toBootstrap(entry: RuntimeEntry) {
     models: entry.snapshot.models,
     modes: entry.snapshot.modes,
   }
+}
+
+function readWorkerResourceUsage() {
+  const cpuCount = Math.max(1, os.cpus().length)
+  const cpuPercent = Math.max(0, Math.min(100, (os.loadavg()[0] / cpuCount) * 100))
+  const memoryBytes = Math.max(0, os.totalmem() - os.freemem())
+  return {
+    cpuPercent: Number(cpuPercent.toFixed(2)),
+    memoryBytes,
+    diskBytes: readWorkspaceDiskBytes(),
+  }
+}
+
+function readWorkspaceDiskBytes() {
+  try {
+    const stats = statfsSync(Config.workspaceRootDir)
+    const value = Number((stats.blocks - stats.bfree) * stats.bsize)
+    if (Number.isFinite(value) && value >= 0) return value
+  } catch {}
+  return undefined
 }

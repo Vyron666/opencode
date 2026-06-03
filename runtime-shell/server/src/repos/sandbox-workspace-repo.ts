@@ -98,6 +98,51 @@ export async function upsertSandboxWorkspace(input: SandboxWorkspace) {
   )
 }
 
+export async function listSandboxWorkspacesForCleanup(input: {
+  limit: number
+  includeUnexpiredClosed?: boolean
+}) {
+  const rows = await getRuntimeDatabaseClient().queryRows<SandboxWorkspaceRow>(
+    `
+      SELECT
+        id,
+        business_session_id,
+        workspace_id,
+        workspace_path,
+        sandbox_path,
+        status,
+        created_at,
+        updated_at,
+        expires_at,
+        closed_at
+      FROM sandbox_workspace
+      WHERE status = 'closed'
+        AND (
+          ? = 1
+          OR (expires_at IS NOT NULL AND expires_at <= ?)
+        )
+      ORDER BY updated_at ASC
+      LIMIT ?
+    `,
+    [
+      input.includeUnexpiredClosed ? 1 : 0,
+      new Date().toISOString(),
+      input.limit,
+    ],
+  )
+  return rows.map(toSandboxWorkspace)
+}
+
+export async function deleteSandboxWorkspaceBySessionId(businessSessionId: string) {
+  await getRuntimeDatabaseClient().execute(
+    `
+      DELETE FROM sandbox_workspace
+      WHERE business_session_id = ?
+    `,
+    [businessSessionId],
+  )
+}
+
 function toSandboxWorkspace(row: SandboxWorkspaceRow): SandboxWorkspace {
   return {
     id: row.id,

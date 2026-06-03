@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { api } from '../../api'
 import { useStore, buildCapabilitiesFromSession } from '../../store'
 
 export const TABS = [
@@ -9,18 +10,22 @@ export const TABS = [
 ]
 
 export const inputClassName =
-  'w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-sm outline-none focus:border-[rgba(212,160,90,0.28)] focus:shadow-[0_0_0_3px_rgba(212,160,90,0.1)] placeholder:text-[var(--text-muted)]'
+  'w-full rounded-[12px] border border-[rgba(181,148,116,0.24)] px-3.5 py-2.5 bg-[rgba(12,9,7,0.82)] text-sm text-[var(--text)] outline-none transition-colors focus:border-[rgba(212,160,90,0.36)] focus:shadow-[0_0_0_3px_rgba(212,160,90,0.1)] placeholder:text-[var(--text-muted)]'
 
 export const selectClassName =
-  'w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-sm outline-none focus:border-[rgba(212,160,90,0.28)] focus:shadow-[0_0_0_3px_rgba(212,160,90,0.1)] appearance-none disabled:opacity-40 disabled:cursor-not-allowed'
+  'w-full rounded-[12px] border border-[rgba(181,148,116,0.24)] px-3.5 py-2.5 bg-[rgba(12,9,7,0.82)] text-sm text-[var(--text)] outline-none transition-colors focus:border-[rgba(212,160,90,0.36)] focus:shadow-[0_0_0_3px_rgba(212,160,90,0.1)] appearance-none disabled:opacity-40 disabled:cursor-not-allowed'
 
 export const secondaryButtonClassName =
-  'self-start px-3 py-1.5 text-xs font-semibold rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  'self-start px-3.5 py-2 text-xs font-semibold rounded-[10px] bg-brand/10 text-brand-text border border-[rgba(181,148,116,0.24)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+
+let configuredProviderModelsCache = []
+let configuredProviderModelsRequest = null
+const configuredProviderModelListeners = new Set()
 
 export function Field({ label, children }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-xs font-medium text-[var(--text-dim)]">{label}</span>
+      <span className="text-[11px] font-semibold tracking-[0.04em] text-[var(--text-dim)]">{label}</span>
       {children}
     </label>
   )
@@ -58,20 +63,22 @@ export function Select({ id, options, value, onChange, emptyLabel = '\u8bf7\u514
 export function useSessionCapabilities() {
   const capabilities = useStore((state) => state.capabilities)
   const sessionDetail = useStore((state) => state.sessionDetail)
+  const configuredProviderModels = useConfiguredProviderModels()
 
   return useMemo(() => {
     const detailCapabilities = buildCapabilitiesFromSession(sessionDetail?.session)
     const hasFallbackModels = detailCapabilities.models?.length > 0
     const hasFallbackCommands = detailCapabilities.availableCommands?.length > 0
+    const fallbackModels = hasFallbackModels ? detailCapabilities.models : configuredProviderModels
     return {
       ...detailCapabilities,
       modeId: capabilities.modeId || detailCapabilities.modeId,
-      modelId: capabilities.modelId || detailCapabilities.modelId,
+      modelId: capabilities.modelId || detailCapabilities.modelId || fallbackModels[0]?.id || '',
       modes: capabilities.modes?.length ? capabilities.modes : detailCapabilities.modes,
       models:
         capabilities.models?.length && (!hasFallbackModels || capabilities.modelId || capabilities.configOptions?.length)
           ? capabilities.models
-          : detailCapabilities.models,
+          : fallbackModels,
       configOptions: capabilities.configOptions?.length ? capabilities.configOptions : detailCapabilities.configOptions,
       availableCommands:
         capabilities.availableCommands?.length && (!hasFallbackCommands || capabilities.models?.length || capabilities.configOptions?.length)
@@ -80,7 +87,7 @@ export function useSessionCapabilities() {
       usage: capabilities.usage || detailCapabilities.usage,
       sessionInfo: capabilities.sessionInfo || detailCapabilities.sessionInfo,
     }
-  }, [capabilities, sessionDetail])
+  }, [capabilities, configuredProviderModels, sessionDetail])
 }
 
 export function useViewerContext() {
@@ -145,4 +152,68 @@ export function stringifyConfigValue(value) {
 
 export function formatJson(value) {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+}
+
+export function primeConfiguredProviderModels(items) {
+  configuredProviderModelsCache = normalizeConfiguredProviderModels(items)
+  configuredProviderModelListeners.forEach((listener) => listener(configuredProviderModelsCache))
+  return configuredProviderModelsCache
+}
+
+function useConfiguredProviderModels() {
+  const [models, setModels] = useState(configuredProviderModelsCache)
+
+  useEffect(() => {
+    configuredProviderModelListeners.add(setModels)
+    if (configuredProviderModelsCache.length > 0) {
+      setModels(configuredProviderModelsCache)
+    } else {
+      const request =
+        configuredProviderModelsRequest ||
+        api.providerConfig.get().then(
+          (data) => {
+            configuredProviderModelsRequest = null
+            return primeConfiguredProviderModels(data.items)
+          },
+          () => {
+            configuredProviderModelsRequest = null
+            return []
+          },
+        )
+      configuredProviderModelsRequest = request
+      void request.then((value) => setModels(value))
+    }
+
+    return () => configuredProviderModelListeners.delete(setModels)
+  }, [])
+
+  return models
+}
+
+function normalizeConfiguredProviderModels(items) {
+  if (!Array.isArray(items)) return []
+  return items.flatMap((provider) => {
+    if (!Array.isArray(provider.models)) return []
+    return provider.models
+      .map((model) => {
+        const id = readConfiguredModelId(provider, model)
+        if (!id) return null
+        return {
+          id,
+          label: `${provider.name || provider.providerId} · ${model.name || model.id || id}`,
+        }
+      })
+      .filter(Boolean)
+  })
+}
+
+function readConfiguredModelId(provider, model) {
+  if (typeof model?.id === 'string' && model.id.includes('/')) return model.id
+  if (typeof provider?.defaultModel === 'string' && provider.defaultModel.endsWith(`/${model?.id || ''}`)) {
+    return provider.defaultModel
+  }
+  if (typeof provider?.providerId === 'string' && typeof model?.id === 'string' && model.id) {
+    return `${provider.providerId}/${model.id}`
+  }
+  return ''
 }

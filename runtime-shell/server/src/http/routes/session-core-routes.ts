@@ -36,6 +36,9 @@ export function registerSessionCoreRoutes(app: Hono) {
       warmup: body.data.warmup,
     })
     if (!result.ok) {
+      if (result.reason === "quota_exceeded") {
+        return c.json(jsonError("quota exceeded", 429, reqId), 429)
+      }
       if (result.reason === "worker_not_found") {
         return c.json(jsonError("worker not found", 503, reqId), 503)
       }
@@ -140,6 +143,9 @@ export function registerSessionCoreRoutes(app: Hono) {
       businessSessionId: body.data.businessSessionId,
     })
     if (!result.ok) {
+      if (result.reason === "quota_exceeded") {
+        return c.json(jsonError("quota exceeded", 429, reqId), 429)
+      }
       if (result.reason === "session_not_found") {
         return c.json(jsonError("session not found", 404, reqId), 404)
       }

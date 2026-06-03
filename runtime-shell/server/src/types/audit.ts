@@ -10,6 +10,14 @@ export type AuditAction =
   | "session.close"
   | "session.prompt"
   | "session.cancel"
+  | "sandbox.create"
+  | "sandbox.close"
+  | "sandbox.exit"
+  | "sandbox.resource_exceeded"
+  | "file.diff.generated"
+  | "file.diff.applied"
+  | "file.diff.rejected"
+  | "policy.denied"
   | "provider.save"
   | "config.approval.create"
   | "config.approval.approve"
@@ -20,6 +28,9 @@ export type AuditResourceType =
   | "workspace"
   | "workspace_share_binding"
   | "business_session"
+  | "sandbox_instance"
+  | "sandbox_diff"
+  | "policy"
   | "provider_config"
   | "config_approval_request"
 
@@ -27,6 +38,7 @@ export type AuditLog = {
   id: string
   tenantId: string
   organizationId: string
+  projectId?: string
   userId?: string
   businessSessionId?: string
   requestId?: string

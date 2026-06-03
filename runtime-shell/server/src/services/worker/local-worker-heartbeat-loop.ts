@@ -1,9 +1,11 @@
 import { Config } from "../../config"
 import { createLogger } from "../../log"
+import * as RuntimeOperationQueueRepo from "../../repos/runtime-operation-queue-repo"
+import * as SandboxInstanceRepo from "../../repos/sandbox-instance-repo"
+import type { SandboxInstance } from "../../types"
 import { recordWorkerHeartbeat } from "../runtime-governance/worker-heartbeat-service"
 import { registerWorkerForUser } from "./worker-service"
-import { sessionService, workerService } from "../store/store-singleton"
-import { userService } from "../store/store-singleton"
+import { sessionService, userService, workerService } from "../store/store-singleton"
 
 const log = createLogger("local-worker-heartbeat")
 const CREATED_SESSION_RESERVATION_MS = 30000
@@ -47,6 +49,7 @@ async function beatLocalWorker() {
               version: localWorker.version,
               capacityTotal: localWorker.capacity,
               name: localWorker.name,
+              warmPoolTarget: localWorker.warmPoolTarget,
             })).worker
           : undefined)
       if (!worker) return
@@ -68,18 +71,89 @@ async function beatLocalWorker() {
         })
         return
       }
+      const warmPoolTarget = localWorker.warmPoolTarget ?? worker.warmPoolTarget ?? 0
+      const [runningSandboxCount, queuedOperationCount, warmPoolSnapshot, remoteHeartbeat] = await Promise.all([
+        SandboxInstanceRepo.countSandboxInstancesByWorkerStatus(localWorker.id, ["preparing", "ready", "running"]),
+        worker.tenantId && worker.organizationId
+          ? RuntimeOperationQueueRepo.countRuntimeOperationsByScope({
+              tenantId: worker.tenantId,
+              organizationId: worker.organizationId,
+              workerId: localWorker.id,
+              statuses: ["queued", "running"],
+            })
+          : 0,
+        ensureRemoteWarmPool(worker, localWorker.agentBaseUrl, warmPoolTarget),
+        queryRemoteWorkerHeartbeat(localWorker.agentBaseUrl, localWorker.id),
+      ])
+      const warmPoolReady = warmPoolSnapshot.readyCount
+      await syncWarmPoolSandboxInstances(worker, warmPoolSnapshot)
+      const resourceSummary = {
+        // 中文/English: derive capacity stats from persisted runtime-shell state and
+        // remote warm pool state so scheduling sees one consistent pressure model.
+        runningSandboxCount,
+        warmSandboxCount: warmPoolReady,
+        queuedOperationCount,
+        cpuPercent: remoteHeartbeat.cpuPercent,
+        memoryBytes: remoteHeartbeat.memoryBytes,
+        diskBytes: remoteHeartbeat.diskBytes,
+      }
       const status = activeSessionCount >= worker.capacity ? "busy" : "ready"
       await recordWorkerHeartbeat({
         workerId: localWorker.id,
         capacityUsed: activeSessionCount,
         status,
+        resourceSummary,
       })
       await workerService.reportWorkerHeartbeat(localWorker.id, {
         activeSessionCount,
         status,
+        resourceSummary,
+        warmPoolTarget,
+        warmPoolReady,
       })
     }),
   )
+}
+
+async function queryRemoteWorkerHeartbeat(agentBaseUrl: string | undefined, workerId: string) {
+  if (!agentBaseUrl || Config.workerExecutionMode !== "remote") {
+    return {
+      cpuPercent: undefined,
+      memoryBytes: undefined,
+      diskBytes: undefined,
+    }
+  }
+  try {
+    const response = await fetch(`${agentBaseUrl}/runtime/query-heartbeat?workerId=${encodeURIComponent(workerId)}`, {
+      headers: {
+        "x-runtime-worker-token": Config.workerAgentToken,
+      },
+      signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      return {
+        cpuPercent: undefined,
+        memoryBytes: undefined,
+        diskBytes: undefined,
+      }
+    }
+    const payload = await response.json() as {
+      cpuPercent?: number
+      memoryBytes?: number
+      diskBytes?: number
+    }
+    return {
+      cpuPercent: typeof payload.cpuPercent === "number" ? payload.cpuPercent : undefined,
+      memoryBytes: typeof payload.memoryBytes === "number" ? payload.memoryBytes : undefined,
+      diskBytes: typeof payload.diskBytes === "number" ? payload.diskBytes : undefined,
+    }
+  } catch {
+    return {
+      cpuPercent: undefined,
+      memoryBytes: undefined,
+      diskBytes: undefined,
+    }
+  }
 }
 
 async function isLocalWorkerReachable(worker: { baseUrl: string; agentBaseUrl?: string }) {
@@ -105,6 +179,124 @@ async function isLocalWorkerReachable(worker: { baseUrl: string; agentBaseUrl?: 
     })
     return false
   }
+}
+
+async function ensureRemoteWarmPool(
+  worker: { id: string; tenantId?: string; organizationId?: string },
+  agentBaseUrl: string | undefined,
+  target: number,
+) {
+  if (!agentBaseUrl || Config.workerExecutionMode !== "remote") {
+    return {
+      readyCount: 0,
+      leasedCount: 0,
+      target: 0,
+      slots: [],
+    }
+  }
+  try {
+    const response = await fetch(`${agentBaseUrl}/runtime/pool/ensure`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-runtime-worker-token": Config.workerAgentToken,
+      },
+      body: JSON.stringify({
+        workerId: worker.id,
+        target,
+      }),
+      signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      return {
+        readyCount: 0,
+        leasedCount: 0,
+        target: 0,
+        slots: [],
+      }
+    }
+    const payload = await response.json() as {
+      readyCount?: number
+      leasedCount?: number
+      target?: number
+      slots?: Array<{
+        slotId: string
+        containerName: string
+        visiblePath: string
+        status: "warm" | "leased" | "preparing"
+        createdAt: string
+      }>
+    }
+    return {
+      readyCount: typeof payload.readyCount === "number" ? payload.readyCount : 0,
+      leasedCount: typeof payload.leasedCount === "number" ? payload.leasedCount : 0,
+      target: typeof payload.target === "number" ? payload.target : target,
+      slots: Array.isArray(payload.slots) ? payload.slots : [],
+    }
+  } catch {
+    return {
+      readyCount: 0,
+      leasedCount: 0,
+      target: 0,
+      slots: [],
+    }
+  }
+}
+
+async function syncWarmPoolSandboxInstances(
+  worker: {
+    id: string
+    tenantId?: string
+    organizationId?: string
+  },
+  snapshot: {
+    slots: Array<{
+      slotId: string
+      containerName: string
+      visiblePath: string
+      status: "warm" | "leased" | "preparing"
+      createdAt: string
+    }>
+  },
+) {
+  if (!worker.tenantId || !worker.organizationId) return
+  const existing = await SandboxInstanceRepo.listSandboxInstancesByWorker(worker.id)
+  const warmIds = new Set(snapshot.slots.map((slot) => `warm_${worker.id}_${slot.slotId}`))
+  await Promise.all(existing
+    .filter((item) => item.detail?.source === "warm_pool" && !warmIds.has(item.id))
+    .map((item) => SandboxInstanceRepo.deleteSandboxInstanceById(item.id)))
+  const now = new Date().toISOString()
+  await Promise.all(snapshot.slots.map((slot) => {
+    const instance: SandboxInstance = {
+      id: `warm_${worker.id}_${slot.slotId}`,
+      tenantId: worker.tenantId!,
+      organizationId: worker.organizationId!,
+      projectId: "__warm_pool__",
+      workspaceId: "__warm_pool__",
+      businessSessionId: `warm_pool:${worker.id}:${slot.slotId}`,
+      workerId: worker.id,
+      backend: Config.sandboxBackend === "kata"
+        ? "kata"
+        : Config.sandboxBackend === "gvisor"
+          ? "gvisor"
+          : Config.sandboxBackend === "docker"
+            ? "docker"
+            : "local-process",
+      runtimeClass: Config.sandboxRuntimeClass || undefined,
+      isolationMode: Config.sandboxIsolationMode || undefined,
+      status: slot.status,
+      sandboxPath: slot.visiblePath,
+      createdAt: slot.createdAt,
+      updatedAt: now,
+      openedAt: slot.status === "leased" ? now : undefined,
+      detail: {
+        source: "warm_pool",
+        slotId: slot.slotId,
+        containerName: slot.containerName,
+      },
+    }
+    return SandboxInstanceRepo.upsertSandboxInstance(instance)
+  }))
 }
 
 function isWorkerReservedSession(session: { status: string; updatedAt: string }) {

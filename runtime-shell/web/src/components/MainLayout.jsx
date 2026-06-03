@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import LeftSidebar from './sidebar/LeftSidebar.jsx'
 import ChatView from './chat/ChatView.jsx'
@@ -8,6 +8,7 @@ export default function MainLayout() {
   const sessionSelectionVersion = useStore((state) => state.sessionSelectionVersion)
   const activateSession = useStore((state) => state.activateSession)
   const disconnectSSE = useStore((state) => state.disconnectSSE)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (currentSessionId) {
@@ -22,12 +23,12 @@ export default function MainLayout() {
 
   return (
     <div className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
-      grid-cols-[280px_minmax(0,1fr)]
-      max-[1279px]:grid-cols-[240px_minmax(0,1fr)]
+      grid-cols-[300px_minmax(0,1fr)]
+      max-[1279px]:grid-cols-[260px_minmax(0,1fr)]
       max-[1024px]:h-auto max-[1024px]:overflow-y-auto max-[1024px]:grid-cols-[1fr]"
     >
-      <LeftSidebar />
-      <ChatView />
+      <LeftSidebar onOpenSettings={() => setSettingsOpen(true)} />
+      <ChatView settingsOpen={settingsOpen} onOpenSettings={() => setSettingsOpen(true)} onCloseSettings={() => setSettingsOpen(false)} />
     </div>
   )
 }

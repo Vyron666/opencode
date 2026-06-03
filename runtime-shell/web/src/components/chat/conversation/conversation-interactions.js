@@ -21,14 +21,29 @@ export function reconcileConversationInteractionBlocks(blocks, input) {
     'question_requested',
     'question_resolved',
   )
+  const openPermissionIds = new Set(openPermissionItems.keys())
+  const openQuestionIds = new Set(openQuestionItems.keys())
+  // 中文/English: once an interaction is resolved, keep the status row but drop
+  // the inline approval/question card so the conversation no longer looks blocked.
+  const activeBlocks = blocks.filter((block) => {
+    if (block?.type === 'permission') {
+      const requestId = block?.data?.requestId || block?.data?.id
+      return Boolean(requestId) && openPermissionIds.has(requestId)
+    }
+    if (block?.type === 'question') {
+      const requestId = block?.data?.requestId || block?.data?.id
+      return Boolean(requestId) && openQuestionIds.has(requestId)
+    }
+    return true
+  })
   const existingPermissionIds = new Set(
-    blocks
+    activeBlocks
       .filter((block) => block?.type === 'permission')
       .map((block) => block?.data?.requestId || block?.data?.id)
       .filter(Boolean),
   )
   const existingQuestionIds = new Set(
-    blocks
+    activeBlocks
       .filter((block) => block?.type === 'question')
       .map((block) => block?.data?.requestId || block?.data?.id)
       .filter(Boolean),
@@ -50,11 +65,11 @@ export function reconcileConversationInteractionBlocks(blocks, input) {
     }]
   })
 
-  if (missingPermissionBlocks.length === 0 && missingQuestionBlocks.length === 0) return blocks
+  if (missingPermissionBlocks.length === 0 && missingQuestionBlocks.length === 0) return activeBlocks
   // 中文/English: interaction waiting state and visible cards must converge from
   // the same open-request set, even if live/detail/local writes briefly interleave.
   return [
-    ...blocks,
+    ...activeBlocks,
     ...missingPermissionBlocks,
     ...missingQuestionBlocks,
   ]
