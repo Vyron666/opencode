@@ -71,7 +71,7 @@ export async function createSessionForUser(input: {
 
   const sessionCreateReservationId = input.warmup ? `session-create:${crypto.randomUUID()}` : undefined
   const worker = input.warmup && sessionCreateReservationId
-    ? await assignWorkerForNewSessionWithReservation(input.user, sessionCreateReservationId)
+    ? await assignWorkerForNewSessionWithReservation(input.user, sessionCreateReservationId, input.workspaceId)
     : undefined
   if (input.warmup && !worker) return { ok: false as const, reason: "worker_not_found" }
 

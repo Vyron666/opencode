@@ -36,138 +36,157 @@ assert(providerConfigs.status === 200 && providerConfigs.body.data.items.length 
 const providerConfig = providerConfigs.body.data.items[0]
 const developerProviderConfigs = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(developerJar, "/api/provider-config")
 assert(developerProviderConfigs.status === 200, "developer provider-config get should succeed")
-
-const developerProviderConflictSave = await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/save", {
-  method: "POST",
-  body: providerConfig,
-})
-assert(developerProviderConflictSave.status === 409, "developer provider save should conflict with platform shared provider")
-
 const developerPrivateProviderId = `private-provider-${Date.now()}`
-const developerPrivateProviderSave = await requestJson<ApiEnvelope<{ success: boolean; providerId: string; reloadedSessionCount: number }>>(
-  developerJar,
-  "/api/provider-config/save",
-  {
+let activeSessionId = ""
+let historySessionId = ""
+let providerSaveStatus = 0
+let activeStatusAfterSave = ""
+let historyStatusAfterSave = ""
+let developerProviderConflictStatus = 0
+let developerPrivateProviderSaveStatus = 0
+
+try {
+  const developerProviderConflictSave = await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/save", {
+    method: "POST",
+    body: providerConfig,
+  })
+  developerProviderConflictStatus = developerProviderConflictSave.status
+  assert(developerProviderConflictSave.status === 409, "developer provider save should conflict with platform shared provider")
+
+  const developerPrivateProviderSave = await requestJson<ApiEnvelope<{ success: boolean; providerId: string; reloadedSessionCount: number }>>(
+    developerJar,
+    "/api/provider-config/save",
+    {
+      method: "POST",
+      body: {
+        providerId: developerPrivateProviderId,
+        name: "Developer Private Provider",
+        api: "@ai-sdk/openai-compatible",
+        baseURL: "https://example.invalid/v1",
+        apiKey: "developer-private-key",
+        defaultModel: `${developerPrivateProviderId}/chat`,
+        models: [
+          {
+            id: "chat",
+            name: "Chat",
+          },
+        ],
+      },
+    },
+  )
+  developerPrivateProviderSaveStatus = developerPrivateProviderSave.status
+  assert(developerPrivateProviderSave.status === 200, "developer private provider save should succeed")
+
+  const workspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(adminJar, "/api/workspace/create", {
+    method: "POST",
+    body: {
+      projectId: admin.projectIds[0],
+      name: `settings-impact-${Date.now()}`,
+    },
+  })
+  assert(workspace.status === 200, "workspace/create failed")
+
+  const activeSession = await requestJson<ApiEnvelope<{ id: string }>>(adminJar, "/api/session/create", {
+    method: "POST",
+    body: {
+      title: `Settings Active ${Date.now()}`,
+      projectId: workspace.body.data.projectId,
+      workspaceId: workspace.body.data.id,
+    },
+  })
+  assert(activeSession.status === 200, "active session/create failed")
+
+  const historySession = await requestJson<ApiEnvelope<{ id: string }>>(adminJar, "/api/session/create", {
+    method: "POST",
+    body: {
+      title: `Settings History ${Date.now()}`,
+      projectId: workspace.body.data.projectId,
+      workspaceId: workspace.body.data.id,
+    },
+  })
+  assert(historySession.status === 200, "history session/create failed")
+
+  activeSessionId = activeSession.body.data.id
+  historySessionId = historySession.body.data.id
+
+  const activeOpen = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/acp/session/open", {
+    method: "POST",
+    body: { businessSessionId: activeSessionId },
+  })
+  const historyOpen = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/acp/session/open", {
+    method: "POST",
+    body: { businessSessionId: historySessionId },
+  })
+  assert(activeOpen.status === 200, "active session/open failed")
+  assert(historyOpen.status === 200, "history session/open failed")
+
+  const historyClose = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/session/close", {
+    method: "POST",
+    body: { businessSessionId: historySessionId },
+  })
+  assert(historyClose.status === 200 && historyClose.body.data.status === "completed", "history session/close failed")
+
+  const providerSave = await requestJson<ApiEnvelope<{ success: boolean; providerId: string; reloadedSessionCount: number }>>(
+    adminJar,
+    "/api/provider-config/save",
+    {
+      method: "POST",
+      body: providerConfig,
+    },
+  )
+  providerSaveStatus = providerSave.status
+  assert(providerSave.status === 200, "provider save failed")
+  const activeAfterSave =
+    providerSave.body.data.reloadedSessionCount >= 1
+      ? await waitForSessionDetail(
+          adminJar,
+          activeSessionId,
+          (session) => session.status === "created",
+          "active session should reset to created after provider save when it is affected",
+        )
+      : await waitForSessionDetail(
+          adminJar,
+          activeSessionId,
+          (session) => session.status === "active",
+          "active session should stay active when provider save does not affect its current model",
+        )
+  activeStatusAfterSave = activeAfterSave.status
+  const historyAfterSave = await requestJson<ApiEnvelope<{ session: { status: string } }>>(
+    adminJar,
+    `/api/session/detail?businessSessionId=${encodeURIComponent(historySessionId)}`,
+  )
+  assert(historyAfterSave.status === 200, "history detail after provider save failed")
+  assert(historyAfterSave.body.data.session.status === "completed", "completed session should stay completed after provider save")
+  historyStatusAfterSave = historyAfterSave.body.data.session.status
+
+  const reopenActive = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/acp/session/open", {
+    method: "POST",
+    body: { businessSessionId: activeSessionId },
+  })
+  assert(reopenActive.status === 200 && reopenActive.body.data.status === "active", "reopen active after provider save failed")
+} finally {
+  await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/delete", {
     method: "POST",
     body: {
       providerId: developerPrivateProviderId,
-      name: "Developer Private Provider",
-      api: "@ai-sdk/openai-compatible",
-      baseURL: "https://example.invalid/v1",
-      apiKey: "developer-private-key",
-      defaultModel: `${developerPrivateProviderId}/chat`,
-      models: [
-        {
-          id: "chat",
-          name: "Chat",
-        },
-      ],
+      source: "user_private",
     },
+  }).catch(() => null)
+}
+
+console.log(JSON.stringify({
+  ok: true,
+  baseUrl,
+  activeSessionId,
+  historySessionId,
+  providerSaveStatus,
+  activeStatusAfterSave,
+  historyStatusAfterSave,
+  developerProviderStatuses: {
+    conflictSave: developerProviderConflictStatus,
+    privateSave: developerPrivateProviderSaveStatus,
   },
-)
-assert(developerPrivateProviderSave.status === 200, "developer private provider save should succeed")
-
-const workspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(adminJar, "/api/workspace/create", {
-  method: "POST",
-  body: {
-    projectId: admin.projectIds[0],
-    name: `settings-impact-${Date.now()}`,
-  },
-})
-assert(workspace.status === 200, "workspace/create failed")
-
-const activeSession = await requestJson<ApiEnvelope<{ id: string }>>(adminJar, "/api/session/create", {
-  method: "POST",
-  body: {
-    title: `Settings Active ${Date.now()}`,
-    projectId: workspace.body.data.projectId,
-    workspaceId: workspace.body.data.id,
-  },
-})
-assert(activeSession.status === 200, "active session/create failed")
-
-const historySession = await requestJson<ApiEnvelope<{ id: string }>>(adminJar, "/api/session/create", {
-  method: "POST",
-  body: {
-    title: `Settings History ${Date.now()}`,
-    projectId: workspace.body.data.projectId,
-    workspaceId: workspace.body.data.id,
-  },
-})
-assert(historySession.status === 200, "history session/create failed")
-
-const activeSessionId = activeSession.body.data.id
-const historySessionId = historySession.body.data.id
-
-const activeOpen = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/acp/session/open", {
-  method: "POST",
-  body: { businessSessionId: activeSessionId },
-})
-const historyOpen = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/acp/session/open", {
-  method: "POST",
-  body: { businessSessionId: historySessionId },
-})
-assert(activeOpen.status === 200, "active session/open failed")
-assert(historyOpen.status === 200, "history session/open failed")
-
-const historyClose = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/session/close", {
-  method: "POST",
-  body: { businessSessionId: historySessionId },
-})
-assert(historyClose.status === 200 && historyClose.body.data.status === "completed", "history session/close failed")
-
-const providerSave = await requestJson<ApiEnvelope<{ success: boolean; providerId: string; reloadedSessionCount: number }>>(
-  adminJar,
-  "/api/provider-config/save",
-  {
-    method: "POST",
-    body: providerConfig,
-  },
-)
-assert(providerSave.status === 200, "provider save failed")
-const activeAfterSave =
-  providerSave.body.data.reloadedSessionCount >= 1
-    ? await waitForSessionDetail(
-        adminJar,
-        activeSessionId,
-        (session) => session.status === "created",
-        "active session should reset to created after provider save when it is affected",
-      )
-    : await waitForSessionDetail(
-        adminJar,
-        activeSessionId,
-        (session) => session.status === "active",
-        "active session should stay active when provider save does not affect its current model",
-      )
-const historyAfterSave = await requestJson<ApiEnvelope<{ session: { status: string } }>>(
-  adminJar,
-  `/api/session/detail?businessSessionId=${encodeURIComponent(historySessionId)}`,
-)
-assert(historyAfterSave.status === 200, "history detail after provider save failed")
-assert(historyAfterSave.body.data.session.status === "completed", "completed session should stay completed after provider save")
-
-const reopenActive = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/acp/session/open", {
-  method: "POST",
-  body: { businessSessionId: activeSessionId },
-})
-assert(reopenActive.status === 200 && reopenActive.body.data.status === "active", "reopen active after provider save failed")
-
-console.log(
-  JSON.stringify({
-    ok: true,
-    baseUrl,
-    activeSessionId,
-    historySessionId,
-    providerId: providerSave.body.data.providerId,
-    reloadedSessionCount: providerSave.body.data.reloadedSessionCount,
-    activeStatusAfterSave: activeAfterSave.status,
-    historyStatusAfterSave: historyAfterSave.body.data.session.status,
-    developerProviderStatuses: {
-      conflictSave: developerProviderConflictSave.status,
-      privateSave: developerPrivateProviderSave.status,
-    },
-  }),
-)
+}))
 
 async function waitForSessionDetail(
   jar: string[],

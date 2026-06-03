@@ -14,7 +14,7 @@ type SandboxWorkspaceRow = {
   closed_at: string | null
 }
 
-export async function findSandboxWorkspaceBySessionId(businessSessionId: string) {
+export async function findSandboxWorkspaceByWorkspaceId(workspaceId: string) {
   const row = await getRuntimeDatabaseClient().queryFirst<SandboxWorkspaceRow>(
     `
       SELECT
@@ -29,17 +29,17 @@ export async function findSandboxWorkspaceBySessionId(businessSessionId: string)
         expires_at,
         closed_at
       FROM sandbox_workspace
-      WHERE business_session_id = ?
+      WHERE workspace_id = ?
       LIMIT 1
     `,
-    [businessSessionId],
+    [workspaceId],
   )
   if (!row) return
   return toSandboxWorkspace(row)
 }
 
 export async function upsertSandboxWorkspace(input: SandboxWorkspace) {
-  const existing = await findSandboxWorkspaceBySessionId(input.businessSessionId)
+  const existing = await findSandboxWorkspaceByWorkspaceId(input.workspaceId)
   if (!existing) {
     await getRuntimeDatabaseClient().execute(
       `
@@ -76,6 +76,7 @@ export async function upsertSandboxWorkspace(input: SandboxWorkspace) {
     `
       UPDATE sandbox_workspace
       SET
+        business_session_id = ?,
         workspace_id = ?,
         workspace_path = ?,
         sandbox_path = ?,
@@ -83,9 +84,10 @@ export async function upsertSandboxWorkspace(input: SandboxWorkspace) {
         updated_at = ?,
         expires_at = ?,
         closed_at = ?
-      WHERE business_session_id = ?
+      WHERE workspace_id = ?
     `,
     [
+      input.businessSessionId,
       input.workspaceId,
       input.workspacePath,
       input.sandboxPath,
@@ -93,7 +95,7 @@ export async function upsertSandboxWorkspace(input: SandboxWorkspace) {
       input.updatedAt,
       input.expiresAt || null,
       input.closedAt || null,
-      input.businessSessionId,
+      input.workspaceId,
     ],
   )
 }
@@ -133,13 +135,13 @@ export async function listSandboxWorkspacesForCleanup(input: {
   return rows.map(toSandboxWorkspace)
 }
 
-export async function deleteSandboxWorkspaceBySessionId(businessSessionId: string) {
+export async function deleteSandboxWorkspaceByWorkspaceId(workspaceId: string) {
   await getRuntimeDatabaseClient().execute(
     `
       DELETE FROM sandbox_workspace
-      WHERE business_session_id = ?
+      WHERE workspace_id = ?
     `,
-    [businessSessionId],
+    [workspaceId],
   )
 }
 

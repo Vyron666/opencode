@@ -3,13 +3,14 @@ import path from "node:path"
 import { Config } from "../../config"
 import { createConcurrencyGate } from "../../lib/concurrency-gate"
 import {
-  deleteSandboxInstanceBySessionId,
+  deleteSandboxInstanceByWorkspaceId,
+  findSandboxInstanceByWorkspaceId,
   listSandboxInstances,
   upsertSandboxInstance,
 } from "../../repos/sandbox-instance-repo"
 import {
-  deleteSandboxWorkspaceBySessionId,
-  findSandboxWorkspaceBySessionId,
+  deleteSandboxWorkspaceByWorkspaceId,
+  findSandboxWorkspaceByWorkspaceId,
   listSandboxWorkspacesForCleanup,
   upsertSandboxWorkspace,
 } from "../../repos/sandbox-workspace-repo"
@@ -21,41 +22,40 @@ const runWithSandboxWorkspaceGate = createConcurrencyGate(Config.sandboxWorkspac
 const STALE_PREPARED_SANDBOX_GRACE_MS = 10 * 60 * 1000
 
 export async function ensureSandboxWorkspace(session: BusinessSession) {
-  const existing = await findSandboxWorkspaceBySessionId(session.id)
+  const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
   if (existing && existing.status !== "closed") return existing
 
-  const inFlight = sandboxWorkspacePreparations.get(session.id)
+  const inFlight = sandboxWorkspacePreparations.get(session.workspaceId)
   if (inFlight) return inFlight
 
   const preparation = prepareSandboxWorkspace(session)
-  sandboxWorkspacePreparations.set(session.id, preparation)
+  sandboxWorkspacePreparations.set(session.workspaceId, preparation)
   try {
     return await preparation
   } finally {
-    if (sandboxWorkspacePreparations.get(session.id) === preparation) {
-      sandboxWorkspacePreparations.delete(session.id)
+    if (sandboxWorkspacePreparations.get(session.workspaceId) === preparation) {
+      sandboxWorkspacePreparations.delete(session.workspaceId)
     }
   }
 }
 
 async function prepareSandboxWorkspace(session: BusinessSession) {
   return runWithSandboxWorkspaceGate(async () => {
-    const existing = await findSandboxWorkspaceBySessionId(session.id)
+    const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
     if (existing && existing.status !== "closed") return existing
-    const sandboxPath = path.join(Config.workspaceRootDir, ".sandbox", session.id)
+    const sandboxPath = path.join(Config.workspaceRootDir, ".sandbox", session.workspaceId)
     await rm(sandboxPath, { recursive: true, force: true }).catch(() => {})
     await mkdir(path.dirname(sandboxPath), { recursive: true })
     await cp(session.workspacePath, sandboxPath, {
       recursive: true,
       force: true,
-      // 中文/English: never copy runtime-shell's controlled sandbox work layer
-      // into a new sandbox copy, especially when historical sessions point at
-      // the workspace root itself.
+      // 中文/English: never nest the managed sandbox work layer into itself.
       filter: (source) => !isSandboxWorkLayerPath(source),
     })
     const now = new Date().toISOString()
     const workspace: SandboxWorkspace = {
-      id: existing?.id || `sbw_${crypto.randomUUID().replace(/-/g, "")}`,
+      // 中文/English: one workspace owns one sandbox copy; sessions only reference it.
+      id: existing?.id || `sbw_${session.workspaceId}`,
       businessSessionId: session.id,
       workspaceId: session.workspaceId,
       workspacePath: session.workspacePath,
@@ -66,8 +66,9 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
       expiresAt: new Date(Date.now() + Config.sandboxWorkspaceTtlMs).toISOString(),
     }
     await upsertSandboxWorkspace(workspace)
+    const instance = await findSandboxInstanceByWorkspaceId(session.workspaceId)
     await upsertSandboxInstance({
-      id: `sbi_${session.id}`,
+      id: instance?.id || `sbi_${session.workspaceId}`,
       tenantId: session.tenantId,
       organizationId: session.organizationId,
       projectId: session.projectId,
@@ -79,7 +80,7 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
       isolationMode: Config.sandboxIsolationMode || undefined,
       status: "ready",
       sandboxPath,
-      createdAt: existing?.createdAt || now,
+      createdAt: instance?.createdAt || now,
       updatedAt: now,
       detail: {
         workspacePath: session.workspacePath,
@@ -92,11 +93,12 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
       businessSessionId: session.id,
       action: "sandbox.create",
       resourceType: "sandbox_instance",
-      resourceId: `sbi_${session.id}`,
+      resourceId: `sbi_${session.workspaceId}`,
       detail: {
         backend: readSandboxBackend(),
         sandboxPath,
         workspacePath: session.workspacePath,
+        workspaceId: session.workspaceId,
       },
     })
     return workspace
@@ -104,18 +106,21 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
 }
 
 export async function markSandboxWorkspaceClosing(sessionId: string) {
-  const existing = await findSandboxWorkspaceBySessionId(sessionId)
-  if (!existing) return
   const session = await sessionService.getSession(sessionId)
+  if (!session) return
+  if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) return
+  const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
+  if (!existing) return
   await upsertSandboxWorkspace({
     ...existing,
+    businessSessionId: session.id,
     status: "closing",
     updatedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + Config.sandboxWorkspaceTtlMs).toISOString(),
   })
-  if (!session) return
+  const instance = await findSandboxInstanceByWorkspaceId(session.workspaceId)
   await upsertSandboxInstance({
-    id: `sbi_${session.id}`,
+    id: instance?.id || `sbi_${session.workspaceId}`,
     tenantId: session.tenantId,
     organizationId: session.organizationId,
     projectId: session.projectId,
@@ -127,7 +132,7 @@ export async function markSandboxWorkspaceClosing(sessionId: string) {
     isolationMode: Config.sandboxIsolationMode || undefined,
     status: "closing",
     sandboxPath: existing.sandboxPath,
-    createdAt: existing.createdAt,
+    createdAt: instance?.createdAt || existing.createdAt,
     updatedAt: new Date().toISOString(),
     detail: {
       workspacePath: session.workspacePath,
@@ -136,20 +141,23 @@ export async function markSandboxWorkspaceClosing(sessionId: string) {
 }
 
 export async function closeSandboxWorkspace(sessionId: string) {
-  const existing = await findSandboxWorkspaceBySessionId(sessionId)
-  if (!existing) return
   const session = await sessionService.getSession(sessionId)
+  if (!session) return
+  if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) return
+  const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
+  if (!existing) return
+  const instance = await findSandboxInstanceByWorkspaceId(session.workspaceId)
   const now = new Date().toISOString()
   await upsertSandboxWorkspace({
     ...existing,
+    businessSessionId: session.id,
     status: "closed",
     updatedAt: now,
     closedAt: now,
     expiresAt: new Date(Date.now() + Config.sandboxWorkspaceTtlMs).toISOString(),
   })
-  if (!session) return
   await upsertSandboxInstance({
-    id: `sbi_${session.id}`,
+    id: instance?.id || `sbi_${session.workspaceId}`,
     tenantId: session.tenantId,
     organizationId: session.organizationId,
     projectId: session.projectId,
@@ -161,7 +169,7 @@ export async function closeSandboxWorkspace(sessionId: string) {
     isolationMode: Config.sandboxIsolationMode || undefined,
     status: "closed",
     sandboxPath: existing.sandboxPath,
-    createdAt: existing.createdAt,
+    createdAt: instance?.createdAt || existing.createdAt,
     updatedAt: now,
     closedAt: now,
     detail: {
@@ -175,20 +183,22 @@ export async function closeSandboxWorkspace(sessionId: string) {
     businessSessionId: session.id,
     action: "sandbox.close",
     resourceType: "sandbox_instance",
-    resourceId: `sbi_${session.id}`,
+    resourceId: `sbi_${session.workspaceId}`,
     detail: {
       sandboxPath: existing.sandboxPath,
       workspacePath: session.workspacePath,
+      workspaceId: session.workspaceId,
     },
   })
 }
 
 export async function markSandboxWorkspaceRunning(session: BusinessSession) {
-  const existing = await findSandboxWorkspaceBySessionId(session.id)
+  const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
   if (!existing) return
+  const instance = await findSandboxInstanceByWorkspaceId(session.workspaceId)
   const now = new Date().toISOString()
   await upsertSandboxInstance({
-    id: `sbi_${session.id}`,
+    id: instance?.id || `sbi_${session.workspaceId}`,
     tenantId: session.tenantId,
     organizationId: session.organizationId,
     projectId: session.projectId,
@@ -200,7 +210,7 @@ export async function markSandboxWorkspaceRunning(session: BusinessSession) {
     isolationMode: Config.sandboxIsolationMode || undefined,
     status: "running",
     sandboxPath: existing.sandboxPath,
-    createdAt: existing.createdAt,
+    createdAt: instance?.createdAt || existing.createdAt,
     updatedAt: now,
     openedAt: now,
     detail: {
@@ -209,8 +219,8 @@ export async function markSandboxWorkspaceRunning(session: BusinessSession) {
   })
 }
 
-export async function getSandboxWorkspace(sessionId: string) {
-  return findSandboxWorkspaceBySessionId(sessionId)
+export async function getSandboxWorkspace(workspaceId: string) {
+  return findSandboxWorkspaceByWorkspaceId(workspaceId)
 }
 
 export async function cleanupExpiredSandboxWorkspaces(limit = 100) {
@@ -242,24 +252,30 @@ export async function cleanupStalePreparedSandboxWorkspaces(limit = 100) {
     if (Date.now() - new Date(sandbox.updatedAt).getTime() < STALE_PREPARED_SANDBOX_GRACE_MS) continue
     const session = await sessionService.getSession(sandbox.businessSessionId)
     if (!session) {
-      await deleteSandboxInstanceBySessionId(sandbox.businessSessionId)
+      const workspace = await findSandboxWorkspaceByWorkspaceId(sandbox.workspaceId)
+      if (workspace) {
+        await cleanupSandboxWorkspaceRecord(workspace)
+      } else {
+        await deleteSandboxInstanceByWorkspaceId(sandbox.workspaceId)
+      }
       results.push({
         sessionId: sandbox.businessSessionId,
         cleaned: true,
       })
       continue
     }
+    if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) continue
     if (
       session.status !== "created" &&
       session.status !== "completed" &&
       session.status !== "failed" &&
       session.status !== "orphaned"
     ) continue
-    const workspace = await findSandboxWorkspaceBySessionId(session.id)
+    const workspace = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
     if (workspace) {
       await cleanupSandboxWorkspaceRecord(workspace)
     } else {
-      await deleteSandboxInstanceBySessionId(session.id)
+      await deleteSandboxInstanceByWorkspaceId(session.workspaceId)
     }
     results.push({
       sessionId: session.id,
@@ -270,7 +286,22 @@ export async function cleanupStalePreparedSandboxWorkspaces(limit = 100) {
 }
 
 export async function cleanupClosedSandboxWorkspace(sessionId: string) {
-  const workspace = await findSandboxWorkspaceBySessionId(sessionId)
+  const session = await sessionService.getSession(sessionId)
+  if (!session) {
+    return {
+      sessionId,
+      cleaned: false,
+      reason: "session_not_found",
+    }
+  }
+  if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) {
+    return {
+      sessionId,
+      cleaned: false,
+      reason: "workspace_still_in_use",
+    }
+  }
+  const workspace = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
   if (!workspace || workspace.status !== "closed") {
     return {
       sessionId,
@@ -291,6 +322,7 @@ async function cleanupSandboxWorkspaces(workspaces: SandboxWorkspace[]) {
     cleaned: boolean
   }> = []
   for (const workspace of workspaces) {
+    if (await hasReusableWorkspaceSessions(workspace.workspaceId)) continue
     await cleanupSandboxWorkspaceRecord(workspace)
     results.push({
       sessionId: workspace.businessSessionId,
@@ -301,11 +333,28 @@ async function cleanupSandboxWorkspaces(workspaces: SandboxWorkspace[]) {
 }
 
 async function cleanupSandboxWorkspaceRecord(workspace: SandboxWorkspace) {
-  // 中文/English: cleanup only touches already-closed sandbox copies, so active
-  // or reopening sessions never lose their writable layer under them.
+  // 中文/English: cleanup touches only a workspace sandbox that is already closed
+  // and no longer referenced by any resumable session.
   await rm(workspace.sandboxPath, { recursive: true, force: true }).catch(() => {})
-  await deleteSandboxInstanceBySessionId(workspace.businessSessionId)
-  await deleteSandboxWorkspaceBySessionId(workspace.businessSessionId)
+  await deleteSandboxInstanceByWorkspaceId(workspace.workspaceId)
+  await deleteSandboxWorkspaceByWorkspaceId(workspace.workspaceId)
+}
+
+async function hasReusableWorkspaceSessions(workspaceId: string, excludedSessionIds: string[] = []) {
+  const excluded = new Set(excludedSessionIds)
+  const sessions = (await sessionService.listSessions()).filter((session) =>
+    session.workspaceId === workspaceId && !excluded.has(session.id),
+  )
+  return sessions.some((session) =>
+    session.status === "opening" ||
+    session.status === "active" ||
+    session.status === "waiting_input" ||
+    session.status === "cancelling" ||
+    session.status === "closing" ||
+    // 中文/English: orphaned sessions still have a user-visible reopen path, so
+    // keep the workspace sandbox copy until governance or explicit cleanup reclaims it.
+    session.status === "orphaned",
+  )
 }
 
 function isSandboxWorkLayerPath(source: string) {

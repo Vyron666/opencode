@@ -17,6 +17,7 @@ export type RuntimeSnapshot = {
 export type RuntimeEntry = {
   remoteRuntimeId: string
   businessSessionId: string
+  workspaceId: string
   workerId: string
   workspacePath: string
   sandboxPath?: string

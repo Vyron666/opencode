@@ -20,6 +20,7 @@ import {
 import { toElicitationContent } from "./runtime-types"
 import { stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
 import { createLogger } from "../log"
+import { closeRemoteRuntimeBinding } from "./remote-runtime-client"
 
 export { getRuntime, listPendingPermissions, resolvePendingPermission, listPendingQuestions, subscribeRuntimeEvents }
 
@@ -177,8 +178,12 @@ export async function publishRuntimeEvent(event: SessionEvent) {
 
 export async function closeRuntime(sessionId: string) {
   const runtime = getRuntime(sessionId)
-  if (!runtime) return false
   const session = await sessionService.getSession(sessionId)
+  if (!runtime) {
+    if (!session) return false
+    await closeRemoteRuntimeBinding(session).catch(() => false)
+    return false
+  }
   stopRuntimeLeaseAutoRenew(sessionId)
   deleteRuntime(sessionId)
   clearPendingPermissionsBySession(sessionId)

@@ -163,7 +163,7 @@ async function auditSandboxExit(event: SessionEvent) {
     businessSessionId: session.id,
     action: "sandbox.exit",
     resourceType: "sandbox_instance",
-    resourceId: `sbi_${session.id}`,
+    resourceId: `sbi_${session.workspaceId}`,
     detail,
   })
   if (!isResourceExceededExit(event)) return
@@ -174,7 +174,7 @@ async function auditSandboxExit(event: SessionEvent) {
     businessSessionId: session.id,
     action: "sandbox.resource_exceeded",
     resourceType: "sandbox_instance",
-    resourceId: `sbi_${session.id}`,
+    resourceId: `sbi_${session.workspaceId}`,
     detail,
   })
 }

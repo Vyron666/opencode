@@ -16,7 +16,7 @@ export async function createSessionDiff(input: {
   session: BusinessSession
   user: User
 }) {
-  const sandboxWorkspace = await getSandboxWorkspace(input.session.id)
+  const sandboxWorkspace = await getSandboxWorkspace(input.session.workspaceId)
   if (!sandboxWorkspace || sandboxWorkspace.status !== "ready") return
   const summary = await buildDiffSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath)
   const policyResult = evaluateSandboxDiffPolicy(summary)
@@ -131,7 +131,7 @@ export async function applySessionDiff(input: {
   if (diff.status === "pending_review" || diff.policyResult.requiresReview) {
     throw new Error(`sandbox diff requires review before apply: ${diff.id}`)
   }
-  const sandboxWorkspace = await getSandboxWorkspace(input.session.id)
+  const sandboxWorkspace = await getSandboxWorkspace(input.session.workspaceId)
   if (!sandboxWorkspace || sandboxWorkspace.status !== "ready") return
   await applyDiffSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath, diff.summary)
   const now = new Date().toISOString()

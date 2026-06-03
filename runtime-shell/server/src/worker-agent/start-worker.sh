@@ -9,6 +9,7 @@ agent_pid=$!
 
 cleanup() {
   kill "$opencode_pid" "$agent_pid" 2>/dev/null || true
+  wait "$agent_pid" 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM

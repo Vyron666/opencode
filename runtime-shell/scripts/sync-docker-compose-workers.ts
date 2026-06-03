@@ -4,6 +4,7 @@ import { parse, type ParseError } from "jsonc-parser"
 type LocalWorkerComposeConfig = {
   count: number
   capacity: number
+  warmPoolTarget: number
 }
 
 const runtimeShellDir = path.resolve(import.meta.dir, "..")
@@ -31,15 +32,20 @@ async function readConfig() {
   }
   const count = Number(parsed.count)
   const capacity = Number(parsed.capacity)
+  const warmPoolTarget = Number(parsed.warmPoolTarget ?? 0)
   if (!Number.isInteger(count) || count < 1) {
     throw new Error(`local worker count must be a positive integer: ${count}`)
   }
   if (!Number.isInteger(capacity) || capacity < 1) {
     throw new Error(`local worker capacity must be a positive integer: ${capacity}`)
   }
+  if (!Number.isInteger(warmPoolTarget) || warmPoolTarget < 0) {
+    throw new Error(`local worker warmPoolTarget must be a non-negative integer: ${warmPoolTarget}`)
+  }
   return {
     count,
     capacity,
+    warmPoolTarget,
   } satisfies LocalWorkerComposeConfig
 }
 
@@ -60,6 +66,7 @@ function buildCompose(config: LocalWorkerComposeConfig) {
         agentBaseUrl: `http://${readWorkerServiceName(workerIndex)}:4097`,
         capacity: config.capacity,
         version: `local-${workerIndex}`,
+        warmPoolTarget: config.warmPoolTarget,
       }
     }),
   )

@@ -6,12 +6,13 @@ import {
   listProviderConfigsForUser,
   listSkillConfigForUser,
   previewConfigImpactForUser,
+  removeProviderConfigForUser,
   removeSkillConfigItemForUser,
   saveMcpConfigsForUser,
   saveProviderConfigForUser,
   saveSkillConfigForUser,
 } from "../../services/settings/settings-service"
-import { configApprovalReviewSchema, configHistoryListSchema, configImpactPreviewSchema, mcpConfigSchema, providerConfigSchema, skillConfigRemoveItemSchema, skillConfigSchema } from "../schemas"
+import { configApprovalReviewSchema, configHistoryListSchema, configImpactPreviewSchema, mcpConfigSchema, providerConfigDeleteSchema, providerConfigSchema, skillConfigRemoveItemSchema, skillConfigSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
@@ -142,6 +143,33 @@ export function registerSessionSettingsRoutes(app: Hono) {
         reqId,
       ),
     )
+  })
+
+  app.post("/api/provider-config/delete", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = providerConfigDeleteSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid provider config delete payload", 400, reqId, body.error.flatten()), 400)
+    }
+    const result = await removeProviderConfigForUser({
+      user,
+      requestId: reqId,
+      providerId: body.data.providerId,
+      source: body.data.source,
+    })
+    if (!result.ok) {
+      if (result.reason === "provider_not_found") {
+        return c.json(jsonError("provider config not found", 404, reqId), 404)
+      }
+      return c.json(jsonError("forbidden", 403, reqId), 403)
+    }
+    return c.json(jsonOk({
+      success: true,
+      providerId: result.providerId,
+      reloadedSessionCount: result.reloadedSessionCount,
+    }, reqId))
   })
 
   app.post("/api/config-impact/preview", async (c) => {

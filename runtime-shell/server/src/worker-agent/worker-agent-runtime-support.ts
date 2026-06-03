@@ -17,6 +17,7 @@ export function createRuntimeEntry(input: {
   runtimeShellBaseUrl: string
   workerToken: string
   businessSessionId: string
+  workspaceId: string
   workspacePath: string
   sandboxPath?: string
   workerId: string
@@ -27,6 +28,7 @@ export function createRuntimeEntry(input: {
   const sandboxManager = createSandboxManager(Config.sandboxBackend)
   const sandboxHandle = sandboxManager.prepare({
     businessSessionId: input.businessSessionId,
+    workspaceId: input.workspaceId,
     workerId: input.workerId,
     workspacePath: input.workspacePath,
     sandboxPath: input.sandboxPath,
@@ -35,6 +37,7 @@ export function createRuntimeEntry(input: {
   const entry: RuntimeEntry = {
     remoteRuntimeId,
     businessSessionId: input.businessSessionId,
+    workspaceId: input.workspaceId,
     workerId: input.workerId,
     workspacePath: input.workspacePath,
     sandboxPath: input.sandboxPath,

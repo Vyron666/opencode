@@ -272,7 +272,10 @@ async function syncWarmPoolSandboxInstances(
       tenantId: worker.tenantId!,
       organizationId: worker.organizationId!,
       projectId: "__warm_pool__",
-      workspaceId: "__warm_pool__",
+      // 中文/English: warm slots are synthetic system sandboxes, so each slot needs
+      // its own synthetic workspace id instead of colliding on the real workspace
+      // uniqueness constraint used by workspace-level sandboxes.
+      workspaceId: `warm_pool:${worker.id}:${slot.slotId}`,
       businessSessionId: `warm_pool:${worker.id}:${slot.slotId}`,
       workerId: worker.id,
       backend: Config.sandboxBackend === "kata"

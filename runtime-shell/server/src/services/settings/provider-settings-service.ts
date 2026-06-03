@@ -6,6 +6,8 @@ import { previewPlatformProviderImpact, previewUserPrivateProviderImpact } from 
 import {
   createMaskedProviderSummary,
   listVisibleProviderConfigs,
+  removePlatformProviderConfig,
+  removeUserPrivateProviderConfig,
   resolveSettingsSnapshot,
   savePlatformProviderConfig,
   saveUserPrivateProviderConfig,
@@ -153,6 +155,79 @@ export async function saveProviderConfigForUser(input: {
     approvalRequired: false,
     approval: undefined,
     providerId: normalizedConfig.providerId,
+    reloadedSessionCount: affectedSessions.length,
+  }
+}
+
+export async function removeProviderConfigForUser(input: {
+  user: User
+  requestId: string
+  providerId: string
+  source: "platform_shared" | "user_private"
+}) {
+  const authorization = authorizeSettingsAction({
+    user: input.user,
+    resource: "provider_config",
+    action: "save",
+  })
+  if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
+  if (input.user.role !== "admin" && input.source === "platform_shared") {
+    return { ok: false as const, reason: "forbidden" }
+  }
+
+  const deleted = input.source === "platform_shared"
+    ? await removePlatformProviderConfig({
+        user: input.user,
+        requestId: input.requestId,
+        providerId: input.providerId,
+      })
+    : await removeUserPrivateProviderConfig({
+        user: input.user,
+        requestId: input.requestId,
+        providerId: input.providerId,
+      })
+  if (!deleted) {
+    return { ok: false as const, reason: "provider_not_found" }
+  }
+
+  const affected = input.source === "platform_shared"
+    ? await previewPlatformProviderImpact({
+        tenantId: input.user.tenantId,
+        organizationId: input.user.organizationId,
+        providerId: input.providerId,
+      })
+    : await previewUserPrivateProviderImpact({
+        tenantId: input.user.tenantId,
+        organizationId: input.user.organizationId,
+        userId: input.user.id,
+        providerId: input.providerId,
+      })
+  const affectedSessions = (await sessionService.listSessions()).filter((session) =>
+    affected.affectedSessionIds.includes(session.id),
+  )
+  for (const session of affectedSessions) {
+    await closeRuntime(session.id)
+    await markSessionCreated(session.id)
+    await resetSessionRuntime(session.id, "created")
+  }
+  void auditService.appendAuditLog({
+    tenantId: input.user.tenantId,
+    organizationId: input.user.organizationId,
+    userId: input.user.id,
+    requestId: input.requestId,
+    action: "provider.delete",
+    resourceType: "provider_config",
+    resourceId: input.providerId,
+    detail: {
+      source: input.source,
+      reloadedSessionCount: affectedSessions.length,
+      affectedSessionIds: affected.affectedSessionIds,
+    },
+  })
+  return {
+    ok: true as const,
+    success: true,
+    providerId: input.providerId,
     reloadedSessionCount: affectedSessions.length,
   }
 }

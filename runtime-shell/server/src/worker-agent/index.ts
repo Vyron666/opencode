@@ -12,7 +12,7 @@ const runtimeHandlers = createRuntimeHandlers({
   workerToken: token,
 })
 
-Bun.serve({
+const server = Bun.serve({
   port,
   hostname: "0.0.0.0",
   idleTimeout: 120,
@@ -117,6 +117,7 @@ Bun.serve({
 })
 
 log.info("worker agent started", { port, runtimeShellBaseUrl })
+registerGracefulShutdown()
 
 function isAuthorized(request: Request) {
   return request.headers.get("x-runtime-worker-token") === token
@@ -142,4 +143,30 @@ function describeError(error: unknown) {
   } catch {
     return `${detail.message} | cause=${String(detail.cause)}`
   }
+}
+
+function registerGracefulShutdown() {
+  let shutdownPromise: Promise<void> | undefined
+  const shutdown = (signal: string) => {
+    if (shutdownPromise) return
+    shutdownPromise = (async () => {
+      log.info("worker agent shutting down", { signal })
+      try {
+        // 中文/English: warm slots are pure acceleration state, so reclaim them on
+        // process exit to avoid leaking detached containers after compose down/restart.
+        await cleanupDockerWarmPool({
+          recycleReady: true,
+        })
+      } catch (error) {
+        log.warn("worker agent warm pool cleanup failed", {
+          signal,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+      server.stop(true)
+      process.exit(0)
+    })()
+  }
+  process.on("SIGINT", () => shutdown("SIGINT"))
+  process.on("SIGTERM", () => shutdown("SIGTERM"))
 }

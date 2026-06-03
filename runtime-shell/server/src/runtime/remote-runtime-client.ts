@@ -45,9 +45,10 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   onQuestionRequested(_handler: (question: PendingQuestion) => void) {}
 
   async newSession(cwd: string): Promise<NewSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/open-session", {
       businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
       workerId: this.session.workerId,
       workspacePath: cwd,
       sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
@@ -63,9 +64,10 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async loadSession(cwd: string, sessionId: string): Promise<LoadSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/load-session", {
       businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
       workerId: this.session.workerId,
       workspacePath: cwd,
       sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
@@ -81,9 +83,10 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async resumeSession(cwd: string, sessionId: string): Promise<ResumeSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/resume-session", {
       businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
       workerId: this.session.workerId,
       workspacePath: cwd,
       sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
@@ -99,9 +102,10 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async forkSession(cwd: string, sessionId: string): Promise<ForkSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.id)
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/fork-session", {
       businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
       workerId: this.session.workerId,
       workspacePath: cwd,
       sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
@@ -178,6 +182,9 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   async close() {
     await this.post("/runtime/close-session", {
       remoteRuntimeId: this.requireRemoteRuntimeId(),
+      businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
+      workerId: this.session.workerId,
     })
   }
 
@@ -185,6 +192,9 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
     await this.post("/runtime/close-session", {
       remoteRuntimeId: this.requireRemoteRuntimeId(),
       acpSessionId: sessionId,
+      businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
+      workerId: this.session.workerId,
     })
   }
 
@@ -212,25 +222,48 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   private async post<T = { success: true }>(pathname: string, body: Record<string, unknown>) {
-    const agentBaseUrl = this.worker.agentBaseUrl || this.worker.baseUrl.replace(/:\d+$/, ":4097")
-    const response = await fetch(`${agentBaseUrl}${pathname}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-runtime-worker-token": Config.workerAgentToken,
-      },
-      body: JSON.stringify(body),
-    })
-    if (!response.ok) {
-      const message = await response.text()
-      log.warn("remote worker request failed", {
-        workerId: this.worker.id,
-        pathname,
-        status: response.status,
-        message,
-      })
-      throw new Error(message || `remote worker request failed: ${response.status}`)
-    }
-    return response.json() as Promise<T>
+    return postRemoteWorker<T>(this.worker, pathname, body)
   }
+}
+
+export async function closeRemoteRuntimeBinding(session: BusinessSession) {
+  if (Config.workerExecutionMode !== "remote" || !session.workerId) return false
+  const worker = Config.localWorkers.find((item) => item.id === session.workerId)
+  if (!worker) return false
+  const remoteRuntimeId = session.binding?.runtimeKey
+  if (!remoteRuntimeId) return false
+  await postRemoteWorker(worker, "/runtime/close-session", {
+    remoteRuntimeId,
+    businessSessionId: session.id,
+    workspaceId: session.workspaceId,
+    workerId: session.workerId,
+  })
+  return true
+}
+
+async function postRemoteWorker<T = { success: true }>(
+  worker: LocalWorkerConfig,
+  pathname: string,
+  body: Record<string, unknown>,
+) {
+  const agentBaseUrl = worker.agentBaseUrl || worker.baseUrl.replace(/:\d+$/, ":4097")
+  const response = await fetch(`${agentBaseUrl}${pathname}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-runtime-worker-token": Config.workerAgentToken,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const message = await response.text()
+    log.warn("remote worker request failed", {
+      workerId: worker.id,
+      pathname,
+      status: response.status,
+      message,
+    })
+    throw new Error(message || `remote worker request failed: ${response.status}`)
+  }
+  return response.json() as Promise<T>
 }

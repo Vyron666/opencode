@@ -98,12 +98,36 @@ export async function upsertConfigItem(input: {
   updatedBy: string
 }) {
   const db = getRuntimeDatabaseClient()
-  const existing = await findConfigItem({
-    scopeLevel: input.scopeLevel,
-    scopeId: input.scopeId,
-    namespace: input.namespace,
-    configKey: input.configKey,
-  })
+  const existingRow = await db.queryFirst<ConfigItemRow>(
+    `
+      SELECT
+        id,
+        tenant_id,
+        organization_id,
+        project_id,
+        workspace_id,
+        business_session_id,
+        scope_level,
+        scope_id,
+        namespace,
+        config_key,
+        value_json,
+        version,
+        created_at,
+        created_by,
+        updated_at,
+        updated_by
+      FROM config_item
+      WHERE scope_level = ?
+        AND scope_id = ?
+        AND namespace = ?
+        AND config_key = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [input.scopeLevel, input.scopeId, input.namespace, input.configKey],
+  )
+  const existing = existingRow ? toConfigItem(existingRow) : undefined
   const timestamp = now()
   const nextVersion = (existing?.version || 0) + 1
   const serialized = JSON.stringify(input.valueJson)
@@ -121,7 +145,8 @@ export async function upsertConfigItem(input: {
           value_json = ?,
           version = ?,
           updated_at = ?,
-          updated_by = ?
+          updated_by = ?,
+          deleted_at = NULL
         WHERE id = ?
       `,
       [
@@ -217,5 +242,47 @@ export async function upsertConfigItem(input: {
   return {
     previous: undefined,
     current: created,
+  }
+}
+
+export async function deleteConfigItem(input: {
+  scopeLevel: ConfigScopeLevel
+  scopeId: string
+  namespace: ConfigNamespace
+  configKey: string
+  deletedBy: string
+}) {
+  const existing = await findConfigItem({
+    scopeLevel: input.scopeLevel,
+    scopeId: input.scopeId,
+    namespace: input.namespace,
+    configKey: input.configKey,
+  })
+  if (!existing) return
+  const db = getRuntimeDatabaseClient()
+  const timestamp = now()
+  const nextVersion = existing.version + 1
+  await db.execute(
+    `
+      UPDATE config_item
+      SET
+        version = ?,
+        updated_at = ?,
+        updated_by = ?,
+        deleted_at = ?
+      WHERE id = ?
+    `,
+    [
+      nextVersion,
+      timestamp,
+      input.deletedBy,
+      timestamp,
+      existing.id,
+    ],
+  )
+  return {
+    previous: existing,
+    deletedAt: timestamp,
+    nextVersion,
   }
 }

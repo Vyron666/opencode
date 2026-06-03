@@ -156,6 +156,11 @@ export const providerConfigSchema = z.object({
   models: z.array(providerModelSchema).min(1),
 })
 
+export const providerConfigDeleteSchema = z.object({
+  providerId: z.string().min(1),
+  source: z.enum(["platform_shared", "user_private"]),
+})
+
 export const skillConfigSchema = z.object({
   paths: z.array(z.string().min(1)).optional().default([]),
   urls: z.array(z.string().min(1)).optional().default([]),

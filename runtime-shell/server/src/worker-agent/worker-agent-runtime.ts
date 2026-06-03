@@ -9,14 +9,18 @@ import { toElicitationContent } from "../runtime/runtime-types"
 import { beginPromptTrace, clearPromptTrace, failPromptTrace, finishPromptTrace, recordPromptEventTrace } from "./worker-agent-prompt-observe"
 import {
   findRuntimeByBusinessSessionId,
+  findRuntimeById,
   findRuntimeByPermissionRequestId,
   findRuntimeByQuestionRequestId,
   forgetRuntime,
   rememberRuntime,
+  rememberRuntimeClaim,
+  releaseRuntimeClaim,
   requireRuntime,
   requireString,
 } from "./worker-agent-store"
 import { createRuntimeEntry, isPromptInterrupted, toBootstrap, updateSnapshot } from "./worker-agent-runtime-support"
+import { closeOrphanDockerSandbox } from "./sandbox/docker-sandbox-manager"
 import { createLogger } from "../log"
 
 const log = createLogger("worker-agent-runtime")
@@ -42,6 +46,7 @@ export function createRuntimeHandlers(input: {
 
   async function openSession(body: Record<string, unknown>) {
     const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
+    const workspaceId = requireString(body.workspaceId, "workspaceId")
     const workspacePath = requireString(body.workspacePath, "workspacePath")
     const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
     const workerId = requireString(body.workerId, "workerId")
@@ -51,12 +56,13 @@ export function createRuntimeHandlers(input: {
       runtimeShellBaseUrl: input.runtimeShellBaseUrl,
       workerToken: input.workerToken,
       businessSessionId,
+      workspaceId,
       workspacePath,
       sandboxPath,
       workerId,
       configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
-    const response = await openRuntimeEntry(entry, () => entry.client.newSession(sandboxPath)).catch((error) => {
+    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.newSession(sandboxPath))).catch((error) => {
       log.warn("worker open session failed", {
         businessSessionId,
         workerId,
@@ -73,6 +79,7 @@ export function createRuntimeHandlers(input: {
 
   async function loadSession(body: Record<string, unknown>) {
     const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
+    const workspaceId = requireString(body.workspaceId, "workspaceId")
     const workspacePath = requireString(body.workspacePath, "workspacePath")
     const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
     const workerId = requireString(body.workerId, "workerId")
@@ -83,12 +90,13 @@ export function createRuntimeHandlers(input: {
       runtimeShellBaseUrl: input.runtimeShellBaseUrl,
       workerToken: input.workerToken,
       businessSessionId,
+      workspaceId,
       workspacePath,
       sandboxPath,
       workerId,
       configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
-    const response = await openRuntimeEntry(entry, () => entry.client.loadSession(sandboxPath, acpSessionId)).catch((error) => {
+    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.loadSession(sandboxPath, acpSessionId))).catch((error) => {
       log.warn("worker load session failed", {
         businessSessionId,
         workerId,
@@ -106,6 +114,7 @@ export function createRuntimeHandlers(input: {
 
   async function resumeSession(body: Record<string, unknown>) {
     const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
+    const workspaceId = requireString(body.workspaceId, "workspaceId")
     const workspacePath = requireString(body.workspacePath, "workspacePath")
     const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
     const workerId = requireString(body.workerId, "workerId")
@@ -116,12 +125,13 @@ export function createRuntimeHandlers(input: {
       runtimeShellBaseUrl: input.runtimeShellBaseUrl,
       workerToken: input.workerToken,
       businessSessionId,
+      workspaceId,
       workspacePath,
       sandboxPath,
       workerId,
       configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
-    const response = await openRuntimeEntry(entry, () => entry.client.resumeSession(sandboxPath, acpSessionId)).catch((error) => {
+    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.resumeSession(sandboxPath, acpSessionId))).catch((error) => {
       log.warn("worker resume session failed", {
         businessSessionId,
         workerId,
@@ -139,6 +149,7 @@ export function createRuntimeHandlers(input: {
 
   async function forkSession(body: Record<string, unknown>) {
     const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
+    const workspaceId = requireString(body.workspaceId, "workspaceId")
     const workspacePath = requireString(body.workspacePath, "workspacePath")
     const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
     const workerId = requireString(body.workerId, "workerId")
@@ -147,12 +158,13 @@ export function createRuntimeHandlers(input: {
       runtimeShellBaseUrl: input.runtimeShellBaseUrl,
       workerToken: input.workerToken,
       businessSessionId,
+      workspaceId,
       workspacePath,
       sandboxPath,
       workerId,
       configContent: typeof body.configContent === "string" ? body.configContent : undefined,
     })
-    const response = await openRuntimeEntry(entry, () => entry.client.forkSession(sandboxPath, sourceAcpSessionId)).catch((error) => {
+    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.forkSession(sandboxPath, sourceAcpSessionId))).catch((error) => {
       log.warn("worker fork session failed", {
         businessSessionId,
         workerId,
@@ -199,14 +211,22 @@ export function createRuntimeHandlers(input: {
   }
 
   async function closeSession(body: Record<string, unknown>) {
-    const entry = requireRuntime(body.remoteRuntimeId)
-    entry.closing = true
-    forgetRuntime(entry)
-    try {
-      await entry.client.close()
-    } finally {
-      await entry.closeSandbox?.()
+    const runtimeId = typeof body.remoteRuntimeId === "string" ? body.remoteRuntimeId : ""
+    const entry = runtimeId ? findRuntimeById(runtimeId) : undefined
+    if (entry) {
+      entry.closing = true
+      forgetRuntime(entry)
+      try {
+        await entry.client.close()
+      } finally {
+        await entry.closeSandbox?.()
+      }
+      return
     }
+    const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
+    const workspaceId = requireString(body.workspaceId, "workspaceId")
+    const workerId = requireString(body.workerId, "workerId")
+    await closeOrphanDockerSandbox({ businessSessionId, workspaceId, workerId })
   }
 
   async function setMode(body: Record<string, unknown>) {
@@ -271,5 +291,24 @@ async function openRuntimeEntry<T>(entry: ReturnType<typeof createRuntimeEntry>,
     await entry.client.close().catch(() => {})
     await entry.closeSandbox?.().catch(() => {})
     throw error
+  }
+}
+
+async function rememberOpeningRuntime<T>(entry: ReturnType<typeof createRuntimeEntry>, open: () => Promise<T>) {
+  rememberRuntimeClaim({
+    businessSessionId: entry.businessSessionId,
+    workspaceId: entry.workspaceId,
+    workerId: entry.workerId,
+    containerName: entry.sandboxHandle?.containerName,
+  })
+  try {
+    return await open()
+  } finally {
+    releaseRuntimeClaim({
+      businessSessionId: entry.businessSessionId,
+      workspaceId: entry.workspaceId,
+      workerId: entry.workerId,
+      containerName: entry.sandboxHandle?.containerName,
+    })
   }
 }

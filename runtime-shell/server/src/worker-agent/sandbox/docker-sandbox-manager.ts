@@ -8,7 +8,14 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { Config } from "../../config"
 import { createConcurrencyGate } from "../../lib/concurrency-gate"
 import { createLogger } from "../../log"
-import { findRuntimeByBusinessSessionId } from "../worker-agent-store"
+import * as RuntimeLeaseRepo from "../../repos/runtime-lease-repo"
+import * as SessionRuntimeBindingRepo from "../../repos/session-runtime-binding-repo"
+import * as SessionRepo from "../../repos/session-repo"
+import {
+  hasRuntimeActivityByWorkspaceId,
+  listClaimedContainerNames,
+  listRuntimeContainerNames,
+} from "../worker-agent-store"
 import type { SandboxManager } from "./sandbox-manager"
 import type { SandboxAttachInput, SandboxCloseInput, SandboxHandle, SandboxPrepareInput, SandboxWorkspaceMountMode } from "./sandbox-types"
 
@@ -16,6 +23,11 @@ const SANDBOX_CONFIG_PATH = "/tmp/runtime-shell-config.json"
 const SANDBOX_BRIDGE_PORT = 4100
 const WARM_POOL_RUNTIME_CWD = "/workspace/current"
 const WARM_SLOT_RUNTIME_MISSING_GRACE_MS = 45_000
+const CONTAINER_LABEL_KIND = "runtime-shell.kind"
+const CONTAINER_LABEL_WORKER_ID = "runtime-shell.worker_id"
+const CONTAINER_LABEL_BUSINESS_SESSION_ID = "runtime-shell.business_session_id"
+const CONTAINER_LABEL_WORKSPACE_ID = "runtime-shell.workspace_id"
+const CONTAINER_LABEL_POOL_SLOT_ID = "runtime-shell.pool_slot_id"
 const log = createLogger("docker-sandbox")
 
 const docker = new Docker({
@@ -32,19 +44,26 @@ type WarmPoolSlot = {
   createdAt: string
   leasedAt?: string
   leasedSessionId?: string
+  leasedWorkspaceId?: string
+  leaseRefCount?: number
+  workspacePrepared?: boolean
 }
 
 const warmPoolByWorker = new Map<string, WarmPoolSlot[]>()
 const warmPoolTargetByWorker = new Map<string, number>()
-const runWithSandboxBootGate = createConcurrencyGate(Config.sandboxRuntimeBootConcurrency)
+const runWithRuntimeBootGate = createConcurrencyGate(Config.sandboxRuntimeBootConcurrency)
+const runWithWarmPoolBootGate = createConcurrencyGate(1)
 const runWithWarmPoolCopyGate = createConcurrencyGate(Config.sandboxWorkspacePrepareConcurrency)
 
 export function createDockerSandboxManager(): SandboxManager {
   return {
     prepare(input) {
-      const warmSlot = takeWarmPoolSlot(input.workerId, input.businessSessionId)
+      const warmSlot = takeWarmPoolSlot(input.workerId, input.businessSessionId, input.workspaceId)
       if (warmSlot) {
         return {
+          workerId: input.workerId,
+          businessSessionId: input.businessSessionId,
+          workspaceId: input.workspaceId,
           containerName: warmSlot.containerName,
           workspacePath: warmSlot.visiblePath,
           sandboxPath: input.sandboxPath,
@@ -53,6 +72,9 @@ export function createDockerSandboxManager(): SandboxManager {
         }
       }
       return {
+        workerId: input.workerId,
+        businessSessionId: input.businessSessionId,
+        workspaceId: input.workspaceId,
         containerName: toContainerName(input),
         workspacePath: input.workspacePath,
         sandboxPath: input.sandboxPath,
@@ -119,6 +141,7 @@ export async function cleanupDockerWarmPool(input: {
   let cleanedReadyCount = 0
   let reclaimedStaleLeasedCount = 0
   for (const workerId of workerIds) {
+    cleanedReadyCount += await cleanupOrphanRuntimeContainers(workerId)
     cleanedReadyCount += await cleanupOrphanWarmPoolContainers(workerId)
     reclaimedStaleLeasedCount += await reclaimStaleLeasedWarmPoolSlots(workerId)
     const pool = readWarmPool(workerId)
@@ -187,8 +210,22 @@ export async function closeDockerWarmPoolSlot(input: {
   }
 }
 
+export async function closeOrphanDockerSandbox(input: {
+  businessSessionId: string
+  workspaceId: string
+  workerId: string
+}) {
+  if (Config.sandboxBackend === "local-process") return
+  await ensureDockerReady()
+  await removeContainer(toRuntimeContainerName(input.workerId, input.workspaceId))
+}
+
 function toContainerName(input: SandboxPrepareInput) {
-  const suffix = `${input.workerId}_${input.businessSessionId}`.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(-80)
+  return toRuntimeContainerName(input.workerId, input.workspaceId)
+}
+
+function toRuntimeContainerName(workerId: string, workspaceId: string) {
+  const suffix = `${workerId}__ws__${workspaceId}`.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(-100)
   return `runtime-shell-acp-${suffix}`
 }
 
@@ -250,13 +287,13 @@ async function bootContainer(input: {
       // cold container boot queue, so session open/reopen latency stays short.
       await prepareWarmPoolWorkspace(input.handle)
     } else {
-      await runWithSandboxBootGate(async () => {
+      await runWithRuntimeBootGate(async () => {
         const container = await ensureContainer({
           containerName: input.handle.containerName!,
           cwd,
           handle: input.handle,
         })
-        await container.start()
+        await startContainerIfNeeded(container)
         void followContainerStderr(container, input.stderr)
         void waitDockerSandboxExit(container).then((result) => {
           input.exitState.settle(result)
@@ -307,7 +344,7 @@ async function ensureContainer(input: {
   handle: SandboxHandle
   cwd: string
 }) {
-  await removeContainer(input.containerName)
+  const existingContainer = await findReusableContainer(input.containerName)
   const workspaceMount = await toWorkspaceMount(input.handle, input.cwd)
   log.info("creating docker sandbox container", {
     containerName: input.containerName,
@@ -320,6 +357,7 @@ async function ensureContainer(input: {
     networkMode: Config.sandboxDockerNetworkMode,
     user: Config.sandboxDockerUser,
   })
+  if (existingContainer) return existingContainer
   return docker.createContainer({
     name: input.containerName,
     Image: Config.sandboxDockerImage,
@@ -333,6 +371,19 @@ async function ensureContainer(input: {
     AttachStdin: true,
     AttachStdout: true,
     AttachStderr: true,
+    Labels: {
+      [CONTAINER_LABEL_KIND]: input.handle.poolSlotId ? "warm_pool" : "runtime",
+      [CONTAINER_LABEL_WORKER_ID]: input.handle.workerId || "",
+      ...(input.handle.businessSessionId
+        ? { [CONTAINER_LABEL_BUSINESS_SESSION_ID]: input.handle.businessSessionId }
+        : {}),
+      ...(input.handle.workspaceId
+        ? { [CONTAINER_LABEL_WORKSPACE_ID]: input.handle.workspaceId }
+        : {}),
+      ...(input.handle.poolSlotId
+        ? { [CONTAINER_LABEL_POOL_SLOT_ID]: input.handle.poolSlotId }
+        : {}),
+    },
     Env: buildSandboxEnv(),
     HostConfig: {
       AutoRemove: true,
@@ -444,6 +495,32 @@ async function removeContainer(containerName: string) {
   } catch {}
 }
 
+async function findReusableContainer(containerName: string) {
+  try {
+    const container = docker.getContainer(containerName)
+    const inspect = await container.inspect()
+    if (inspect.State?.Running || inspect.State?.Status === "created") {
+      return container
+    }
+    await removeContainer(containerName)
+    return
+  } catch {
+    return
+  }
+}
+
+async function startContainerIfNeeded(container: Docker.Container) {
+  try {
+    const inspect = await container.inspect()
+    if (inspect.State?.Running) return
+    await container.start()
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+    if (message.includes("already started") || message.includes("is already in progress")) return
+    throw error
+  }
+}
+
 async function closeDockerSandbox(handle: SandboxHandle) {
   if (handle.closePromise) return handle.closePromise
   handle.closePromise = (async () => {
@@ -453,6 +530,7 @@ async function closeDockerSandbox(handle: SandboxHandle) {
       return
     }
     if (!handle.containerName) return
+    if (handle.workspaceId && hasRuntimeActivityByWorkspaceId(handle.workspaceId)) return
     await removeContainer(handle.containerName)
   })()
   return handle.closePromise
@@ -627,24 +705,36 @@ function readWarmPool(workerId: string) {
   return created
 }
 
-function takeWarmPoolSlot(workerId: string, businessSessionId: string) {
+function takeWarmPoolSlot(workerId: string, businessSessionId: string, workspaceId: string) {
+  const leasedSlot = readWarmPool(workerId).find((item) =>
+    item.leased && item.leasedWorkspaceId === workspaceId
+  )
+  if (leasedSlot) {
+    leasedSlot.leasedSessionId = businessSessionId
+    leasedSlot.leaseRefCount = (leasedSlot.leaseRefCount || 1) + 1
+    return leasedSlot
+  }
   const slot = readWarmPool(workerId).find((item) => item.ready && !item.leased)
   if (!slot) return
   slot.leased = true
   slot.ready = false
   slot.leasedAt = new Date().toISOString()
   slot.leasedSessionId = businessSessionId
+  slot.leasedWorkspaceId = workspaceId
+  slot.leaseRefCount = 1
+  slot.workspacePrepared = false
   return slot
 }
 
 async function createWarmPoolSlot(workerId: string) {
-  return runWithSandboxBootGate(async () => {
+  return runWithWarmPoolBootGate(async () => {
     const slotId = `warm_${crypto.randomUUID().replace(/-/g, "")}`
     const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, slotId)
     await rm(visiblePath, { recursive: true, force: true }).catch(() => {})
     await mkdir(visiblePath, { recursive: true })
     const containerName = `runtime-shell-warm-${workerId}-${slotId}`.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(-120)
     const handle: SandboxHandle = {
+      workerId,
       containerName,
       workspacePath: visiblePath,
       runtimeCwd: WARM_POOL_RUNTIME_CWD,
@@ -655,7 +745,7 @@ async function createWarmPoolSlot(workerId: string) {
       handle,
       cwd: visiblePath,
     })
-    await container.start()
+    await startContainerIfNeeded(container)
     const slot: WarmPoolSlot = {
       id: slotId,
       workerId,
@@ -664,6 +754,8 @@ async function createWarmPoolSlot(workerId: string) {
       ready: true,
       leased: false,
       createdAt: new Date().toISOString(),
+      leaseRefCount: 0,
+      workspacePrepared: false,
     }
     return slot
   })
@@ -678,17 +770,14 @@ async function destroyWarmPoolSlot(slot: WarmPoolSlot) {
 }
 
 async function cleanupOrphanWarmPoolContainers(workerId: string) {
-  const trackedContainerNames = new Set(readWarmPool(workerId).map((slot) => slot.containerName))
-  const prefix = readWarmPoolContainerPrefix(workerId)
   const containers = await docker.listContainers({ all: true })
   let cleaned = 0
   for (const container of containers) {
-    const matchedName = (container.Names || [])
-      .map((name) => name.replace(/^\/+/, ""))
-      .find((name) => name.startsWith(prefix))
-    if (!matchedName || trackedContainerNames.has(matchedName)) continue
-    const slotId = matchedName.slice(prefix.length)
-    const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, slotId)
+    const matchedName = readContainerName(container)
+    const identity = readWarmPoolContainerIdentity(container, matchedName)
+    if (!matchedName || !identity || identity.workerId !== workerId) continue
+    if (readWarmPool(workerId).some((slot) => slot.containerName === matchedName)) continue
+    const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, identity.slotId)
     log.info("cleaning orphan warm pool container", {
       workerId,
       containerName: matchedName,
@@ -696,6 +785,25 @@ async function cleanupOrphanWarmPoolContainers(workerId: string) {
     })
     await removeContainer(matchedName)
     await rm(visiblePath, { recursive: true, force: true }).catch(() => {})
+    cleaned += 1
+  }
+  return cleaned
+}
+
+async function cleanupOrphanRuntimeContainers(workerId: string) {
+  const containers = await docker.listContainers({ all: true })
+  let cleaned = 0
+  for (const container of containers) {
+    const matchedName = readContainerName(container)
+    const identity = readRuntimeContainerIdentity(container, matchedName)
+    if (!matchedName || !identity || identity.workerId !== workerId) continue
+    if (isTrackedRuntimeContainer(matchedName, identity.workspaceId, workerId)) continue
+    if (await hasPersistedWorkspaceOwnership(identity.workspaceId, workerId)) continue
+    log.info("cleaning orphan runtime sandbox container", {
+      workerId,
+      containerName: matchedName,
+    })
+    await removeContainer(matchedName)
     cleaned += 1
   }
   return cleaned
@@ -714,6 +822,7 @@ async function prepareWarmPoolWorkspace(handle: SandboxHandle) {
   const slot = [...warmPoolByWorker.values()].flat().find((item) => item.id === handle.poolSlotId)
   const sandboxPath = handle.sandboxPath
   if (!slot || !sandboxPath) return
+  if (slot.workspacePrepared && slot.leasedWorkspaceId === handle.workspaceId) return
   await runWithWarmPoolCopyGate(async () => {
     await rm(slot.visiblePath, { recursive: true, force: true }).catch(() => {})
     await mkdir(slot.visiblePath, { recursive: true })
@@ -722,12 +831,16 @@ async function prepareWarmPoolWorkspace(handle: SandboxHandle) {
       force: true,
       filter: (source) => !isInnerSandboxPath(source),
     })
+    slot.workspacePrepared = true
   })
 }
 
 async function releaseWarmPoolSlot(handle: SandboxHandle) {
   const slot = [...warmPoolByWorker.values()].flat().find((item) => item.id === handle.poolSlotId)
   if (!slot) return
+  const nextRefCount = Math.max(0, (slot.leaseRefCount || 1) - 1)
+  slot.leaseRefCount = nextRefCount
+  if (nextRefCount > 0) return
   if (handle.invalidPoolSlot || !await containerExists(slot.containerName)) {
     await destroyWarmPoolSlot(slot)
     return
@@ -750,6 +863,8 @@ async function releaseWarmPoolSlot(handle: SandboxHandle) {
   slot.ready = true
   slot.leasedAt = undefined
   slot.leasedSessionId = undefined
+  slot.leasedWorkspaceId = undefined
+  slot.workspacePrepared = false
   const target = warmPoolTargetByWorker.get(slot.workerId) ?? 0
   const readyCount = readWarmPool(slot.workerId).filter((item) => item.ready && !item.leased).length
   if (readyCount > target && target >= 0) {
@@ -772,6 +887,7 @@ function toWarmPoolSnapshot(workerId: string, slots: WarmPoolSlot[]) {
       createdAt: slot.createdAt,
       leasedAt: slot.leasedAt,
       leasedSessionId: slot.leasedSessionId,
+      leasedWorkspaceId: slot.leasedWorkspaceId,
     })),
   }
 }
@@ -824,11 +940,105 @@ async function reclaimStaleLeasedWarmPoolSlots(workerId: string) {
 
 function shouldReclaimLeasedWarmPoolSlot(slot: WarmPoolSlot) {
   if (!slot.leased) return false
-  if (!slot.leasedAt || !slot.leasedSessionId) return true
+  if (!slot.leasedAt || !slot.leasedWorkspaceId) return true
   if (Date.now() - new Date(slot.leasedAt).getTime() < WARM_SLOT_RUNTIME_MISSING_GRACE_MS) return false
-  return !findRuntimeByBusinessSessionId(slot.leasedSessionId)
+  return !hasRuntimeActivityByWorkspaceId(slot.leasedWorkspaceId)
 }
 
-function readWarmPoolContainerPrefix(workerId: string) {
-  return `runtime-shell-warm-${workerId}-`
+function readContainerName(container: Docker.ContainerInfo) {
+  return (container.Names || [])
+    .map((name) => name.replace(/^\/+/, ""))
+    .find(Boolean)
+}
+
+function readWarmPoolContainerIdentity(container: Docker.ContainerInfo, containerName?: string) {
+  const labeledWorkerId = container.Labels?.[CONTAINER_LABEL_WORKER_ID]
+  const labeledSlotId = container.Labels?.[CONTAINER_LABEL_POOL_SLOT_ID]
+  const labeledKind = container.Labels?.[CONTAINER_LABEL_KIND]
+  if (labeledKind === "warm_pool" && labeledWorkerId && labeledSlotId) {
+    return {
+      workerId: labeledWorkerId,
+      slotId: labeledSlotId,
+    }
+  }
+  if (!containerName) return
+  const prefix = "runtime-shell-warm-"
+  if (!containerName.startsWith(prefix)) return
+  const suffix = containerName.slice(prefix.length)
+  const slotMarker = "-warm_"
+  const slotIndex = suffix.lastIndexOf(slotMarker)
+  if (slotIndex < 0) return
+  return {
+    workerId: suffix.slice(0, slotIndex),
+    slotId: suffix.slice(slotIndex + 1),
+  }
+}
+
+function readRuntimeContainerIdentity(container: Docker.ContainerInfo, containerName?: string) {
+  const labeledWorkerId = container.Labels?.[CONTAINER_LABEL_WORKER_ID]
+  const labeledWorkspaceId = container.Labels?.[CONTAINER_LABEL_WORKSPACE_ID]
+  const labeledBusinessSessionId = container.Labels?.[CONTAINER_LABEL_BUSINESS_SESSION_ID]
+  const labeledKind = container.Labels?.[CONTAINER_LABEL_KIND]
+  if (labeledKind === "runtime" && labeledWorkerId && labeledWorkspaceId) {
+    return {
+      workerId: labeledWorkerId,
+      workspaceId: labeledWorkspaceId,
+      businessSessionId: labeledBusinessSessionId,
+    }
+  }
+  if (!containerName) return
+  const prefix = "runtime-shell-acp-"
+  if (!containerName.startsWith(prefix)) return
+  const suffix = containerName.slice(prefix.length)
+  const workspaceMarker = "__ws__"
+  const workspaceIndex = suffix.lastIndexOf(workspaceMarker)
+  if (workspaceIndex < 0) return
+  return {
+    workerId: suffix.slice(0, workspaceIndex),
+    workspaceId: suffix.slice(workspaceIndex + workspaceMarker.length),
+  }
+}
+
+function isTrackedRuntimeContainer(containerName: string, workspaceId: string, workerId: string) {
+  const trackedContainerNames = new Set([
+    ...listRuntimeContainerNames(workerId),
+    ...listClaimedContainerNames(workerId),
+  ])
+  if (trackedContainerNames.has(containerName)) return true
+  // 中文/English: re-check live business-session activity right before delete so
+  // heartbeat cleanup never removes a container that was claimed mid-scan.
+  return hasRuntimeActivityByWorkspaceId(workspaceId)
+}
+
+async function hasPersistedWorkspaceOwnership(workspaceId: string, workerId: string) {
+  const sessions = await SessionRepo.listAllSessions()
+  const candidates = sessions.filter((session) =>
+    session.workspaceId === workspaceId
+    && session.workerId === workerId,
+  )
+  if (candidates.length === 0) return false
+  const ownership = await Promise.all(candidates.map((session) =>
+    hasPersistedRuntimeOwnership(session.id, workerId),
+  ))
+  return ownership.some(Boolean)
+}
+
+async function hasPersistedRuntimeOwnership(businessSessionId: string, workerId: string) {
+  const session = await SessionRepo.findSession(businessSessionId)
+  if (!session || session.workerId !== workerId) return false
+  const [binding, lease] = await Promise.all([
+    SessionRuntimeBindingRepo.findActiveBindingBySessionId(businessSessionId),
+    RuntimeLeaseRepo.findLeaseBySessionId(businessSessionId),
+  ])
+  if (binding?.workerId === workerId && (binding.bindingStatus === "binding" || binding.bindingStatus === "bound")) {
+    return true
+  }
+  if (lease?.workerId === workerId) return true
+  // 中文/English: opening/active-like statuses still own the runtime even if the
+  // worker agent process restarted and lost its in-memory registry.
+  return session.status === "opening"
+    || session.status === "active"
+    || session.status === "waiting_input"
+    || session.status === "cancelling"
+    || session.status === "closing"
 }

@@ -10,12 +10,12 @@ import { sessionService } from "../store/store-singleton"
 
 const log = createLogger("session-worker-assignment-service")
 
-export async function assignWorkerForNewSession(user: User) {
-  return selectWorkerForNewSession(user)
+export async function assignWorkerForNewSession(user: User, workspaceId?: string) {
+  return selectWorkerForNewSession(user, [], undefined, workspaceId)
 }
 
-export async function assignWorkerForNewSessionWithReservation(user: User, reservationId: string) {
-  return selectWorkerForNewSession(user, [], reservationId)
+export async function assignWorkerForNewSessionWithReservation(user: User, reservationId: string, workspaceId?: string) {
+  return selectWorkerForNewSession(user, [], reservationId, workspaceId)
 }
 
 export async function ensureWorkerForSessionOpen(input: {
@@ -35,7 +35,12 @@ export async function ensureWorkerForSessionOpen(input: {
     return stickyWorker
   }
 
-  const worker = await selectWorkerForNewSession(input.user, [], reservationId)
+  const worker = await selectWorkerForNewSession(
+    input.user,
+    [],
+    reservationId,
+    input.session.workspaceId,
+  )
   if (!worker) {
     releaseWorkerSelectionReservation(reservationId)
     log.warn("session worker selection returned empty", {
@@ -58,6 +63,7 @@ export async function ensureWorkerForSessionOpen(input: {
       businessSessionId: input.session.id,
       workerId: worker.id,
       workspacePath: input.session.workspacePath,
+      workspaceId: input.session.workspaceId,
     })
     await ensureRuntimeBindingForWorker(input.session.id, worker.id)
     return worker
@@ -72,7 +78,12 @@ export async function reassignWorkerForSessionOpen(input: {
   excludedWorkerIds: string[]
 }) {
   const reservationId = toSessionOpenReservationId(input.session.id)
-  const worker = await selectWorkerForNewSession(input.user, input.excludedWorkerIds, reservationId)
+  const worker = await selectWorkerForNewSession(
+    input.user,
+    input.excludedWorkerIds,
+    reservationId,
+    input.session.workspaceId,
+  )
   if (!worker) {
     releaseWorkerSelectionReservation(reservationId)
     log.warn("session worker failover returned empty", {
@@ -97,6 +108,7 @@ export async function reassignWorkerForSessionOpen(input: {
       previousWorkerId: input.session.workerId,
       workerId: worker.id,
       workspacePath: input.session.workspacePath,
+      workspaceId: input.session.workspaceId,
     })
     await ensureRuntimeBindingForWorker(input.session.id, worker.id)
     return worker

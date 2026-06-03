@@ -56,6 +56,19 @@ export async function findSandboxInstanceBySessionId(businessSessionId: string) 
   return toSandboxInstance(row)
 }
 
+export async function findSandboxInstanceByWorkspaceId(workspaceId: string) {
+  const row = await getRuntimeDatabaseClient().queryFirst<SandboxInstanceRow>(
+    `
+      ${SANDBOX_INSTANCE_SELECT}
+      WHERE workspace_id = ?
+      LIMIT 1
+    `,
+    [workspaceId],
+  )
+  if (!row) return
+  return toSandboxInstance(row)
+}
+
 export async function findSandboxInstanceById(id: string) {
   const row = await getRuntimeDatabaseClient().queryFirst<SandboxInstanceRow>(
     `
@@ -160,6 +173,11 @@ export async function upsertSandboxInstance(input: SandboxInstance) {
     `
       UPDATE sandbox_instance
       SET
+        tenant_id = ?,
+        organization_id = ?,
+        project_id = ?,
+        workspace_id = ?,
+        business_session_id = ?,
         worker_node_id = ?,
         backend = ?,
         runtime_class = ?,
@@ -173,6 +191,11 @@ export async function upsertSandboxInstance(input: SandboxInstance) {
       WHERE id = ?
     `,
     [
+      input.tenantId,
+      input.organizationId,
+      input.projectId,
+      input.workspaceId,
+      input.businessSessionId,
       input.workerId,
       input.backend,
       input.runtimeClass || null,
@@ -206,6 +229,16 @@ export async function deleteSandboxInstanceBySessionId(businessSessionId: string
       WHERE business_session_id = ?
     `,
     [businessSessionId],
+  )
+}
+
+export async function deleteSandboxInstanceByWorkspaceId(workspaceId: string) {
+  await getRuntimeDatabaseClient().execute(
+    `
+      DELETE FROM sandbox_instance
+      WHERE workspace_id = ?
+    `,
+    [workspaceId],
   )
 }
 

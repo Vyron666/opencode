@@ -19,6 +19,7 @@ export type AuditAction =
   | "file.diff.rejected"
   | "policy.denied"
   | "provider.save"
+  | "provider.delete"
   | "config.approval.create"
   | "config.approval.approve"
   | "config.approval.reject"

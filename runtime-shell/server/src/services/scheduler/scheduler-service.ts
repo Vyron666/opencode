@@ -9,7 +9,10 @@ import { refreshLocalWorkersNow } from "../worker/local-worker-heartbeat-loop"
 
 const CREATED_SESSION_RESERVATION_MS = 30000
 const log = createLogger("scheduler-service")
-const pendingWorkerSelections = new Map<string, string>()
+const pendingWorkerSelections = new Map<string, {
+  workerId: string
+  workspaceId?: string
+}>()
 const runWithWorkerSelectionGate = createConcurrencyGate(1)
 let workerSelectionCursor = 0
 
@@ -17,6 +20,7 @@ export async function selectWorkerForNewSession(
   user: User,
   excludedWorkerIds: string[] = [],
   reservationId?: string,
+  workspaceId?: string,
 ) {
   const excluded = new Set(excludedWorkerIds.filter(Boolean))
   let workers = await workerService.listReadyWorkersForUser(user)
@@ -36,6 +40,25 @@ export async function selectWorkerForNewSession(
   }
   return runWithWorkerSelectionGate(async () => {
     const sessions = await sessionService.listSessions()
+    const pinnedWorkspaceWorker = await resolveWorkspacePinnedWorker({
+      sessions,
+      workspaceId,
+      excludedWorkerIds: excluded,
+      currentReservationId: reservationId,
+    })
+    if (pinnedWorkspaceWorker) {
+      if (reservationId) {
+        pendingWorkerSelections.set(reservationId, {
+          workerId: pinnedWorkspaceWorker.id,
+          workspaceId,
+        })
+      }
+      log.info("worker selected from workspace pin", {
+        workerId: pinnedWorkspaceWorker.id,
+        workspaceId,
+      })
+      return pinnedWorkspaceWorker
+    }
     const pendingSelectionCounts = buildPendingSelectionCounts(reservationId)
     const candidates = (await Promise.all(
       workers.map(async (worker) => {
@@ -91,9 +114,13 @@ export async function selectWorkerForNewSession(
       activeSessionCount: selected.activeSessionCount,
       capacity: selected.capacity,
       readyWorkerIds: workers.map((worker) => worker.id),
+      workspaceId,
     })
     if (reservationId) {
-      pendingWorkerSelections.set(reservationId, selected.id)
+      pendingWorkerSelections.set(reservationId, {
+        workerId: selected.id,
+        workspaceId,
+      })
     }
     return selected
   })
@@ -133,6 +160,48 @@ export function releaseWorkerSelectionReservation(reservationId: string) {
   pendingWorkerSelections.delete(reservationId)
 }
 
+async function resolveWorkspacePinnedWorker(input: {
+  sessions: BusinessSession[]
+  workspaceId?: string
+  excludedWorkerIds: Set<string>
+  currentReservationId?: string
+}) {
+  if (!input.workspaceId) return
+  const reservedWorkerId = [...pendingWorkerSelections.entries()]
+    .find(([reservationId, value]) =>
+      reservationId !== input.currentReservationId &&
+      value.workspaceId === input.workspaceId &&
+      !input.excludedWorkerIds.has(value.workerId),
+    )?.[1].workerId
+  if (reservedWorkerId) {
+    const worker = await workerService.findWorkerById(reservedWorkerId)
+    if (worker && worker.status !== "offline" && worker.status !== "draining" && supportsRuntimeExecution(worker)) {
+      return worker
+    }
+  }
+
+  const pinnedSession = input.sessions.find((session) =>
+    session.workspaceId === input.workspaceId &&
+    !input.excludedWorkerIds.has(session.workerId) &&
+    Boolean(session.workerId) &&
+    (
+      isWorkerReservedSession(session) ||
+      session.status === "opening" ||
+      session.status === "active" ||
+      session.status === "waiting_input" ||
+      session.status === "cancelling" ||
+      session.status === "closing" ||
+      session.status === "orphaned"
+    ),
+  )
+  if (!pinnedSession?.workerId) return
+  const worker = await workerService.findWorkerById(pinnedSession.workerId)
+  if (!worker) return
+  if (worker.status === "offline" || worker.status === "draining") return
+  if (!supportsRuntimeExecution(worker)) return
+  return worker
+}
+
 function compareWorkers(left: WorkerNode, right: WorkerNode) {
   if (left.activeSessionCount !== right.activeSessionCount) {
     return left.activeSessionCount - right.activeSessionCount
@@ -164,9 +233,9 @@ function isWorkerReservedSession(session: { status: string; updatedAt: string })
 
 function buildPendingSelectionCounts(currentReservationId?: string) {
   const counts = new Map<string, number>()
-  for (const [reservationId, workerId] of pendingWorkerSelections.entries()) {
+  for (const [reservationId, selection] of pendingWorkerSelections.entries()) {
     if (reservationId === currentReservationId) continue
-    counts.set(workerId, (counts.get(workerId) ?? 0) + 1)
+    counts.set(selection.workerId, (counts.get(selection.workerId) ?? 0) + 1)
   }
   return counts
 }

@@ -199,6 +199,76 @@ export async function saveUserPrivateProviderConfig(input: {
   }
 }
 
+export async function removePlatformProviderConfig(input: {
+  user: User
+  requestId: string
+  providerId: string
+}) {
+  const scope = platformSharedScope(input.user)
+  const deleted = await ConfigRepo.deleteConfigItem({
+    scopeLevel: scope.scopeLevel,
+    scopeId: scope.scopeId,
+    namespace: "provider",
+    configKey: input.providerId,
+    deletedBy: input.user.id,
+  })
+  if (!deleted) return
+  await ConfigRepo.appendConfigChangeLog({
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    requestId: input.requestId,
+    scopeLevel: scope.scopeLevel,
+    scopeId: scope.scopeId,
+    namespace: "provider",
+    configKey: input.providerId,
+    changeType: "delete",
+    previousVersion: deleted.previous.version,
+    nextVersion: deleted.nextVersion,
+    summaryJson: {
+      namespace: "provider" satisfies ConfigNamespace,
+      providerId: input.providerId,
+      source: "platform_shared",
+    },
+    createdBy: input.user.id,
+  })
+  return deleted
+}
+
+export async function removeUserPrivateProviderConfig(input: {
+  user: User
+  requestId: string
+  providerId: string
+}) {
+  const scope = userPrivateScope(input.user)
+  const deleted = await ConfigRepo.deleteConfigItem({
+    scopeLevel: scope.scopeLevel,
+    scopeId: scope.scopeId,
+    namespace: "provider",
+    configKey: input.providerId,
+    deletedBy: input.user.id,
+  })
+  if (!deleted) return
+  await ConfigRepo.appendConfigChangeLog({
+    tenantId: scope.tenantId,
+    organizationId: scope.organizationId,
+    requestId: input.requestId,
+    scopeLevel: scope.scopeLevel,
+    scopeId: scope.scopeId,
+    namespace: "provider",
+    configKey: input.providerId,
+    changeType: "delete",
+    previousVersion: deleted.previous.version,
+    nextVersion: deleted.nextVersion,
+    summaryJson: {
+      namespace: "provider" satisfies ConfigNamespace,
+      providerId: input.providerId,
+      source: "user_private",
+    },
+    createdBy: input.user.id,
+  })
+  return deleted
+}
+
 export function createMaskedProviderSummary(config: RuntimeShellProviderConfig) {
   return {
     namespace: "provider" satisfies ConfigNamespace,

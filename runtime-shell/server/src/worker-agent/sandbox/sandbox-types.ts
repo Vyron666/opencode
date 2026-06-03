@@ -6,6 +6,7 @@ export type SandboxBackend = "local-process" | "docker" | "gvisor" | "kata"
 
 export type SandboxPrepareInput = {
   businessSessionId: string
+  workspaceId: string
   workerId: string
   workspacePath: string
   sandboxPath?: string
@@ -14,11 +15,15 @@ export type SandboxPrepareInput = {
 export type SandboxWorkspaceMountMode = "rw" | "ro"
 
 export type SandboxHandle = {
+  workerId?: string
+  businessSessionId?: string
+  workspaceId?: string
   containerName?: string
   workspacePath?: string
   sandboxPath?: string
   runtimeCwd?: string
   poolSlotId?: string
+  runtimeSandboxKey?: string
   activeSocket?: Socket
   invalidPoolSlot?: boolean
   bootPromise?: Promise<void>

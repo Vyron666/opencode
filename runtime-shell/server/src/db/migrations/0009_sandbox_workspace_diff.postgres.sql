@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS sandbox_workspace (
   closed_at TIMESTAMPTZ
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_sandbox_workspace_session
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sandbox_workspace_workspace
+  ON sandbox_workspace (workspace_id);
+
+CREATE INDEX IF NOT EXISTS idx_sandbox_workspace_session
   ON sandbox_workspace (business_session_id);
 
 CREATE INDEX IF NOT EXISTS idx_sandbox_workspace_status

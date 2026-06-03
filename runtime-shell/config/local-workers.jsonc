@@ -2,5 +2,8 @@
   // 中文/English: change only this count to boot a different number of local opencode-worker nodes.
   "count": 3,
   // 中文/English: scheduler capacity advertised by each generated local worker node.
-  "capacity": 8
+  "capacity": 8,
+  // 中文/English: keep one warm slot per worker so open latency improves without
+  // reserving too much local machine capacity.
+  "warmPoolTarget": 1
 }
