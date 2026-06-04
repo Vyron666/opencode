@@ -125,12 +125,14 @@ ${dependsOn}
         ${localWorkers}
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
-      # ACP 子进程需要读取 opencode 配置来加载自定义 provider/model
+      OPENCODE_DISABLE_MODELS_FETCH: "1"
+      OPENCODE_MODELS_PATH: /app/config/models-api.json
+      # 中文/English: ACP subprocesses still need the runtime-shell config file to load custom providers and models.
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
       OPENCODE_ACP_SPAWN_CWD: /workspace
       # 中文/English: runtime-shell now defaults to the ACP-next entrypoint.
       OPENCODE_ACP_NEXT: "0"
-      # 日志级别: debug | info | warn | error (默认 info)
+      # 中文/English: log level: debug | info | warn | error (default info).
       RUNTIME_SHELL_LOG_LEVEL: info
     ports:
       - "3100:3000"
@@ -156,7 +158,8 @@ function buildWorkerService(workerIndex: number) {
     environment:
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
-      OPENCODE_DISABLE_MODELS_FETCH: "0"
+      OPENCODE_DISABLE_MODELS_FETCH: "1"
+      OPENCODE_MODELS_PATH: /workspace/runtime-shell/config/models-api.json
       # 中文/English: keep QuestionTool enabled on every worker node so runtime-shell sees the same interaction surface.
       OPENCODE_ENABLE_QUESTION_TOOL: "1"
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts

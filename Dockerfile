@@ -8,7 +8,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 ENV OPENCODE_SERVER_USERNAME=opencode
 ENV OPENCODE_SERVER_PASSWORD=
-
 RUN apt-get update -o Acquire::Retries=3 \
   && apt-get install -y --no-install-recommends -o Acquire::Retries=3 ca-certificates libstdc++6 ripgrep git bash python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
@@ -18,6 +17,7 @@ COPY .github/TEAM_MEMBERS ./.github/TEAM_MEMBERS
 COPY packages ./packages
 COPY patches ./patches
 COPY runtime-shell/server ./runtime-shell/server
+COPY runtime-shell/config ./runtime-shell/config
 
 # 中文/English: install the workspace as-is and run opencode from source to avoid fragile single-binary packaging in Docker.
 # /////// runtime-shell customization start ///////

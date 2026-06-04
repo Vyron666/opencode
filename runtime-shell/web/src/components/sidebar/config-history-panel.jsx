@@ -53,9 +53,12 @@ export function ConfigHistoryPanel() {
           {!loading && items.length === 0 ? <div className="text-[11px] text-[var(--text-muted)]">当前没有配置变更记录</div> : null}
 
           {items.map((item) => (
-            <div key={item.id} className="grid gap-2 rounded-[12px] border border-[var(--line)] p-3 bg-black/20">
+            <div
+              key={item.id}
+              className="grid gap-2 rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3"
+            >
               <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-semibold text-[var(--text-primary)]">{item.namespace}/{item.configKey}</span>
+                <span className="font-semibold text-[var(--text)]">{item.namespace}/{item.configKey}</span>
                 <span className="text-[var(--text-dim)]">{item.changeType}</span>
               </div>
               <div className="text-[11px] text-[var(--text-muted)]">

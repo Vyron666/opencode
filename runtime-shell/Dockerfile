@@ -54,7 +54,6 @@ WORKDIR /app
 
 ENV OPENCODE_ACP_ENTRY=/workspace/packages/opencode/src/index.ts
 ENV OPENCODE_ACP_SPAWN_CWD=/workspace
-
 EXPOSE 3000
 
 # 中文/English: always migrate before boot so DB-backed session bootstrap never races schema rollout.

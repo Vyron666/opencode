@@ -1,4 +1,4 @@
-﻿import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../../../store'
 import { subscribeAssistantStreamActivity } from '../../../store/sse/assistant-stream-channel'
 import { ConversationTimeline, DebugConversationTimeline } from './ConversationTimeline'
@@ -42,20 +42,20 @@ export const ConversationSection = memo(function ConversationSection({ currentSe
   }, [])
 
   return (
-    <section className="flex-1 min-h-0 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md overflow-hidden">
+    <section className="flex-1 min-h-0 overflow-hidden rounded-[28px] border border-[var(--line)] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
       <div
         ref={timelineRef}
         onScroll={handleScroll}
-        className="relative h-full overflow-y-auto overflow-x-hidden px-4 py-4"
-        style={{ background: 'linear-gradient(180deg, rgba(20,16,13,0.3), rgba(20,16,13,0.55))' }}
+        className="relative h-full overflow-y-auto overflow-x-hidden px-5 py-5"
+        style={{ background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}
       >
         {showDebug ? <DebugConversationTimeline /> : <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} />}
 
         {!showDebug && !autoScroll && blocks.length > 0 ? (
           <button
+            type="button"
             onClick={scrollToBottom}
-            className="absolute right-4 bottom-4 z-10 h-10 w-10 rounded-full border border-brand/20 text-lg font-semibold transition-colors hover:bg-brand"
-            style={{ background: 'rgba(212,160,90,0.92)', color: '#14100d', boxShadow: '0 8px 24px rgba(212,160,90,0.25)' }}
+            className="absolute bottom-5 right-5 z-10 h-11 w-11 rounded-full border border-brand/20 bg-brand text-lg font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.24)] transition-colors hover:bg-[var(--brand-strong)]"
             title="回到底部"
             aria-label="回到底部"
           >

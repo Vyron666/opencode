@@ -75,12 +75,15 @@ const ConversationBlockRow = memo(function ConversationBlockRow({ block }) {
 function EmptyConversation({ currentSessionId }) {
   return (
     <div className="h-full grid place-items-center px-6 text-center">
-      <div className="max-w-md rounded-[24px] border border-[rgba(181,148,116,0.12)] bg-[rgba(18,14,11,0.76)] px-6 py-7 grid gap-3 shadow-[0_18px_50px_rgba(0,0,0,0.16)]">
-        <div className="text-base font-bold text-[var(--text)]">{currentSessionId ? '\u5f00\u59cb\u65b0\u7684\u5bf9\u8bdd' : '\u8bf7\u9009\u62e9\u4e00\u4e2a\u4f1a\u8bdd'}</div>
-        <div className="text-sm text-[var(--text-muted)] leading-relaxed">
+      <div className="grid max-w-[560px] gap-4 rounded-[28px] border border-[var(--line)] bg-[linear-gradient(180deg,#ffffff,#f8fbff)] px-7 py-8 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] bg-brand/10 text-lg font-bold text-brand">
+          RS
+        </div>
+        <div className="text-lg font-bold text-[var(--text)]">{currentSessionId ? '开始新的对话' : '请选择一个会话'}</div>
+        <div className="text-sm leading-7 text-[var(--text-muted)]">
           {currentSessionId
-            ? '\u53d1\u9001\u4e00\u6761\u6d88\u606f\u540e\uff0c\u8fd9\u91cc\u4f1a\u5b9e\u65f6\u663e\u793a\u4e0a\u6e38 ACP \u7684\u4e8b\u4ef6\u3001\u56de\u590d\u3001\u5de5\u5177\u8c03\u7528\u548c\u4ea4\u4e92\u8bf7\u6c42\u3002'
-            : '\u5de6\u4fa7\u9009\u62e9\u5df2\u6709\u4f1a\u8bdd\uff0c\u6216\u5148\u521b\u5efa\u4e00\u4e2a\u65b0\u4f1a\u8bdd\u540e\u518d\u5f00\u59cb\u4ea4\u4e92\u3002'}
+            ? '发送一条消息后，这里会实时展示上游 ACP 的事件、回复、工具调用和交互请求。'
+            : '从左侧选择已有会话，或先新建一个会话后再开始交互。'}
         </div>
       </div>
     </div>

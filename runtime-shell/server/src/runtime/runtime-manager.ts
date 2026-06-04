@@ -21,6 +21,7 @@ import { toElicitationContent } from "./runtime-types"
 import { stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtime-lease-renewal-service"
 import { createLogger } from "../log"
 import { closeRemoteRuntimeBinding } from "./remote-runtime-client"
+import { RemoteRuntimeClient } from "./remote-runtime-client"
 
 export { getRuntime, listPendingPermissions, resolvePendingPermission, listPendingQuestions, subscribeRuntimeEvents }
 
@@ -35,72 +36,66 @@ export function resolvePendingQuestion(
 }
 
 export async function openRealRuntime(session: BusinessSession) {
-  const existing = getRuntime(session.id)
-  if (existing) return existing
-  const pending = pendingRuntimeLoads.get(session.id)
-  if (pending) return pending
-  const client = await createClientWithConfig(session)
-  const task = client.newSession(session.workspacePath)
-    .then((created) =>
-      bindRuntime(session, client, {
-        sessionId: created.sessionId,
-        configOptions: created.configOptions,
-        models: created.models,
-        modes: created.modes,
-      }, "opened"))
-    .catch((error) => {
-      log.warn("open real runtime failed", {
-        businessSessionId: session.id,
-        workerId: session.workerId,
-        workspacePath: session.workspacePath,
-        message: error instanceof Error ? error.message : String(error),
+  return withPendingRuntimeLoad(session, async () => {
+    const client = await createClientWithConfig(session)
+    return client.newSession(session.workspacePath)
+      .then((created) =>
+        bindRuntime(session, client, {
+          sessionId: created.sessionId,
+          configOptions: created.configOptions,
+          models: created.models,
+          modes: created.modes,
+        }, "opened"))
+      .catch((error) => {
+        log.warn("open real runtime failed", {
+          businessSessionId: session.id,
+          workerId: session.workerId,
+          workspacePath: session.workspacePath,
+          message: error instanceof Error ? error.message : String(error),
+        })
+        throw error
       })
-      throw error
-    })
-  pendingRuntimeLoads.set(session.id, task)
-  return task.finally(() => pendingRuntimeLoads.delete(session.id))
+  })
+}
+
+export async function prewarmRealRuntime(session: BusinessSession) {
+  const client = await createClientWithConfig(session)
+  if (!(client instanceof RemoteRuntimeClient) || !client.prewarm) return
+  await client.prewarm()
 }
 
 export async function loadRealRuntime(session: BusinessSession) {
-  const existing = getRuntime(session.id)
-  if (existing) return existing
-  const pending = pendingRuntimeLoads.get(session.id)
-  if (pending) return pending
   const sessionId = session.binding?.acpSessionId
   if (!sessionId) throw new Error("acp session is not bound")
-  const client = await createClientWithConfig(session)
-  const task = client.loadSession(session.workspacePath, sessionId)
-    .then((loaded) =>
-      bindRuntime(session, client, {
-        sessionId,
-        configOptions: loaded.configOptions,
-        models: loaded.models,
-        modes: loaded.modes,
-      }, "loaded"))
-    .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "loadSession"))
-  pendingRuntimeLoads.set(session.id, task)
-  return task.finally(() => pendingRuntimeLoads.delete(session.id))
+  return withPendingRuntimeLoad(session, async () => {
+    const client = await createClientWithConfig(session)
+    return client.loadSession(session.workspacePath, sessionId)
+      .then((loaded) =>
+        bindRuntime(session, client, {
+          sessionId,
+          configOptions: loaded.configOptions,
+          models: loaded.models,
+          modes: loaded.modes,
+        }, "loaded"))
+      .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "loadSession"))
+  })
 }
 
 export async function resumeRealRuntime(session: BusinessSession) {
-  const existing = getRuntime(session.id)
-  if (existing) return existing
-  const pending = pendingRuntimeLoads.get(session.id)
-  if (pending) return pending
   const sessionId = session.binding?.acpSessionId
   if (!sessionId) throw new Error("acp session is not bound")
-  const client = await createClientWithConfig(session)
-  const task = client.resumeSession(session.workspacePath, sessionId)
-    .then((resumed) =>
-      bindRuntime(session, client, {
-        sessionId,
-        configOptions: resumed.configOptions,
-        models: resumed.models,
-        modes: resumed.modes,
-      }, "resumed"))
-    .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "resumeSession"))
-  pendingRuntimeLoads.set(session.id, task)
-  return task.finally(() => pendingRuntimeLoads.delete(session.id))
+  return withPendingRuntimeLoad(session, async () => {
+    const client = await createClientWithConfig(session)
+    return client.resumeSession(session.workspacePath, sessionId)
+      .then((resumed) =>
+        bindRuntime(session, client, {
+          sessionId,
+          configOptions: resumed.configOptions,
+          models: resumed.models,
+          modes: resumed.modes,
+        }, "resumed"))
+      .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "resumeSession"))
+  })
 }
 
 export async function forkRealRuntime(source: BusinessSession, target: BusinessSession) {
@@ -126,6 +121,16 @@ async function createClientWithConfig(session: BusinessSession) {
     ...override,
   })
   return createClient(session, configContent)
+}
+
+async function withPendingRuntimeLoad(session: BusinessSession, taskFactory: () => Promise<RuntimeEntry>) {
+  const existing = getRuntime(session.id)
+  if (existing) return existing
+  const pending = pendingRuntimeLoads.get(session.id)
+  if (pending) return pending
+  const task = taskFactory()
+  pendingRuntimeLoads.set(session.id, task)
+  return task.finally(() => pendingRuntimeLoads.delete(session.id))
 }
 
 async function recoverMissingAcpSession(

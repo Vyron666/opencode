@@ -13,7 +13,7 @@ import { resetSessionRuntime } from "./session-lifecycle-service"
 import { markSessionClosing, markSessionOpening } from "./session-status-machine-service"
 import { buildSessionViewForUser } from "./session-summary-service"
 import { listWorkspaceSharesForWorkspace } from "./workspace-share-application-service"
-import { openSessionWithFallback, preopenSessionRuntime } from "./session-runtime-service"
+import { ensureSessionRuntimePrewarmed, openSessionWithFallback, preopenSessionRuntime } from "./session-runtime-service"
 import {
   assignWorkerForNewSession,
   assignWorkerForNewSessionWithReservation,
@@ -318,6 +318,14 @@ async function openSessionForUserInner(input: {
   await markRuntimeOperationRunning(operation.id, worker.id)
 
   const reopenedSession = (await sessionService.getSession(recoverableSession.id)) || recoverableSession
+  await ensureSessionRuntimePrewarmed(reopenedSession).catch((error) => {
+    log.warn("session runtime prewarm before open failed", {
+      businessSessionId: reopenedSession.id,
+      workerId: reopenedSession.workerId,
+      workspacePath: reopenedSession.workspacePath,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  })
   const firstOpenAttempt = await openSessionWithFallback(reopenedSession).catch(async (error) => {
     log.warn("session runtime open failed", {
       businessSessionId: reopenedSession.id,

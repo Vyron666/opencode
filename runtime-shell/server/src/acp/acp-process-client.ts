@@ -34,9 +34,11 @@ export class AcpProcessClient {
   private proc
   private client: RuntimeShellClient
   private connection
+  private options: RuntimeClientOptions
   private initialized?: InitializeResponse
   private sessionId = ""
   private waitForPendingEvents: () => Promise<void>
+  private onExitHandlers = new Set<(code: number | null, signal: NodeJS.Signals | null) => void>()
   private activePromptCount = 0
   private onPermissionRequestedHandler?: (permission: PendingPermission) => void
   private pendingPermissions = new Map<string, PendingResolver<PermissionResolution>>()
@@ -49,6 +51,7 @@ export class AcpProcessClient {
     waitForPendingEvents: () => Promise<void> = () => Promise.resolve(),
     processFactory: RuntimeProcessFactory = spawnAcpProcess,
   ) {
+    this.options = options
     this.proc = processFactory(options)
     logAcpStderr(this.proc, (text) => {
       this.stderrTail.push(text)
@@ -78,9 +81,11 @@ export class AcpProcessClient {
     })
     this.connection = new ClientSideConnection(() => this.client, stream)
 
-    this.proc.once("exit", () => {
+    this.proc.on("exit", (code, signal) => {
       rejectPending(this.pendingPermissions, "ACP runtime exited")
       rejectPending(this.pendingQuestions, "ACP runtime exited")
+      log.info("ACP process exited", { code, signal })
+      this.onExitHandlers.forEach((handler) => handler(code, signal))
     })
   }
 
@@ -90,6 +95,15 @@ export class AcpProcessClient {
 
   onQuestionRequested(handler: (question: PendingQuestion) => void) {
     this.onQuestionRequestedHandler = handler
+  }
+
+  setContext(options: RuntimeClientOptions) {
+    this.options = options
+    this.client.updateOptions(options)
+  }
+
+  setWaitForPendingEvents(waitForPendingEvents: () => Promise<void>) {
+    this.waitForPendingEvents = waitForPendingEvents
   }
 
   async initialize() {
@@ -268,19 +282,34 @@ export class AcpProcessClient {
   async close() {
     log.info("closing ACP process", { sessionId: this.sessionId })
     try {
-      if (this.sessionId) {
-        await this.closeSession(this.sessionId)
-      }
+      await this.closeActiveSession()
     } finally {
-      rejectPending(this.pendingPermissions, "ACP runtime closed")
-      rejectPending(this.pendingQuestions, "ACP runtime closed")
-      this.proc.kill()
-      log.info("ACP process killed")
+      this.terminate("ACP runtime closed")
     }
   }
 
   async closeSession(sessionId: string) {
     await this.connection.closeSession({ sessionId })
+    if (this.sessionId === sessionId) {
+      rejectPending(this.pendingPermissions, "ACP session closed")
+      rejectPending(this.pendingQuestions, "ACP session closed")
+      this.activePromptCount = 0
+      this.bindSession("")
+    }
+  }
+
+  async closeActiveSession() {
+    if (!this.sessionId) return
+    const currentSessionId = this.sessionId
+    await this.closeSession(currentSessionId)
+  }
+
+  terminate(message = "ACP runtime terminated") {
+    rejectPending(this.pendingPermissions, message)
+    rejectPending(this.pendingQuestions, message)
+    this.activePromptCount = 0
+    this.proc.kill()
+    log.info("ACP process killed")
   }
 
   getSessionId() {
@@ -288,10 +317,10 @@ export class AcpProcessClient {
   }
 
   onExit(handler: (code: number | null, signal: NodeJS.Signals | null) => void) {
-    this.proc.once("exit", (code, signal) => {
-      log.info("ACP process exited", { code, signal })
-      handler(code, signal)
-    })
+    this.onExitHandlers.add(handler)
+    return () => {
+      this.onExitHandlers.delete(handler)
+    }
   }
 
   private bindSession(sessionId: string) {

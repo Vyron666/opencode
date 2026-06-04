@@ -5,26 +5,26 @@ export function ThinkingBlock({ block }) {
   const preview = block.message.slice(0, 96)
 
   return (
-    <div className="max-w-[88%] rounded-[20px] border border-[rgba(212,160,90,0.16)] bg-[rgba(36,30,24,0.92)] overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.12)]">
+    <div className="max-w-[88%] overflow-hidden rounded-[20px] border border-[var(--line)] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.07)]">
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
+        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[var(--surface-muted)]"
       >
-        <div className="w-8 self-stretch rounded-full bg-brand/18 border border-brand/10 shrink-0" aria-hidden="true" />
+        <div className="w-8 shrink-0 self-stretch rounded-full border border-brand/10 bg-brand/10" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-brand tracking-[0.16em] uppercase">Thinking</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand">Thinking</span>
             <span className="text-[10px] text-[var(--text-muted)]">{expanded ? '隐藏推理过程' : '显示推理过程'}</span>
           </div>
-          <div className="mt-1.5 text-xs text-[var(--text-dim)] truncate">{preview}</div>
+          <div className="mt-1.5 truncate text-xs text-[var(--text-dim)]">{preview}</div>
         </div>
-        <span className="text-xs text-[var(--text-dim)] font-semibold shrink-0">{expanded ? '收起' : '展开'}</span>
+        <span className="shrink-0 text-xs font-semibold text-[var(--text-dim)]">{expanded ? '收起' : '展开'}</span>
       </button>
 
       {expanded ? (
         <div className="px-4 pb-4">
-          <div className="ml-11 rounded-[16px] bg-black/20 border border-[rgba(181,148,116,0.12)] px-4 py-3.5 text-xs text-[var(--text-dim)] leading-relaxed whitespace-pre-wrap break-words">
+          <div className="ml-11 whitespace-pre-wrap break-words rounded-[16px] border border-[var(--line)] bg-[var(--surface-muted)] px-4 py-3.5 text-xs leading-relaxed text-[var(--text-dim)]">
             {block.message}
           </div>
         </div>

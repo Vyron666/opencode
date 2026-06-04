@@ -29,8 +29,9 @@ export type ManagedRuntimeClient = {
   resolvePermission: (requestId: string, optionId: string) => boolean
   rejectPermission: (requestId: string) => boolean
   resolveQuestion: (requestId: string, response: CreateElicitationResponse) => boolean
+  prewarm?: () => Promise<void>
   close: () => Promise<void>
   closeSession: (sessionId: string) => Promise<void>
   getSessionId: () => string
-  onExit: (handler: (code: number | null, signal: NodeJS.Signals | null) => void) => void
+  onExit: (handler: (code: number | null, signal: NodeJS.Signals | null) => void) => () => void
 }

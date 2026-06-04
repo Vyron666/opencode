@@ -5,7 +5,7 @@ const CUSTOM_INPUT_SENTINEL = '__custom__'
 export function QuestionFieldControl({ field, value, formValues, setFormValues }) {
   if (field.kind === 'boolean') {
     return (
-      <label className="flex items-center gap-2 rounded-[10px] border border-[var(--line)] bg-black/30 px-3 py-2 text-xs text-[var(--text-dim)]">
+      <label className="flex items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text-dim)]">
         <input
           type="checkbox"
           checked={Boolean(value)}
@@ -31,7 +31,7 @@ export function QuestionFieldControl({ field, value, formValues, setFormValues }
           return (
             <label
               key={`${field.id}-${option.value}`}
-              className="flex items-start gap-2 rounded-[10px] border border-[var(--line)] bg-black/30 px-3 py-2 text-left"
+              className="flex items-start gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-left"
             >
               <input
                 type="checkbox"
@@ -75,7 +75,7 @@ export function QuestionFieldControl({ field, value, formValues, setFormValues }
               ...(event.target.value === CUSTOM_INPUT_SENTINEL ? {} : { [customValueKey]: '' }),
             }))
           }
-          className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
+          className="w-full rounded-[10px] border border-[var(--line-strong)] bg-white px-3 py-2 text-xs outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)]"
         >
           <option value="">请选择</option>
           {field.options.map((option) => (
@@ -96,7 +96,7 @@ export function QuestionFieldControl({ field, value, formValues, setFormValues }
               }))
             }
             placeholder="请输入"
-            className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
+            className="w-full rounded-[10px] border border-[var(--line-strong)] bg-white px-3 py-2 text-xs outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)]"
           />
         ) : null}
       </div>
@@ -114,7 +114,7 @@ export function QuestionFieldControl({ field, value, formValues, setFormValues }
         }))
       }
       placeholder={field.placeholder}
-      className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
+      className="w-full rounded-[10px] border border-[var(--line-strong)] bg-white px-3 py-2 text-xs outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)]"
     />
   )
 }

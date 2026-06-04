@@ -31,7 +31,7 @@ export default function RightSidebar() {
         <button
           onClick={() => setCollapsed(true)}
           aria-label="收起侧边栏"
-          className="absolute -left-2 top-3 hidden xl:flex items-center justify-center w-5 h-5 rounded-full bg-brand/20 text-brand-text border border-brand/30 text-[10px] hover:bg-brand/40 transition-colors"
+          className="absolute -left-2 top-3 hidden h-5 w-5 items-center justify-center rounded-full border border-brand/20 bg-white text-[10px] text-brand transition-colors hover:bg-brand/10 xl:flex"
         >
           ◀
         </button>
@@ -42,7 +42,7 @@ export default function RightSidebar() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-2 px-1.5 text-xs font-semibold text-center transition-colors ${
-                activeTab === tab.id ? 'text-brand-text bg-brand/10' : 'text-[var(--text-muted)] hover:text-[var(--text-dim)] hover:bg-black/20'
+                activeTab === tab.id ? 'bg-brand/10 text-brand' : 'text-[var(--text-muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-dim)]'
               } ${tab.id !== visibleTabs[visibleTabs.length - 1].id ? 'border-r border-[var(--line)]' : ''}`}
             >
               {tab.label}

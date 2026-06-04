@@ -8,6 +8,7 @@ import {
   listSandboxInstances,
   upsertSandboxInstance,
 } from "../../repos/sandbox-instance-repo"
+import * as RuntimeLeaseRepo from "../../repos/runtime-lease-repo"
 import {
   deleteSandboxWorkspaceByWorkspaceId,
   findSandboxWorkspaceByWorkspaceId,
@@ -20,6 +21,7 @@ import { auditService, sessionService } from "../store/store-singleton"
 const sandboxWorkspacePreparations = new Map<string, Promise<SandboxWorkspace>>()
 const runWithSandboxWorkspaceGate = createConcurrencyGate(Config.sandboxWorkspacePrepareConcurrency)
 const STALE_PREPARED_SANDBOX_GRACE_MS = 10 * 60 * 1000
+const STALE_INACTIVE_SANDBOX_GRACE_MS = 10 * 60 * 1000
 
 export async function ensureSandboxWorkspace(session: BusinessSession) {
   const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
@@ -270,6 +272,63 @@ export async function cleanupStalePreparedSandboxWorkspaces(limit = 100) {
       session.status !== "completed" &&
       session.status !== "failed" &&
       session.status !== "orphaned"
+    ) continue
+    const workspace = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
+    if (workspace) {
+      await cleanupSandboxWorkspaceRecord(workspace)
+    } else {
+      await deleteSandboxInstanceByWorkspaceId(session.workspaceId)
+    }
+    results.push({
+      sessionId: session.id,
+      cleaned: true,
+    })
+  }
+  return results
+}
+
+export async function cleanupStaleInactiveSandboxInstances(limit = 100) {
+  const sandboxes = await listSandboxInstances(Math.max(limit * 3, limit))
+  const results: Array<{
+    sessionId: string
+    cleaned: boolean
+  }> = []
+  for (const sandbox of sandboxes) {
+    if (results.length >= limit) break
+    if (sandbox.detail?.source === "warm_pool") continue
+    if (sandbox.status === "warm" || sandbox.status === "leased") continue
+    if (sandbox.status === "ready" || sandbox.status === "preparing") continue
+    if (Date.now() - new Date(sandbox.updatedAt).getTime() < STALE_INACTIVE_SANDBOX_GRACE_MS) continue
+    const session = await sessionService.getSession(sandbox.businessSessionId)
+    if (!session) {
+      const workspace = await findSandboxWorkspaceByWorkspaceId(sandbox.workspaceId)
+      if (workspace) {
+        await cleanupSandboxWorkspaceRecord(workspace)
+      } else {
+        await deleteSandboxInstanceByWorkspaceId(sandbox.workspaceId)
+      }
+      results.push({
+        sessionId: sandbox.businessSessionId,
+        cleaned: true,
+      })
+      continue
+    }
+    if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) continue
+    if (session.status === "orphaned") {
+      if (await RuntimeLeaseRepo.findLeaseBySessionId(session.id)) continue
+      // 中文/English: orphaned sessions may still reopen from the workspace copy,
+      // but a stale sandbox_instance must not keep reporting a live running sandbox.
+      await deleteSandboxInstanceByWorkspaceId(session.workspaceId)
+      results.push({
+        sessionId: session.id,
+        cleaned: true,
+      })
+      continue
+    }
+    if (
+      session.status !== "created" &&
+      session.status !== "completed" &&
+      session.status !== "failed"
     ) continue
     const workspace = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
     if (workspace) {

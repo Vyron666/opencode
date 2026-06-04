@@ -3,14 +3,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: { DEFAULT: '#14100d', strong: '#1c1713', raised: '#231e19' },
-        surface: { DEFAULT: 'rgba(28,23,19,0.82)', solid: '#231e19' },
-        line: { DEFAULT: 'rgba(181,148,116,0.09)', strong: 'rgba(181,148,116,0.16)', focus: 'rgba(212,160,90,0.28)' },
-        text: { DEFAULT: '#e4d9cc', dim: '#a69888', muted: '#7a6e60' },
-        brand: { DEFAULT: '#d4a05a', strong: '#c1873e', text: '#f0d6a4', soft: 'rgba(212,160,90,0.10)', glow: 'rgba(212,160,90,0.18)' },
-        accent: { DEFAULT: '#d4785c', soft: 'rgba(212,120,92,0.12)' },
-        danger: { DEFAULT: '#c44a3a', soft: 'rgba(196,74,58,0.12)' },
-        success: { DEFAULT: '#5a9e7c', soft: 'rgba(90,158,124,0.12)' },
+        bg: { DEFAULT: '#eef4ff', strong: '#e3edfc', raised: '#d6e4fb' },
+        surface: { DEFAULT: '#ffffff', solid: '#f8fbff' },
+        line: { DEFAULT: '#d9e5f7', strong: '#c5d7f3', focus: 'rgba(37,99,235,0.18)' },
+        text: { DEFAULT: '#0f172a', dim: '#334155', muted: '#64748b' },
+        brand: { DEFAULT: '#2563eb', strong: '#1d4ed8', text: '#1e40af', soft: 'rgba(37,99,235,0.10)', glow: 'rgba(37,99,235,0.18)' },
+        accent: { DEFAULT: '#0ea5e9', soft: 'rgba(14,165,233,0.12)' },
+        danger: { DEFAULT: '#dc2626', soft: 'rgba(220,38,38,0.12)' },
+        success: { DEFAULT: '#059669', soft: 'rgba(5,150,105,0.12)' },
       },
       fontFamily: {
         ui: ['"PingFang SC"', '"Microsoft YaHei"', '"Hiragino Sans GB"', 'system-ui', 'sans-serif'],
@@ -24,7 +24,7 @@ export default {
         full: '999px',
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(212,160,90,0.14), 0 4px 20px rgba(212,160,90,0.08)',
+        glow: '0 0 0 1px rgba(37,99,235,0.10), 0 12px 32px rgba(37,99,235,0.16)',
       },
       animation: {
         'fade-in': 'fadeIn 0.2s cubic-bezier(0.16,1,0.3,1)',

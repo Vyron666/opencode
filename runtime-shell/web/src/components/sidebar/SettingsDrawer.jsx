@@ -9,20 +9,20 @@ function SettingsSection({ title, description, defaultOpen = false, children, co
   const [open, setOpen] = useState(defaultOpen)
 
   return (
-    <section className="rounded-[18px] border border-[var(--line)] bg-[rgba(16,12,9,0.78)] overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+    <section className="overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-muted)]">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="w-full px-4 py-3.5 flex items-start justify-between gap-3 text-left hover:bg-white/[0.02] transition-colors"
+        className="flex w-full items-start justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-white"
       >
         <div className="min-w-0 max-w-[calc(100%-56px)]">
-          <div className="text-[15px] font-semibold leading-tight">{title}</div>
-          {description ? <div className="text-[11px] text-[var(--text-muted)] mt-1.5 leading-relaxed">{description}</div> : null}
+          <div className="text-[15px] font-semibold leading-tight text-[var(--text)]">{title}</div>
+          {description ? <div className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-muted)]">{description}</div> : null}
         </div>
-        <span className="text-[11px] font-semibold text-[var(--text-muted)] shrink-0 pt-1">{open ? '收起' : '展开'}</span>
+        <span className="shrink-0 pt-1 text-[11px] font-semibold text-[var(--text-muted)]">{open ? '收起' : '展开'}</span>
       </button>
 
-      {open ? <div className={`px-4 pb-4 pt-1.5 grid gap-3 animate-fade-in ${contentClassName}`.trim()}>{children}</div> : null}
+      {open ? <div className={`grid gap-3 px-4 pb-4 pt-1.5 animate-fade-in ${contentClassName}`.trim()}>{children}</div> : null}
     </section>
   )
 }
@@ -36,7 +36,7 @@ export default function SettingsDrawer({ open, onClose }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
-          className="fixed inset-0 z-40 bg-black/55 backdrop-blur-sm"
+          className="fixed inset-0 z-40 bg-[rgba(15,23,42,0.28)] backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.aside
@@ -44,21 +44,21 @@ export default function SettingsDrawer({ open, onClose }) {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 28, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-            className="absolute right-3 top-3 bottom-3 w-[min(460px,calc(100vw-24px))] rounded-[24px] border border-[var(--line)] bg-[var(--surface)] shadow-2xl overflow-hidden flex flex-col"
+            className="absolute bottom-3 right-3 top-3 flex w-[min(460px,calc(100vw-24px))] flex-col overflow-hidden rounded-[28px] border border-[var(--line)] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.20)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--line)] bg-black/15 shrink-0">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--line)] bg-[linear-gradient(180deg,#ffffff,#f8fbff)] px-5 py-4">
               <div>
-                <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Settings</div>
-                <h2 className="text-[15px] font-bold mt-1">运行设置</h2>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-brand">Settings</div>
+                <h2 className="mt-1 text-[18px] font-bold text-[var(--text)]">运行设置</h2>
               </div>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="关闭设置"
-                className="w-9 h-9 rounded-full border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+                className="h-9 w-9 rounded-full border border-[var(--line)] bg-[var(--surface-muted)] text-[var(--text-dim)] transition-colors hover:bg-[var(--bg-strong)]"
               >
-                ×
+                x
               </button>
             </div>
 
@@ -74,12 +74,12 @@ export default function SettingsDrawer({ open, onClose }) {
                   <WorkspaceSharePanel />
                 </SettingsSection>
 
-                <SettingsSection title="快捷设置" description="高频项保持直达，改完立即生效。" defaultOpen>
+                <SettingsSection title="快捷设置" description="高频项目保持直达，改完立即生效。" defaultOpen>
                   <ModelSettingPanel />
                   <ConfigSettingPanel />
                 </SettingsSection>
 
-                <SettingsSection title="AI 服务" description="首次配置或更换 Provider 时再展开。">
+                <SettingsSection title="AI 服务" description="首次配置或切换 Provider 时再展开。">
                   <ProviderConfigPanel />
                 </SettingsSection>
 

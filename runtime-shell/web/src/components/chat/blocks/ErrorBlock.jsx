@@ -8,23 +8,24 @@ export function ErrorBlock({ block }) {
 
   return (
     <div className="flex justify-center px-4">
-      <div className="rounded-[14px] px-4 py-3 border border-danger/20 bg-danger/5 max-w-[540px] w-full">
-        <div className="text-[11px] text-danger leading-relaxed">{block.message}</div>
-        <div className="mt-3 flex items-center gap-2 flex-wrap">
+      <div className="w-full max-w-[540px] rounded-[14px] border border-danger/20 bg-danger/5 px-4 py-3">
+        <div className="text-[11px] leading-relaxed text-danger">{block.message}</div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {currentSessionId ? (
             <button
               type="button"
               onClick={() => void connectSSE()}
-              className="text-xs px-3 py-1.5 rounded-[8px] bg-danger/15 text-danger border border-danger/20 hover:bg-danger/20 transition-colors"
+              className="rounded-[8px] border border-danger/20 bg-danger/15 px-3 py-1.5 text-xs text-danger transition-colors hover:bg-danger/20"
             >
               重新连接
             </button>
           ) : null}
+
           {!isConnectionError ? (
             <button
               type="button"
               onClick={() => void createQuickSession()}
-              className="text-xs px-3 py-1.5 rounded-[8px] bg-black/20 text-[var(--text-dim)] border border-[var(--line)] hover:bg-black/35 transition-colors"
+              className="rounded-[8px] border border-[var(--line)] bg-white px-3 py-1.5 text-xs text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)]"
             >
               新对话
             </button>

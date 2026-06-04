@@ -10,7 +10,7 @@ export const createSessionSchema = z.object({
   projectId: z.string().min(1).default("default"),
   workspaceId: z.string().min(1),
   // 中文/English: only create-and-enter requests should reserve worker/runtime capacity up front.
-  warmup: z.boolean().optional().default(false),
+  warmup: z.boolean().optional().default(true),
 })
 
 export const sessionIdSchema = z.object({

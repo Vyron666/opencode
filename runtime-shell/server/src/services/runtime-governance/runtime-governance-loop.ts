@@ -3,7 +3,7 @@ import { createLogger } from "../../log"
 import { closeRuntime } from "../../acp-runtime-manager"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
 import { sessionService, workerService } from "../store/store-singleton"
-import { cleanupExpiredSandboxWorkspaces, cleanupStalePreparedSandboxWorkspaces } from "../sandbox/sandbox-workspace-service"
+import { cleanupExpiredSandboxWorkspaces, cleanupStaleInactiveSandboxInstances, cleanupStalePreparedSandboxWorkspaces } from "../sandbox/sandbox-workspace-service"
 import { markRuntimeBindingLost } from "./runtime-binding-service"
 import { recordRuntimeFailure } from "./runtime-failure-service"
 import { listExpiredRuntimeLeases, releaseRuntimeLease } from "./runtime-lease-service"
@@ -29,6 +29,7 @@ export async function runRuntimeGovernanceTick() {
   await cleanupExpiredRuntimeLeases()
   await cleanupExpiredSandboxWorkspaces()
   await cleanupStalePreparedSandboxWorkspaces()
+  await cleanupStaleInactiveSandboxInstances()
 }
 
 async function markHeartbeatExpiredWorkersOffline() {

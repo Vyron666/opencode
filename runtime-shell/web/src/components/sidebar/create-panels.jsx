@@ -172,7 +172,7 @@ export function CreateSessionPanel() {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100 disabled:active:scale-100"
+        className="rounded-[12px] bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] shadow-[0_12px_30px_rgba(37,99,235,0.18)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-brand disabled:active:scale-100"
       >
         {pendingSessionAction === 'create' ? '\u521b\u5efa\u4e2d...' : '\u521b\u5efa\u5e76\u8fdb\u5165'}
       </button>
@@ -206,7 +206,7 @@ export function ForkSessionPanel() {
       <button
         type="submit"
         disabled={Boolean(pendingSessionAction) || !canManageSession}
-        className="rounded-[10px] py-2 px-4 text-xs font-semibold bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="rounded-[12px] border border-[var(--line)] bg-white px-4 py-2 text-xs font-semibold text-brand transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-40"
       >
         {pendingSessionAction === 'fork' ? '\u521b\u5efa\u5206\u652f\u4e2d...' : '\u4ece\u5f53\u524d\u4f1a\u8bdd\u521b\u5efa\u5206\u652f'}
       </button>

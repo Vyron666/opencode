@@ -14,7 +14,7 @@ export function MetricsPanel() {
           { label: '命令数', value: capabilities.availableCommands?.length || 0 },
           { label: '总 Tokens', value: capabilities.usage?.used || 0 },
         ].map((item) => (
-          <div key={item.label} className="rounded-[14px] p-3 border border-[var(--line)] bg-black/40 grid gap-1">
+          <div key={item.label} className="grid gap-1 rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
             <span className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wider">{item.label}</span>
             <strong className="text-lg font-bold tracking-tight text-[var(--text)]">{item.value}</strong>
           </div>
@@ -24,7 +24,7 @@ export function MetricsPanel() {
       {capabilities.availableCommands?.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {capabilities.availableCommands.map((command) => (
-            <span key={command} className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-brand/10 text-brand-text">
+            <span key={command} className="rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-medium text-brand">
               {command}
             </span>
           ))}
@@ -54,10 +54,10 @@ export function PermissionPanel() {
 
       <div className="grid gap-2.5">
         {pendingPermissions.map((permission, index) => (
-          <div key={permission.requestId || index} className="rounded-[14px] p-3 border border-[var(--line)] bg-black/30 grid gap-2">
+          <div key={permission.requestId || index} className="grid gap-2 rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
             <div className="text-xs font-bold">{permission.toolName || `权限请求 #${index + 1}`}</div>
             {permission.rawInput && (
-              <pre className="text-xs text-[var(--text-dim)] bg-black/20 rounded-[10px] p-2 whitespace-pre-wrap break-words overflow-x-auto">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-[10px] border border-[var(--line)] bg-white p-2 text-xs text-[var(--text-dim)]">
                 {formatJson(permission.rawInput)}
               </pre>
             )}
@@ -109,10 +109,10 @@ export function QuestionPanel() {
 
       <div className="grid gap-2.5">
         {pendingQuestions.map((question, index) => (
-          <div key={question.requestId || index} className="rounded-[14px] p-3 border border-[var(--line)] bg-black/30 grid gap-2">
+          <div key={question.requestId || index} className="grid gap-2 rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
             <div className="text-xs font-bold">{question.message || `提问 #${index + 1}`}</div>
             {question.requestedSchema && (
-              <pre className="text-xs text-[var(--text-dim)] bg-black/20 rounded-[10px] p-2 whitespace-pre-wrap break-words overflow-x-auto">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-[10px] border border-[var(--line)] bg-white p-2 text-xs text-[var(--text-dim)]">
                 {formatJson(question.requestedSchema)}
               </pre>
             )}
@@ -137,7 +137,7 @@ export function SessionDetailPanel() {
           <h3 className="text-sm font-bold mt-0.5">会话详情</h3>
         </div>
       </div>
-      <pre className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] font-mono text-xs leading-relaxed text-[var(--text-dim)] whitespace-pre-wrap break-words overflow-auto min-h-[180px] max-h-[320px]">
+      <pre className="min-h-[180px] max-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3 font-mono text-xs leading-relaxed text-[var(--text-dim)]">
         {detail ? JSON.stringify(detail.session || detail, null, 2) : '未选择会话'}
       </pre>
     </div>

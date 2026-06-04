@@ -8,6 +8,7 @@ export {
   loadRealRuntime,
   openRealRuntime,
   publishRuntimeEvent,
+  prewarmRealRuntime,
   resolvePendingPermission,
   resolvePendingQuestion,
   resumeRealRuntime,

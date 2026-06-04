@@ -10,6 +10,7 @@ export type SandboxPrepareInput = {
   workerId: string
   workspacePath: string
   sandboxPath?: string
+  configFingerprint?: string
 }
 
 export type SandboxWorkspaceMountMode = "rw" | "ro"

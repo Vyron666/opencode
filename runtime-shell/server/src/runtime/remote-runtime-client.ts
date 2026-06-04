@@ -26,6 +26,15 @@ type RemoteRuntimeBootstrap = {
   modes?: NewSessionResponse["modes"] | LoadSessionResponse["modes"] | ResumeSessionResponse["modes"] | ForkSessionResponse["modes"]
 }
 
+type RemoteSessionRequest = {
+  businessSessionId: string
+  workspaceId: string
+  workerId: string
+  workspacePath: string
+  sandboxPath: string
+  configContent?: string
+}
+
 export class RemoteRuntimeClient implements ManagedRuntimeClient {
   private worker: LocalWorkerConfig
   private session: BusinessSession
@@ -44,16 +53,12 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
 
   onQuestionRequested(_handler: (question: PendingQuestion) => void) {}
 
+  async prewarm() {
+    await this.post("/runtime/prewarm-session", await this.buildSessionRequest(this.session.workspacePath))
+  }
+
   async newSession(cwd: string): Promise<NewSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
-    const response = await this.post<RemoteRuntimeBootstrap>("/runtime/open-session", {
-      businessSessionId: this.session.id,
-      workspaceId: this.session.workspaceId,
-      workerId: this.session.workerId,
-      workspacePath: cwd,
-      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
-      configContent: this.configContent,
-    })
+    const response = await this.post<RemoteRuntimeBootstrap>("/runtime/open-session", await this.buildSessionRequest(cwd))
     this.bindRemote(response)
     return {
       sessionId: response.remoteSessionId,
@@ -64,15 +69,9 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async loadSession(cwd: string, sessionId: string): Promise<LoadSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/load-session", {
-      businessSessionId: this.session.id,
-      workspaceId: this.session.workspaceId,
-      workerId: this.session.workerId,
-      workspacePath: cwd,
-      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
+      ...await this.buildSessionRequest(cwd),
       acpSessionId: sessionId,
-      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {
@@ -83,15 +82,9 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async resumeSession(cwd: string, sessionId: string): Promise<ResumeSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/resume-session", {
-      businessSessionId: this.session.id,
-      workspaceId: this.session.workspaceId,
-      workerId: this.session.workerId,
-      workspacePath: cwd,
-      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
+      ...await this.buildSessionRequest(cwd),
       acpSessionId: sessionId,
-      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {
@@ -102,15 +95,9 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
   }
 
   async forkSession(cwd: string, sessionId: string): Promise<ForkSessionResponse> {
-    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/fork-session", {
-      businessSessionId: this.session.id,
-      workspaceId: this.session.workspaceId,
-      workerId: this.session.workerId,
-      workspacePath: cwd,
-      sandboxPath: sandboxWorkspace?.sandboxPath || cwd,
+      ...await this.buildSessionRequest(cwd),
       sourceAcpSessionId: sessionId,
-      configContent: this.configContent,
     })
     this.bindRemote(response)
     return {
@@ -206,7 +193,9 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
     return this.remoteRuntimeId || this.session.binding?.runtimeKey || ""
   }
 
-  onExit(_handler: (code: number | null, signal: NodeJS.Signals | null) => void) {}
+  onExit(_handler: (code: number | null, signal: NodeJS.Signals | null) => void) {
+    return () => {}
+  }
 
   private bindRemote(response: RemoteRuntimeBootstrap) {
     this.remoteRuntimeId = response.remoteRuntimeId
@@ -223,6 +212,18 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
 
   private async post<T = { success: true }>(pathname: string, body: Record<string, unknown>) {
     return postRemoteWorker<T>(this.worker, pathname, body)
+  }
+
+  private async buildSessionRequest(workspacePath: string): Promise<RemoteSessionRequest> {
+    const sandboxWorkspace = await getSandboxWorkspace(this.session.workspaceId)
+    return {
+      businessSessionId: this.session.id,
+      workspaceId: this.session.workspaceId,
+      workerId: this.session.workerId,
+      workspacePath,
+      sandboxPath: sandboxWorkspace?.sandboxPath || workspacePath,
+      configContent: this.configContent,
+    }
   }
 }
 

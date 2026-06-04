@@ -48,7 +48,10 @@ export function WorkspaceSharePanel() {
             <span className="text-xs font-medium text-[var(--text-dim)]">已共享成员</span>
             {shares?.length ? (
               shares.map((share) => (
-                <div key={share.id} className="flex items-center gap-2 rounded-[12px] border border-[var(--line)] bg-black/20 p-2.5 text-xs text-[var(--text-dim)]">
+                <div
+                  key={share.id}
+                  className="flex items-center gap-2 rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-2.5 text-xs text-[var(--text-dim)]"
+                >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold text-[var(--text)]">{share.targetDisplayName}</div>
                     <div className="text-[var(--text-muted)]">{roleLabel(share.targetRole)}</div>

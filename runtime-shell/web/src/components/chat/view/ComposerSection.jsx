@@ -48,121 +48,117 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
     })
   }, [])
 
-  const startAttachmentPreprocess = useCallback(
-    (files) => {
-      const supported = []
-      const unsupported = []
+  const startAttachmentPreprocess = useCallback((files) => {
+    const supported = []
+    const unsupported = []
 
-      files.forEach((file) => {
-        if (isSupportedAttachment(file)) {
-          supported.push(file)
-          return
-        }
-        unsupported.push(file.name)
-      })
-
-      if (unsupported.length > 0) {
-        setFlash(`暂不支持这些附件格式：${unsupported.join('、')}。当前仅支持 PDF、Markdown、XLSX、CSV 和图片。`)
+    files.forEach((file) => {
+      if (isSupportedAttachment(file)) {
+        supported.push(file)
+        return
       }
-      if (supported.length === 0) return
+      unsupported.push(file.name)
+    })
 
-      const entries = supported.map((file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
-        file,
-        label: readSupportedAttachmentLabel(file),
-        status: 'pending',
-        progress: 0,
-        progressMessage: '等待解析',
-        error: '',
-        part: null,
-        controller: new AbortController(),
-      }))
+    if (unsupported.length > 0) {
+      setFlash(`暂不支持这些附件格式：${unsupported.join('、')}。当前仅支持 PDF、Markdown、XLSX、CSV 和图片。`)
+    }
+    if (supported.length === 0) return
 
-      setAttachments((current) => [...current, ...entries])
+    const entries = supported.map((file) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+      file,
+      label: readSupportedAttachmentLabel(file),
+      status: 'pending',
+      progress: 0,
+      progressMessage: '等待解析',
+      error: '',
+      part: null,
+      controller: new AbortController(),
+    }))
 
-      entries.forEach((entry) => {
-        setAttachments((current) =>
-          current.map((item) => (item.id === entry.id ? { ...item, status: 'parsing', progress: 0.02, progressMessage: '开始解析' } : item)),
-        )
+    setAttachments((current) => [...current, ...entries])
 
-        void preprocessAttachment(
-          entry.file,
-          entry.controller.signal,
-          ({ progress, message }) => {
-            setAttachments((current) =>
-              current.map((item) =>
-                item.id === entry.id
-                  ? {
-                      ...item,
-                      status: 'parsing',
-                      progress: typeof progress === 'number' ? progress : item.progress,
-                      progressMessage: typeof message === 'string' && message ? message : item.progressMessage,
-                    }
-                  : item,
-              ),
-            )
-          },
-        ).then(
-          (result) => {
-            setAttachments((current) =>
-              current.map((item) =>
-                item.id === entry.id
-                  ? {
-                      ...item,
-                      status: 'ready',
-                      progress: 1,
-                      progressMessage: '解析完成',
-                      error: '',
-                      part: result.part,
-                    }
-                  : item,
-              ),
-            )
-          },
-          (error) => {
-            if (isCancelledError(error)) {
-              setAttachments((current) => current.filter((item) => item.id !== entry.id))
-              return
-            }
-
-            setAttachments((current) =>
-              current.map((item) =>
-                item.id === entry.id
-                  ? {
-                      ...item,
-                      status: 'failed',
-                      progressMessage: '解析失败',
-                      error: error instanceof Error ? error.message : String(error),
-                    }
-                  : item,
-              ),
-            )
-          },
-        )
-      })
-    },
-    [setFlash],
-  )
-
-  const handleSend = useCallback(
-    async (event) => {
-      event.preventDefault()
-      if (!promptText.trim()) return
-      const sent = await sendPrompt(
-        promptText,
-        attachments
-          .filter((item) => item.status === 'ready' && item.part)
-          .map((item) => item.part),
+    entries.forEach((entry) => {
+      setAttachments((current) =>
+        current.map((item) => (item.id === entry.id ? { ...item, status: 'parsing', progress: 0.02, progressMessage: '开始解析' } : item)),
       )
-      if (!sent) return
-      setPromptText('')
-      setAttachments((current) => {
-        current.forEach((item) => item.controller?.abort())
-        return []
-      })
-    },
-    [attachments, promptText, sendPrompt],
-  )
+
+      void preprocessAttachment(
+        entry.file,
+        entry.controller.signal,
+        ({ progress, message }) => {
+          setAttachments((current) =>
+            current.map((item) =>
+              item.id === entry.id
+                ? {
+                    ...item,
+                    status: 'parsing',
+                    progress: typeof progress === 'number' ? progress : item.progress,
+                    progressMessage: typeof message === 'string' && message ? message : item.progressMessage,
+                  }
+                : item,
+            ),
+          )
+        },
+      ).then(
+        (result) => {
+          setAttachments((current) =>
+            current.map((item) =>
+              item.id === entry.id
+                ? {
+                    ...item,
+                    status: 'ready',
+                    progress: 1,
+                    progressMessage: '解析完成',
+                    error: '',
+                    part: result.part,
+                  }
+                : item,
+            ),
+          )
+        },
+        (error) => {
+          if (isCancelledError(error)) {
+            setAttachments((current) => current.filter((item) => item.id !== entry.id))
+            return
+          }
+
+          setAttachments((current) =>
+            current.map((item) =>
+              item.id === entry.id
+                ? {
+                    ...item,
+                    status: 'failed',
+                    progressMessage: '解析失败',
+                    error: error instanceof Error ? error.message : String(error),
+                  }
+                : item,
+            ),
+          )
+        },
+      )
+    })
+  }, [setFlash])
+
+  const handleSend = useCallback(async (event) => {
+    event.preventDefault()
+    if (!promptText.trim()) return
+
+    const sent = await sendPrompt(
+      promptText,
+      attachments
+        .filter((item) => item.status === 'ready' && item.part)
+        .map((item) => item.part),
+    )
+    if (!sent) return
+
+    setPromptText('')
+    setAttachments((current) => {
+      current.forEach((item) => item.controller?.abort())
+      return []
+    })
+  }, [attachments, promptText, sendPrompt])
 
   const handleDrop = useCallback((event) => {
     event.preventDefault()
@@ -189,13 +185,13 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
   )
 
   return (
-    <section className="shrink-0 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-3">
+    <section className="shrink-0 rounded-[28px] border border-[var(--line)] bg-white p-4 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 pb-3">
           {attachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-black/30 px-3 py-1 text-xs text-[var(--text-dim)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-1 text-xs text-[var(--text-dim)]"
             >
               <span className="max-w-[180px] truncate">{attachment.file.name}</span>
               <span className="text-[10px] uppercase tracking-[0.08em] text-brand/90">{attachment.label}</span>
@@ -217,10 +213,10 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
               <button
                 type="button"
                 onClick={() => cancelAttachment(attachment.id)}
-                className="text-[var(--text-muted)] hover:text-danger transition-colors"
+                className="text-[var(--text-muted)] transition-colors hover:text-danger"
                 aria-label={`移除附件 ${attachment.file.name}`}
               >
-                {attachment.status === 'pending' || attachment.status === 'parsing' ? '取消' : '×'}
+                {attachment.status === 'pending' || attachment.status === 'parsing' ? '取消' : 'x'}
               </button>
             </div>
           ))}
@@ -229,12 +225,12 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
 
       <form onSubmit={handleSend} className="grid gap-3">
         {shouldShowProviderHint ? (
-          <div className="rounded-[14px] px-4 py-3 text-sm text-brand-text bg-brand/5 border border-brand/20">
+          <div className="rounded-[16px] border border-brand/20 bg-brand/5 px-4 py-3 text-sm text-brand">
             请先配置 AI 服务才能开始对话。
             <button
               type="button"
               onClick={onOpenSettings}
-              className="ml-2 underline font-semibold hover:opacity-80 transition-opacity"
+              className="ml-2 font-semibold underline transition-opacity hover:opacity-80"
             >
               前往配置
             </button>
@@ -253,7 +249,7 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
                 ? '会话正在打开或恢复，稍后即可发送'
                 : '输入消息...'
           }
-          className="w-full min-h-[68px] max-h-[220px] rounded-[14px] border border-[var(--line-strong)] px-3.5 py-3 bg-black/55 text-sm outline-none resize-y focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
+          className="w-full min-h-[72px] max-h-[220px] resize-y rounded-[18px] border border-[var(--line)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--text)] outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)] placeholder:text-[var(--text-muted)]"
           style={{ lineHeight: '22px' }}
           onDragOver={(event) => {
             event.preventDefault()
@@ -270,8 +266,8 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
           }}
         />
 
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             {currentSessionId ? (
               <div className="w-[132px]">
                 <Select
@@ -314,31 +310,31 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-10 h-10 rounded-full border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+                className="h-10 w-10 rounded-full border border-[var(--line)] bg-[var(--surface-muted)] text-[var(--text-dim)] transition-colors hover:bg-[var(--bg-strong)]"
                 aria-label="添加附件"
               >
                 +
               </button>
             </label>
 
-            <label className="hidden sm:flex items-center gap-1 text-[11px] text-[var(--text-muted)] cursor-pointer shrink-0">
+            <label className="hidden shrink-0 cursor-pointer items-center gap-1 text-[11px] text-[var(--text-muted)] sm:flex">
               <input
                 type="checkbox"
                 checked={showDebug}
                 onChange={(event) => setShowDebug(event.target.checked)}
-                className="w-3.5 h-3.5 accent-brand"
+                className="h-3.5 w-3.5 accent-brand"
               />
               <span>调试事件</span>
             </label>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             {phase.canCancel ? (
               <button
                 type="button"
                 onClick={() => void cancelPrompt()}
                 disabled={!currentSessionId || phase.id === 'cancelling'}
-                className="h-10 px-4 rounded-full border border-danger/20 bg-danger/10 text-danger text-sm font-semibold hover:bg-danger/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-10 rounded-full border border-danger/20 bg-danger/10 px-4 text-sm font-semibold text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {phase.id === 'cancelling' ? '取消中...' : '停止'}
               </button>
@@ -348,15 +344,15 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
               type="submit"
               disabled={sendDisabled}
               aria-label="发送消息"
-              className="w-10 h-10 rounded-full font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-10 w-10 rounded-full bg-brand text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              ↑
+              {'->'}
             </button>
           </div>
         </div>
 
         {isSharedSession ? (
-          <div className="text-[11px] text-[var(--text-muted)] px-1">
+          <div className="px-1 text-[11px] text-[var(--text-muted)]">
             共享工作区会话的模式和模型能力受当前权限控制，无法切换时会保持现状。
           </div>
         ) : null}

@@ -8,9 +8,9 @@ export function QuestionLegacyForm(input) {
   return (
     <div className="grid gap-3">
       {input.prompts.map((prompt, promptIndex) => (
-        <div key={promptIndex} className="rounded-[12px] border border-[var(--line)] bg-black/25 p-3 grid gap-2">
+        <div key={promptIndex} className="grid gap-2 rounded-[12px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
           <div className="grid gap-0.5">
-            {prompt.header && <div className="text-[11px] font-semibold text-[var(--text-muted)]">{prompt.header}</div>}
+            {prompt.header ? <div className="text-[11px] font-semibold text-[var(--text-muted)]">{prompt.header}</div> : null}
             <div className="text-xs font-semibold text-[var(--text)]">{prompt.question}</div>
           </div>
 
@@ -22,7 +22,7 @@ export function QuestionLegacyForm(input) {
                 return (
                   <label
                     key={`${promptIndex}-${optionIndex}`}
-                    className="flex items-start gap-2 rounded-[10px] border border-[var(--line)] bg-black/30 px-3 py-2 text-left"
+                    className="flex items-start gap-2 rounded-[10px] border border-[var(--line)] bg-white px-3 py-2 text-left"
                   >
                     <input
                       type="checkbox"
@@ -58,19 +58,19 @@ export function QuestionLegacyForm(input) {
                       return next
                     })
                   }
-                  className={`text-left rounded-[10px] border px-3 py-2 transition-colors ${
+                  className={`rounded-[10px] border px-3 py-2 text-left transition-colors ${
                     selected
-                      ? 'border-brand bg-brand/10'
-                      : 'border-[var(--line)] bg-black/30 hover:bg-black/40'
+                      ? 'border-brand bg-brand/10 text-brand'
+                      : 'border-[var(--line)] bg-white hover:bg-[var(--surface-muted)]'
                   }`}
                 >
                   <div className="text-xs font-semibold text-[var(--text-dim)]">{option.label}</div>
-                  {option.description ? <div className="text-[11px] text-[var(--text-muted)] mt-1">{option.description}</div> : null}
+                  {option.description ? <div className="mt-1 text-[11px] text-[var(--text-muted)]">{option.description}</div> : null}
                 </button>
               )
             })}
 
-            {prompt.custom === true && (
+            {prompt.custom === true ? (
               <input
                 type="text"
                 value={input.legacyCustomAnswers[promptIndex] || ''}
@@ -81,25 +81,25 @@ export function QuestionLegacyForm(input) {
                   }))
                 }
                 placeholder="请输入自定义答案"
-                className="w-full rounded-[10px] border border-[var(--line-strong)] px-3 py-2 bg-black/55 text-xs outline-none focus:border-[rgba(212,160,90,0.28)]"
+                className="w-full rounded-[10px] border border-[var(--line-strong)] bg-white px-3 py-2 text-xs outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)]"
               />
-            )}
+            ) : null}
           </div>
         </div>
       ))}
 
-      <div className="flex gap-2 justify-end">
+      <div className="flex justify-end gap-2">
         <button
           onClick={() => input.respondQuestion(input.requestId, 'cancel', {})}
           disabled={input.submitting}
-          className="text-xs px-3 py-1 rounded-[8px] bg-black/20 text-[var(--text-dim)] border border-[var(--line)] hover:bg-black/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-[8px] border border-[var(--line)] bg-white px-3 py-1 text-xs text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {input.submitting ? '提交中...' : '取消'}
         </button>
         <button
           onClick={() => input.respondQuestion(input.requestId, 'decline', {})}
           disabled={input.submitting}
-          className="text-xs px-3 py-1 rounded-[8px] bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-[8px] border border-danger/20 bg-danger/10 px-3 py-1 text-xs text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {input.submitting ? '提交中...' : '拒绝'}
         </button>
@@ -111,7 +111,7 @@ export function QuestionLegacyForm(input) {
             })
           }
           disabled={input.submitting || hasEmptyLegacyQuestionAnswer(input.prompts, input.legacyAnswers, input.legacyCustomAnswers)}
-          className="text-xs px-3 py-1 rounded-[8px] bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-[8px] border border-success/20 bg-success/10 px-3 py-1 text-xs text-success transition-colors hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {input.submitting ? '提交中...' : '提交'}
         </button>

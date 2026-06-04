@@ -31,6 +31,10 @@ export class RuntimeShellClient implements Client {
     this.acpSessionId = sessionId
   }
 
+  updateOptions(options: RuntimeClientOptions) {
+    this.options = options
+  }
+
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const requestId = params.toolCall.toolCallId
     const permission: PendingPermission = {

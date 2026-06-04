@@ -112,7 +112,10 @@ export function McpConfigPanel() {
           className="grid gap-3 animate-fade-in"
         >
           {servers.map((server, index) => (
-            <div key={`mcp-server-${index}`} className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
+            <div
+              key={`mcp-server-${index}`}
+              className="grid gap-2.5 rounded-[18px] border border-[var(--line)] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]"
+            >
               <Field label="Server Name">
                 <input value={server.name} onChange={(event) => setServers((current) => current.map((item, currentIndex) => (currentIndex === index ? { ...item, name: event.target.value } : item)))} placeholder="例如 deepseek-docs" className={inputClassName} />
               </Field>
@@ -150,7 +153,7 @@ export function McpConfigPanel() {
           ))}
 
           {impactPreview ? (
-            <div className="rounded-[10px] border border-[var(--line)] bg-black/20 px-3 py-2 text-[11px] text-[var(--text-dim)]">
+            <div className="rounded-[12px] border border-brand/15 bg-brand/5 px-3 py-2 text-[11px] text-[var(--text-dim)]">
               {impactPreview.summary}；预计影响 {impactPreview.affectedSessionCount} 个活跃会话
             </div>
           ) : null}
@@ -159,7 +162,11 @@ export function McpConfigPanel() {
             添加 MCP
           </button>
 
-          <button type="submit" disabled={Boolean(pendingSettingsAction)} className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed">
+          <button
+            type="submit"
+            disabled={Boolean(pendingSettingsAction)}
+            className="rounded-[12px] bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] shadow-[0_12px_30px_rgba(37,99,235,0.18)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
             {pendingSettingsAction === 'mcp' ? '保存中...' : '保存 MCP 配置'}
           </button>
         </form>

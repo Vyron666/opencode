@@ -19,16 +19,18 @@ export default function MainLayout() {
     }
 
     disconnectSSE()
-  }, [currentSessionId, sessionSelectionVersion, activateSession, disconnectSSE])
+  }, [activateSession, currentSessionId, disconnectSSE, sessionSelectionVersion])
 
   return (
-    <div className="h-dvh min-h-0 grid p-3.5 gap-3.5 overflow-hidden items-stretch
-      grid-cols-[300px_minmax(0,1fr)]
-      max-[1279px]:grid-cols-[260px_minmax(0,1fr)]
-      max-[1024px]:h-auto max-[1024px]:overflow-y-auto max-[1024px]:grid-cols-[1fr]"
-    >
-      <LeftSidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <ChatView settingsOpen={settingsOpen} onOpenSettings={() => setSettingsOpen(true)} onCloseSettings={() => setSettingsOpen(false)} />
+    <div className="h-dvh overflow-hidden px-6 py-6 max-[1024px]:h-auto max-[1024px]:overflow-y-auto max-[1024px]:px-4 max-[1024px]:py-4">
+      <div className="mx-auto grid h-full min-h-0 max-w-[1440px] grid-cols-[320px_minmax(0,1fr)] gap-6 rounded-[32px] border border-white/60 bg-[rgba(255,255,255,0.68)] p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl max-[1279px]:grid-cols-[288px_minmax(0,1fr)] max-[1024px]:grid-cols-[1fr] max-[1024px]:rounded-[24px] max-[1024px]:p-4">
+        <LeftSidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <ChatView
+          settingsOpen={settingsOpen}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onCloseSettings={() => setSettingsOpen(false)}
+        />
+      </div>
     </div>
   )
 }

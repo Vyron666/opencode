@@ -20,16 +20,37 @@ import {
   requireString,
 } from "./worker-agent-store"
 import { createRuntimeEntry, isPromptInterrupted, toBootstrap, updateSnapshot } from "./worker-agent-runtime-support"
+import { computeRuntimeConfigFingerprint, prewarmSessionRuntimeOnWorker, tryOpenWarmRuntimeEntry } from "./worker-agent-warm-runtime"
+import type { RuntimeEntry } from "./worker-agent-types"
 import { closeOrphanDockerSandbox } from "./sandbox/docker-sandbox-manager"
 import { createLogger } from "../log"
 
 const log = createLogger("worker-agent-runtime")
+const pendingRuntimeBootstraps = new Map<string, Promise<ReturnType<typeof toBootstrap>>>()
+
+type SessionRuntimeRequest = {
+  businessSessionId: string
+  workspaceId: string
+  workspacePath: string
+  sandboxPath: string
+  workerId: string
+  configContent?: string
+}
+
+type SessionResumeRequest = SessionRuntimeRequest & {
+  acpSessionId: string
+}
+
+type SessionForkRequest = SessionRuntimeRequest & {
+  sourceAcpSessionId: string
+}
 
 export function createRuntimeHandlers(input: {
   runtimeShellBaseUrl: string
   workerToken: string
 }) {
   return {
+    prewarmSession,
     openSession,
     loadSession,
     resumeSession,
@@ -44,140 +65,57 @@ export function createRuntimeHandlers(input: {
     resolveQuestion,
   }
 
-  async function openSession(body: Record<string, unknown>) {
-    const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
-    const workspaceId = requireString(body.workspaceId, "workspaceId")
-    const workspacePath = requireString(body.workspacePath, "workspacePath")
-    const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
-    const workerId = requireString(body.workerId, "workerId")
-    const existing = findRuntimeByBusinessSessionId(businessSessionId)
-    if (existing) return toBootstrap(existing)
-    const entry = createRuntimeEntry({
+  async function prewarmSession(body: Record<string, unknown>) {
+    const request = readSessionRuntimeRequest(body)
+    const slot = await prewarmSessionRuntimeOnWorker({
       runtimeShellBaseUrl: input.runtimeShellBaseUrl,
       workerToken: input.workerToken,
-      businessSessionId,
-      workspaceId,
-      workspacePath,
-      sandboxPath,
-      workerId,
-      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
+      ...request,
     })
-    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.newSession(sandboxPath))).catch((error) => {
-      log.warn("worker open session failed", {
-        businessSessionId,
-        workerId,
-        workspacePath,
-        sandboxPath,
-        message: error instanceof Error ? error.message : String(error),
-      })
-      throw error
+    return {
+      warmed: Boolean(slot),
+      slotId: slot?.id,
+    }
+  }
+
+  async function openSession(body: Record<string, unknown>) {
+    const request = readSessionRuntimeRequest(body)
+    return openManagedSession(input, request, {
+      action: "open",
+      matchesExisting: () => true,
+      warmStart: (entry, cwd) => entry.client.newSession(cwd),
+      coldStart: (entry) => entry.client.newSession(request.sandboxPath),
     })
-    updateSnapshot(entry, response)
-    rememberRuntime(entry)
-    return toBootstrap(entry)
   }
 
   async function loadSession(body: Record<string, unknown>) {
-    const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
-    const workspaceId = requireString(body.workspaceId, "workspaceId")
-    const workspacePath = requireString(body.workspacePath, "workspacePath")
-    const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
-    const workerId = requireString(body.workerId, "workerId")
-    const acpSessionId = requireString(body.acpSessionId, "acpSessionId")
-    const existing = findRuntimeByBusinessSessionId(businessSessionId)
-    if (existing && existing.client.getSessionId() === acpSessionId) return toBootstrap(existing)
-    const entry = createRuntimeEntry({
-      runtimeShellBaseUrl: input.runtimeShellBaseUrl,
-      workerToken: input.workerToken,
-      businessSessionId,
-      workspaceId,
-      workspacePath,
-      sandboxPath,
-      workerId,
-      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
+    const request = readSessionResumeRequest(body)
+    return openManagedSession(input, request, {
+      action: "load",
+      matchesExisting: (entry) => entry.client.getSessionId() === request.acpSessionId,
+      warmStart: (entry, cwd) => entry.client.loadSession(cwd, request.acpSessionId),
+      coldStart: (entry) => entry.client.loadSession(request.sandboxPath, request.acpSessionId),
     })
-    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.loadSession(sandboxPath, acpSessionId))).catch((error) => {
-      log.warn("worker load session failed", {
-        businessSessionId,
-        workerId,
-        workspacePath,
-        sandboxPath,
-        acpSessionId,
-        message: error instanceof Error ? error.message : String(error),
-      })
-      throw error
-    })
-    updateSnapshot(entry, response)
-    rememberRuntime(entry)
-    return toBootstrap(entry)
   }
 
   async function resumeSession(body: Record<string, unknown>) {
-    const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
-    const workspaceId = requireString(body.workspaceId, "workspaceId")
-    const workspacePath = requireString(body.workspacePath, "workspacePath")
-    const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
-    const workerId = requireString(body.workerId, "workerId")
-    const acpSessionId = requireString(body.acpSessionId, "acpSessionId")
-    const existing = findRuntimeByBusinessSessionId(businessSessionId)
-    if (existing && existing.client.getSessionId() === acpSessionId) return toBootstrap(existing)
-    const entry = createRuntimeEntry({
-      runtimeShellBaseUrl: input.runtimeShellBaseUrl,
-      workerToken: input.workerToken,
-      businessSessionId,
-      workspaceId,
-      workspacePath,
-      sandboxPath,
-      workerId,
-      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
+    const request = readSessionResumeRequest(body)
+    return openManagedSession(input, request, {
+      action: "resume",
+      matchesExisting: (entry) => entry.client.getSessionId() === request.acpSessionId,
+      warmStart: (entry, cwd) => entry.client.resumeSession(cwd, request.acpSessionId),
+      coldStart: (entry) => entry.client.resumeSession(request.sandboxPath, request.acpSessionId),
     })
-    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.resumeSession(sandboxPath, acpSessionId))).catch((error) => {
-      log.warn("worker resume session failed", {
-        businessSessionId,
-        workerId,
-        workspacePath,
-        sandboxPath,
-        acpSessionId,
-        message: error instanceof Error ? error.message : String(error),
-      })
-      throw error
-    })
-    updateSnapshot(entry, response)
-    rememberRuntime(entry)
-    return toBootstrap(entry)
   }
 
   async function forkSession(body: Record<string, unknown>) {
-    const businessSessionId = requireString(body.businessSessionId, "businessSessionId")
-    const workspaceId = requireString(body.workspaceId, "workspaceId")
-    const workspacePath = requireString(body.workspacePath, "workspacePath")
-    const sandboxPath = typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath
-    const workerId = requireString(body.workerId, "workerId")
-    const sourceAcpSessionId = requireString(body.sourceAcpSessionId, "sourceAcpSessionId")
-    const entry = createRuntimeEntry({
-      runtimeShellBaseUrl: input.runtimeShellBaseUrl,
-      workerToken: input.workerToken,
-      businessSessionId,
-      workspaceId,
-      workspacePath,
-      sandboxPath,
-      workerId,
-      configContent: typeof body.configContent === "string" ? body.configContent : undefined,
+    const request = readSessionForkRequest(body)
+    return openManagedSession(input, request, {
+      action: "fork",
+      useWarmRuntime: false,
+      matchesExisting: () => false,
+      coldStart: (entry) => entry.client.forkSession(request.sandboxPath, request.sourceAcpSessionId),
     })
-    const response = await rememberOpeningRuntime(entry, () => openRuntimeEntry(entry, () => entry.client.forkSession(sandboxPath, sourceAcpSessionId))).catch((error) => {
-      log.warn("worker fork session failed", {
-        businessSessionId,
-        workerId,
-        workspacePath,
-        sandboxPath,
-        sourceAcpSessionId,
-        message: error instanceof Error ? error.message : String(error),
-      })
-      throw error
-    })
-    updateSnapshot(entry, response)
-    rememberRuntime(entry)
-    return toBootstrap(entry)
   }
 
   async function sendPrompt(body: Record<string, unknown>) {
@@ -217,7 +155,11 @@ export function createRuntimeHandlers(input: {
       entry.closing = true
       forgetRuntime(entry)
       try {
-        await entry.client.close()
+        if (entry.releaseRuntime) {
+          await entry.releaseRuntime()
+        } else {
+          await entry.client.close()
+        }
       } finally {
         await entry.closeSandbox?.()
       }
@@ -288,10 +230,85 @@ async function openRuntimeEntry<T>(entry: ReturnType<typeof createRuntimeEntry>,
     return await open()
   } catch (error) {
     entry.closing = true
-    await entry.client.close().catch(() => {})
+    if (entry.releaseRuntime) {
+      await entry.releaseRuntime().catch(() => {})
+    } else {
+      await entry.client.close().catch(() => {})
+    }
     await entry.closeSandbox?.().catch(() => {})
     throw error
   }
+}
+
+async function openManagedSession(
+  runtimeContext: {
+    runtimeShellBaseUrl: string
+    workerToken: string
+  },
+  request: SessionRuntimeRequest,
+  input: {
+    action: "open" | "load" | "resume" | "fork"
+    useWarmRuntime?: boolean
+    matchesExisting: (entry: RuntimeEntry) => boolean
+    warmStart?: (entry: RuntimeEntry, cwd: string) => Promise<Record<string, unknown>>
+    coldStart: (entry: RuntimeEntry) => Promise<Record<string, unknown>>
+  },
+) {
+  return runRuntimeBootstrap(request.businessSessionId, async () => {
+    const existing = findRuntimeByBusinessSessionId(request.businessSessionId)
+    if (existing && input.matchesExisting(existing)) return toBootstrap(existing)
+    const warmEntry = input.useWarmRuntime === false
+      ? undefined
+      : await tryOpenWarmRuntimeEntry({
+          runtimeShellBaseUrl: runtimeContext.runtimeShellBaseUrl,
+          workerToken: runtimeContext.workerToken,
+          ...request,
+        })
+    if (warmEntry && input.warmStart) {
+      return openAndRememberRuntimeEntry({
+        entry: warmEntry,
+        request,
+        actionLabel: `warm ${input.action} session`,
+        start: () => input.warmStart!(warmEntry, warmEntry.sandboxHandle?.runtimeCwd || request.sandboxPath),
+      })
+    }
+    const entry = createRuntimeEntry({
+      runtimeShellBaseUrl: runtimeContext.runtimeShellBaseUrl,
+      workerToken: runtimeContext.workerToken,
+      ...request,
+      configFingerprint: computeRuntimeConfigFingerprint(request.configContent),
+    })
+    return openAndRememberRuntimeEntry({
+      entry,
+      request,
+      actionLabel: input.action === "fork" ? "fork session" : `${input.action} session`,
+      start: () => input.coldStart(entry),
+    })
+  })
+}
+
+async function openAndRememberRuntimeEntry(input: {
+  entry: RuntimeEntry
+  request: SessionRuntimeRequest
+  actionLabel: string
+  start: () => Promise<Record<string, unknown>>
+}) {
+  const response = await rememberOpeningRuntime(
+    input.entry,
+    () => openRuntimeEntry(input.entry, input.start),
+  ).catch((error) => {
+    log.warn(`worker ${input.actionLabel} failed`, {
+      businessSessionId: input.request.businessSessionId,
+      workerId: input.request.workerId,
+      workspacePath: input.request.workspacePath,
+      sandboxPath: input.request.sandboxPath,
+      message: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  })
+  updateSnapshot(input.entry, response)
+  rememberRuntime(input.entry)
+  return toBootstrap(input.entry)
 }
 
 async function rememberOpeningRuntime<T>(entry: ReturnType<typeof createRuntimeEntry>, open: () => Promise<T>) {
@@ -310,5 +327,48 @@ async function rememberOpeningRuntime<T>(entry: ReturnType<typeof createRuntimeE
       workerId: entry.workerId,
       containerName: entry.sandboxHandle?.containerName,
     })
+  }
+}
+
+async function runRuntimeBootstrap<T extends ReturnType<typeof toBootstrap>>(
+  businessSessionId: string,
+  taskFactory: () => Promise<T>,
+) {
+  const existing = pendingRuntimeBootstraps.get(businessSessionId)
+  if (existing) return existing as Promise<T>
+  const task = taskFactory()
+  pendingRuntimeBootstraps.set(businessSessionId, task)
+  try {
+    return await task
+  } finally {
+    if (pendingRuntimeBootstraps.get(businessSessionId) === task) {
+      pendingRuntimeBootstraps.delete(businessSessionId)
+    }
+  }
+}
+
+function readSessionRuntimeRequest(body: Record<string, unknown>): SessionRuntimeRequest {
+  const workspacePath = requireString(body.workspacePath, "workspacePath")
+  return {
+    businessSessionId: requireString(body.businessSessionId, "businessSessionId"),
+    workspaceId: requireString(body.workspaceId, "workspaceId"),
+    workspacePath,
+    sandboxPath: typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath,
+    workerId: requireString(body.workerId, "workerId"),
+    configContent: typeof body.configContent === "string" ? body.configContent : undefined,
+  }
+}
+
+function readSessionResumeRequest(body: Record<string, unknown>): SessionResumeRequest {
+  return {
+    ...readSessionRuntimeRequest(body),
+    acpSessionId: requireString(body.acpSessionId, "acpSessionId"),
+  }
+}
+
+function readSessionForkRequest(body: Record<string, unknown>): SessionForkRequest {
+  return {
+    ...readSessionRuntimeRequest(body),
+    sourceAcpSessionId: requireString(body.sourceAcpSessionId, "sourceAcpSessionId"),
   }
 }

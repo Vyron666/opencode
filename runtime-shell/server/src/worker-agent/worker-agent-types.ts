@@ -23,6 +23,8 @@ export type RuntimeEntry = {
   sandboxPath?: string
   sandboxHandle?: SandboxHandle
   closeSandbox?: () => Promise<void>
+  releaseRuntime?: () => Promise<void>
+  disposeClientExitHandler?: () => void
   client: AcpProcessClient
   snapshot: RuntimeSnapshot
   closing: boolean

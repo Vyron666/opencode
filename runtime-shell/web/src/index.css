@@ -3,6 +3,28 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg: #eef4ff;
+    --bg-strong: #e3edfc;
+    --bg-raised: #d6e4fb;
+    --surface: #ffffff;
+    --surface-muted: #f8fbff;
+    --surface-soft: rgba(248, 250, 255, 0.92);
+    --line: #d9e5f7;
+    --line-strong: #c5d7f3;
+    --line-focus: rgba(37, 99, 235, 0.18);
+    --text: #0f172a;
+    --text-dim: #334155;
+    --text-muted: #64748b;
+    --brand: #2563eb;
+    --brand-strong: #1d4ed8;
+    --brand-text: #1e40af;
+    --brand-soft: rgba(37, 99, 235, 0.1);
+    --accent: #0ea5e9;
+    --danger: #dc2626;
+    --success: #059669;
+  }
+
   *,
   *::before,
   *::after { box-sizing: border-box; margin: 0; }
@@ -22,11 +44,11 @@
     font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
     font-size: 14px;
     line-height: 1.6;
-    color: #e4d9cc;
+    color: var(--text);
     background:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(212,160,90,0.06), transparent),
-      radial-gradient(ellipse 40% 60% at 80% 120%, rgba(212,120,92,0.04), transparent),
-      #14100d;
+      radial-gradient(circle at top left, rgba(37,99,235,0.12), transparent 32%),
+      radial-gradient(circle at right 12%, rgba(14,165,233,0.10), transparent 28%),
+      linear-gradient(180deg, #f7faff 0%, #edf4ff 48%, #e8f0ff 100%);
     overflow: hidden;
   }
 
@@ -38,14 +60,14 @@
   select:focus-visible,
   [tabindex]:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(212,160,90,0.28);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.16);
   }
 
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(166,152,136,0.22); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(166,152,136,0.36); }
+  ::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.28); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.42); }
 
   @media (max-width: 1520px) {
     body { overflow: auto; }
@@ -60,8 +82,8 @@
   }
 
   .is-dragover {
-    border-color: rgba(212,160,90,0.5) !important;
-    box-shadow: 0 0 0 3px rgba(212,160,90,0.12);
+    border-color: rgba(37,99,235,0.45) !important;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
   }
 
   .markdown-body {
@@ -91,7 +113,7 @@
 
   .markdown-body hr {
     border: none;
-    border-top: 1px solid rgba(181,148,116,0.18);
+    border-top: 1px solid var(--line);
     margin: 1rem 0;
   }
 
@@ -104,5 +126,15 @@
   .markdown-body code,
   .markdown-body table {
     max-width: 100%;
+  }
+}
+
+@layer components {
+  .panel-card {
+    @apply border border-[var(--line)] bg-[var(--surface)] shadow-[0_16px_36px_rgba(15,23,42,0.08)];
+  }
+
+  .panel-soft {
+    @apply border border-[var(--line)] bg-[var(--surface-muted)];
   }
 }

@@ -10,6 +10,7 @@ import { createUpstreamDrainController } from "../runtime/upstream-drain"
 import type { SessionEvent } from "../types"
 import { recordPromptEventTrace } from "./worker-agent-prompt-observe"
 import { createSandboxManager } from "./sandbox/sandbox-manager"
+import type { SandboxHandle } from "./sandbox/sandbox-types"
 import { forgetRuntime } from "./worker-agent-store"
 import type { RuntimeEntry, RuntimeSnapshot } from "./worker-agent-types"
 
@@ -22,9 +23,9 @@ export function createRuntimeEntry(input: {
   sandboxPath?: string
   workerId: string
   configContent?: string
+  configFingerprint?: string
 }) {
   const remoteRuntimeId = `rrt_${crypto.randomUUID().replace(/-/g, "")}`
-  const upstreamDrain = createUpstreamDrainController()
   const sandboxManager = createSandboxManager(Config.sandboxBackend)
   const sandboxHandle = sandboxManager.prepare({
     businessSessionId: input.businessSessionId,
@@ -32,63 +33,88 @@ export function createRuntimeEntry(input: {
     workerId: input.workerId,
     workspacePath: input.workspacePath,
     sandboxPath: input.sandboxPath,
+    configFingerprint: input.configFingerprint,
   })
   const runtimeCwd = sandboxHandle.runtimeCwd || input.sandboxPath || input.workspacePath
-  const entry: RuntimeEntry = {
+  const client = new AcpProcessClient(
+    {
+      // 中文/English: ACP must run inside the sandbox copy when present,
+      // otherwise sandbox mount validation and write isolation both break.
+      cwd: runtimeCwd,
+      businessSessionId: input.businessSessionId,
+      workerId: input.workerId,
+      configContent: input.configContent,
+      onEvent: async () => {
+        // 中文/English: runtime entry context is bound immediately after construction.
+      },
+    },
+    () => Promise.resolve(),
+    (options) =>
+      sandboxManager.attachAcp({
+        handle: sandboxHandle,
+        runtimeClientOptions: options,
+      }),
+  )
+  const entry = createRuntimeEntryFromClient({
     remoteRuntimeId,
+    runtimeShellBaseUrl: input.runtimeShellBaseUrl,
+    workerToken: input.workerToken,
+    businessSessionId: input.businessSessionId,
+    workspaceId: input.workspaceId,
+    workspacePath: input.workspacePath,
+    sandboxPath: input.sandboxPath,
+    workerId: input.workerId,
+    client,
+    sandboxHandle,
+    closeSandbox: () => sandboxManager.close({ handle: sandboxHandle }),
+  })
+  bindRuntimeEntryClientContext(entry, {
+    runtimeShellBaseUrl: input.runtimeShellBaseUrl,
+    workerToken: input.workerToken,
+    cwd: runtimeCwd,
+    configContent: input.configContent,
+  })
+  return entry
+}
+
+export function createRuntimeEntryFromClient(input: {
+  remoteRuntimeId?: string
+  runtimeShellBaseUrl: string
+  workerToken: string
+  businessSessionId: string
+  workspaceId: string
+  workspacePath: string
+  sandboxPath?: string
+  workerId: string
+  client: AcpProcessClient
+  sandboxHandle?: SandboxHandle
+  closeSandbox?: () => Promise<void>
+  releaseRuntime?: () => Promise<void>
+}): RuntimeEntry {
+  const entry: RuntimeEntry = {
+    remoteRuntimeId: input.remoteRuntimeId || `rrt_${crypto.randomUUID().replace(/-/g, "")}`,
     businessSessionId: input.businessSessionId,
     workspaceId: input.workspaceId,
     workerId: input.workerId,
     workspacePath: input.workspacePath,
     sandboxPath: input.sandboxPath,
-    sandboxHandle,
-    closeSandbox: () => sandboxManager.close({ handle: sandboxHandle }),
-    client: new AcpProcessClient(
-      {
-        // 中文/English: ACP must run inside the sandbox copy when present,
-        // otherwise sandbox mount validation and write isolation both break.
-        cwd: runtimeCwd,
-        businessSessionId: input.businessSessionId,
-        workerId: input.workerId,
-        configContent: input.configContent,
-        onEvent: async (event) => {
-          const nextPush = pushEvent({
-            runtimeShellBaseUrl: input.runtimeShellBaseUrl,
-            workerToken: input.workerToken,
-            entry,
-            event,
-          })
-          upstreamDrain.track(nextPush)
-          await nextPush
-        },
-      },
-      () => {
-        // 中文/English: mirror the local runtime drain semantics so remote worker
-        // prompts also wait for persisted tail events before reporting completion.
-        return upstreamDrain.waitForQuiet()
-      },
-      (options) => {
-        // 中文/English: keep ACP transport unchanged while the selected sandbox
-        // backend owns process creation and lifecycle isolation.
-        return sandboxManager.attachAcp({
-          handle: sandboxHandle,
-          runtimeClientOptions: options,
-        })
-      },
-    ),
+    sandboxHandle: input.sandboxHandle,
+    closeSandbox: input.closeSandbox,
+    releaseRuntime: input.releaseRuntime,
+    client: input.client,
     snapshot: {},
     closing: false,
     openedAt: new Date().toISOString(),
     pendingPermissions: new Map(),
     pendingQuestions: new Map(),
   }
-  entry.client.onPermissionRequested((permission) => {
+  input.client.onPermissionRequested((permission) => {
     entry.pendingPermissions.set(permission.requestId, permission)
   })
-  entry.client.onQuestionRequested((question) => {
+  input.client.onQuestionRequested((question) => {
     entry.pendingQuestions.set(question.requestId, question)
   })
-  entry.client.onExit((code, signal) => {
+  entry.disposeClientExitHandler = input.client.onExit((code, signal) => {
     forgetRuntime(entry)
     void entry.closeSandbox?.()
     if (entry.closing) return
@@ -117,6 +143,32 @@ export function createRuntimeEntry(input: {
     })
   })
   return entry
+}
+
+export function bindRuntimeEntryClientContext(input: RuntimeEntry, context: {
+  runtimeShellBaseUrl: string
+  workerToken: string
+  cwd: string
+  configContent?: string
+}) {
+  const upstreamDrain = createUpstreamDrainController()
+  input.client.setContext({
+    cwd: context.cwd,
+    businessSessionId: input.businessSessionId,
+    workerId: input.workerId,
+    configContent: context.configContent,
+    onEvent: async (event) => {
+      const nextPush = pushEvent({
+        runtimeShellBaseUrl: context.runtimeShellBaseUrl,
+        workerToken: context.workerToken,
+        entry: input,
+        event,
+      })
+      upstreamDrain.track(nextPush)
+      await nextPush
+    },
+  })
+  input.client.setWaitForPendingEvents(() => upstreamDrain.waitForQuiet())
 }
 
 export function toBootstrap(entry: RuntimeEntry) {

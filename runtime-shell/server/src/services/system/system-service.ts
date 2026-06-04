@@ -7,6 +7,7 @@ import { authorizeSystemWorkersAccess } from "../access/authorization-service"
 import {
   cleanupClosedSandboxWorkspace,
   cleanupClosedSandboxWorkspaces,
+  cleanupStaleInactiveSandboxInstances,
   cleanupStalePreparedSandboxWorkspaces,
   closeSandboxWorkspace,
   markSandboxWorkspaceClosing,
@@ -175,6 +176,7 @@ export async function cleanupSandboxesForUser(input: {
 
   const closedWorkspaceCleanup = await cleanupClosedSandboxWorkspaces(input.limit)
   const stalePreparedCleanup = await cleanupStalePreparedSandboxWorkspaces(input.limit)
+  const staleInactiveCleanup = await cleanupStaleInactiveSandboxInstances(input.limit)
   const warmPoolCleanup = await cleanupWarmPoolForAllWorkers(input.recycleWarmPoolReady)
 
   return {
@@ -183,6 +185,7 @@ export async function cleanupSandboxesForUser(input: {
       ...cleanedSessionIds,
       ...closedWorkspaceCleanup.map((item) => item.sessionId),
       ...stalePreparedCleanup.map((item) => item.sessionId),
+      ...staleInactiveCleanup.map((item) => item.sessionId),
     ])],
     warmPoolCleanup,
   }

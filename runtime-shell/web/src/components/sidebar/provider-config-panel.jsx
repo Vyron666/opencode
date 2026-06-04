@@ -195,7 +195,7 @@ export function ProviderConfigPanel() {
         }}
         className="grid gap-2 animate-fade-in"
       >
-        <div className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] bg-[rgba(12,9,7,0.52)] p-3.5">
+        <div className="grid gap-2.5 rounded-[18px] border border-[var(--line)] bg-white p-3.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
           <span className="text-xs font-medium text-[var(--text-dim)]">常用预设</span>
           <div className="flex flex-wrap gap-2">
             {PROVIDER_PRESETS.map((preset) => (
@@ -216,8 +216,8 @@ export function ProviderConfigPanel() {
                 }}
                 className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
                   presetId === preset.id
-                    ? 'border-brand/20 bg-brand/10 text-brand-text'
-                    : 'border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35'
+                    ? 'border-brand bg-brand text-white shadow-[0_10px_24px_rgba(37,99,235,0.16)]'
+                    : 'border-[var(--line)] bg-[var(--surface-muted)] text-[var(--text-dim)] hover:bg-[var(--bg-strong)]'
                 }`}
               >
                 {preset.label}
@@ -252,7 +252,7 @@ export function ProviderConfigPanel() {
         </Field>
 
         {impactPreview ? (
-          <div className="rounded-[10px] border border-[var(--line)] bg-black/20 px-3 py-2 text-[11px] text-[var(--text-dim)]">
+          <div className="rounded-[12px] border border-brand/15 bg-brand/5 px-3 py-2 text-[11px] text-[var(--text-dim)]">
             {impactPreview.summary}；预计影响 {impactPreview.affectedSessionCount} 个活跃会话
           </div>
         ) : null}
@@ -260,7 +260,10 @@ export function ProviderConfigPanel() {
         <div className="grid gap-2">
           <span className="text-xs font-medium text-[var(--text-dim)]">模型列表</span>
           {models.map((model, index) => (
-            <div key={`provider-model-${index}`} className="grid gap-2 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
+            <div
+              key={`provider-model-${index}`}
+              className="grid gap-2 rounded-[16px] border border-[var(--line)] bg-[var(--surface-muted)] p-3"
+            >
               <input
                 value={model.id}
                 onChange={(event) => setModels((current) => current.map((item, currentIndex) => (currentIndex === index ? { ...item, id: event.target.value } : item)))}
@@ -297,7 +300,7 @@ export function ProviderConfigPanel() {
         <button
           type="submit"
           disabled={Boolean(pendingSettingsAction) || Boolean(pendingSessionAction)}
-          className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded-[12px] bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] shadow-[0_12px_30px_rgba(37,99,235,0.18)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {pendingSettingsAction === 'provider' ? '保存中...' : '保存 Provider 配置'}
         </button>

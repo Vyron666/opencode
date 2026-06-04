@@ -29,7 +29,8 @@ services:
     environment:
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
-      OPENCODE_DISABLE_MODELS_FETCH: "0"
+      OPENCODE_DISABLE_MODELS_FETCH: "1"
+      OPENCODE_MODELS_PATH: /workspace/runtime-shell/config/models-api.json
       # 中文/English: keep QuestionTool enabled on every worker node so runtime-shell sees the same interaction surface.
       OPENCODE_ENABLE_QUESTION_TOOL: "1"
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
@@ -68,7 +69,8 @@ services:
     environment:
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
-      OPENCODE_DISABLE_MODELS_FETCH: "0"
+      OPENCODE_DISABLE_MODELS_FETCH: "1"
+      OPENCODE_MODELS_PATH: /workspace/runtime-shell/config/models-api.json
       # 中文/English: keep QuestionTool enabled on every worker node so runtime-shell sees the same interaction surface.
       OPENCODE_ENABLE_QUESTION_TOOL: "1"
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
@@ -107,7 +109,8 @@ services:
     environment:
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
-      OPENCODE_DISABLE_MODELS_FETCH: "0"
+      OPENCODE_DISABLE_MODELS_FETCH: "1"
+      OPENCODE_MODELS_PATH: /workspace/runtime-shell/config/models-api.json
       # 中文/English: keep QuestionTool enabled on every worker node so runtime-shell sees the same interaction surface.
       OPENCODE_ENABLE_QUESTION_TOOL: "1"
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
@@ -172,6 +175,8 @@ services:
         [{"id":"worker_local","workerCode":"worker_local","name":"opencode-worker","baseUrl":"http://opencode-worker:4096","agentBaseUrl":"http://opencode-worker:4097","capacity":8,"version":"local-1","warmPoolTarget":1},{"id":"worker_local_2","workerCode":"worker_local_2","name":"opencode-worker-2","baseUrl":"http://opencode-worker-2:4096","agentBaseUrl":"http://opencode-worker-2:4097","capacity":8,"version":"local-2","warmPoolTarget":1},{"id":"worker_local_3","workerCode":"worker_local_3","name":"opencode-worker-3","baseUrl":"http://opencode-worker-3:4096","agentBaseUrl":"http://opencode-worker-3:4097","capacity":8,"version":"local-3","warmPoolTarget":1}]
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
+      OPENCODE_DISABLE_MODELS_FETCH: "1"
+      OPENCODE_MODELS_PATH: /app/config/models-api.json
       # ACP 子进程需要读取 opencode 配置来加载自定义 provider/model
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
       OPENCODE_ACP_SPAWN_CWD: /workspace

@@ -22,6 +22,7 @@ export default function LeftSidebar({ onOpenSettings }) {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const hasCurrentSession = Boolean(currentSessionId)
+
   const filteredSessions = useMemo(() => {
     const trimmedQuery = query.trim().toLowerCase()
     if (!trimmedQuery) return sessions
@@ -33,35 +34,36 @@ export default function LeftSidebar({ onOpenSettings }) {
   }, [query, sessions])
 
   return (
-    <aside className="min-h-0 h-[calc(100dvh-28px)] min-w-0 flex flex-col gap-2.5 overflow-visible max-[1024px]:order-1 max-[1024px]:h-auto">
-      <div className="relative z-20 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 grid gap-3">
+    <aside className="min-h-0 h-full min-w-0 flex flex-col gap-4 overflow-visible max-[1024px]:order-1 max-[1024px]:h-auto">
+      <div className="relative z-20 grid gap-4 rounded-[28px] border border-[var(--line)] bg-[linear-gradient(180deg,#f8fbff,#f1f6ff)] p-5 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
         <div className="grid gap-3">
           <div className="flex items-start gap-3">
             <div
-              className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0 font-extrabold text-sm text-[#14100d]"
-              style={{ background: 'linear-gradient(135deg, #d4a05a, #9c6e38)', boxShadow: '0 0 0 1px rgba(212,160,90,0.14), 0 4px 20px rgba(212,160,90,0.08)' }}
+              className="grid h-12 w-12 place-items-center rounded-[14px] text-sm font-extrabold text-white"
+              style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', boxShadow: '0 12px 24px rgba(37,99,235,0.18)' }}
               aria-hidden="true"
             >
               RS
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Runtime Shell</div>
-              <div className="text-[15px] font-bold leading-tight mt-1">会话中心</div>
+              <div className="mt-1 text-[18px] font-bold leading-tight text-[var(--text)]">会话中心</div>
+              <div className="mt-1 text-[12px] text-[var(--text-muted)]">统一管理会话、工作区与运行入口</div>
             </div>
           </div>
 
           {user ? (
-            <div className="flex items-start justify-between gap-3 rounded-[16px] border border-[var(--line)] bg-black/15 px-3.5 py-3">
+            <div className="flex items-start justify-between gap-3 rounded-[20px] border border-[var(--line)] bg-white/80 px-4 py-3.5">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-brand/80">当前账号</div>
-                <div className="text-sm font-semibold break-words leading-tight mt-1">{user.displayName}</div>
-                <div className="text-[11px] text-[var(--text-muted)] mt-1">{roleLabel(user.role)}</div>
+                <div className="mt-1 text-sm font-semibold leading-tight text-[var(--text)] break-words">{user.displayName}</div>
+                <div className="mt-1 text-[11px] text-[var(--text-muted)]">{roleLabel(user.role)}</div>
               </div>
               <button
                 type="button"
                 onClick={() => setConfirmLogout(true)}
                 aria-label="退出登录"
-                className="mt-0.5 shrink-0 text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+                className="mt-0.5 shrink-0 rounded-[10px] border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-semibold text-[var(--text-dim)] transition-colors hover:bg-[var(--bg-strong)]"
               >
                 退出
               </button>
@@ -74,31 +76,31 @@ export default function LeftSidebar({ onOpenSettings }) {
             type="button"
             onClick={() => void createQuickSession()}
             disabled={Boolean(pendingSessionAction)}
-            className="flex-1 min-w-0 rounded-[13px] px-3.5 py-2.5 text-sm font-semibold bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 min-w-0 rounded-[14px] bg-brand px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pendingSessionAction === 'create' ? '创建中...' : '新对话'}
+            {pendingSessionAction === 'create' ? '创建中...' : '新建会话'}
           </button>
 
           <button
             type="button"
             onClick={onOpenSettings}
-            className="shrink-0 rounded-[13px] px-3 py-2.5 text-xs font-semibold border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+            className="shrink-0 rounded-[14px] border border-[var(--line)] bg-white px-3.5 py-3 text-xs font-semibold text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)]"
           >
-            工作区
+            设置
           </button>
 
           <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setActionsOpen((current) => !current)}
-              className="h-[42px] w-[42px] rounded-[13px] border border-[var(--line)] bg-black/20 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+              className="h-[46px] w-[46px] rounded-[14px] border border-[var(--line)] bg-white text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)]"
               aria-label="打开会话操作"
             >
-              ⋯
+              ...
             </button>
 
             {actionsOpen ? (
-              <div className="absolute right-0 top-[48px] z-40 w-48 rounded-[16px] border border-[var(--line)] bg-[var(--surface)] shadow-2xl p-2 grid gap-1">
+              <div className="absolute right-0 top-[52px] z-40 grid w-48 gap-1 rounded-[18px] border border-[var(--line)] bg-white p-2 shadow-[0_20px_48px_rgba(15,23,42,0.16)]">
                 <button
                   type="button"
                   onClick={() => {
@@ -128,7 +130,7 @@ export default function LeftSidebar({ onOpenSettings }) {
                     setConfirmClose(true)
                   }}
                   disabled={Boolean(pendingSessionAction) || !canManageSession}
-                  className="w-full text-left text-xs px-3 py-1.5 rounded-[8px] bg-danger/10 text-[#e88a7a] border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full rounded-[10px] border border-danger/20 bg-danger/10 px-3 py-2 text-left text-xs font-semibold text-danger transition-colors hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {pendingSessionAction === 'close' ? '关闭中...' : '关闭当前会话'}
                 </button>
@@ -137,11 +139,11 @@ export default function LeftSidebar({ onOpenSettings }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[rgba(181,148,116,0.14)] bg-[rgba(12,9,7,0.42)] px-3.5 py-2.5">
+        <div className="flex items-center justify-between gap-3 rounded-[18px] border border-[var(--line)] bg-white/75 px-4 py-3">
           <div className="min-w-0">
             <div className="text-[11px] font-semibold text-[var(--text-dim)]">工作区</div>
-            <div className="text-[11px] text-[var(--text-muted)] mt-1">
-              {workspaces.length > 0 ? `已配置 ${workspaces.length} 个工作区，可继续新建或切换会话。` : '还没有工作区，先创建一个再开始对话。'}
+            <div className="mt-1 text-[11px] text-[var(--text-muted)]">
+              {workspaces.length > 0 ? `已配置 ${workspaces.length} 个工作区，可以继续创建或切换会话。` : '还没有工作区，先创建一个再开始对话。'}
             </div>
           </div>
           <button type="button" onClick={onOpenSettings} className={secondaryButtonClassName}>
@@ -150,27 +152,27 @@ export default function LeftSidebar({ onOpenSettings }) {
         </div>
 
         {isSharedSession ? (
-          <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-            {`当前会话来自共享工作区协作${owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。`}
+          <div className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+            {`当前会话来自共享工作区${owner?.displayName ? `，共享人：${owner.displayName}` : ''}。你可以继续对话和处理交互，但不能关闭该会话。`}
           </div>
         ) : !hasCurrentSession ? (
-          <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-            先从会话列表中选择一个会话，再执行加载历史或恢复操作。
+          <div className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+            先从会话列表里选择一个会话，再执行加载历史或恢复操作。
           </div>
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md backdrop-blur-2xl p-4 flex flex-col">
-        <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="min-h-0 flex-1 rounded-[28px] border border-[var(--line)] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-brand">Sessions</span>
-            <h3 className="text-sm font-bold mt-0.5">最近活动</h3>
+            <h3 className="mt-1 text-[18px] font-bold text-[var(--text)]">最近活动</h3>
           </div>
           <button
             type="button"
             onClick={() => void loadSessions()}
             aria-label="刷新会话列表"
-            className="text-xs px-3 py-1.5 rounded-[8px] bg-brand/10 text-brand-text border border-[var(--line)] hover:bg-brand/20 transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+            className="rounded-[10px] border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-brand transition-colors hover:bg-[var(--surface-muted)]"
           >
             刷新
           </button>
@@ -180,12 +182,12 @@ export default function LeftSidebar({ onOpenSettings }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="搜索会话..."
-          className="w-full rounded-[12px] border border-[var(--line-strong)] px-3 py-2 bg-black/35 text-sm outline-none focus:border-[rgba(212,160,90,0.28)] placeholder:text-[var(--text-muted)]"
+          className="w-full rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] px-3.5 py-3 text-sm text-[var(--text)] outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)] placeholder:text-[var(--text-muted)]"
         />
 
-        <div className="grid gap-2 flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-3 pr-1">
+        <div className="mt-4 grid min-h-0 flex-1 gap-2 overflow-y-auto overflow-x-hidden pr-1">
           {filteredSessions.length === 0 ? (
-            <div className="text-xs text-[var(--text-muted)] text-center py-4 border border-dashed border-[var(--line-strong)] rounded-[14px]">
+            <div className="rounded-[18px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)] py-5 text-center text-xs text-[var(--text-muted)]">
               {sessions.length === 0 ? '暂无会话，请先创建。' : '没有匹配的会话。'}
             </div>
           ) : null}
@@ -204,12 +206,12 @@ export default function LeftSidebar({ onOpenSettings }) {
                       : '异常'
             const dotColor =
               session.status === 'active' || session.status === 'waiting_input' || session.status === 'cancelling'
-                ? '#5a9e7c'
+                ? '#059669'
                 : session.status === 'opening' || session.status === 'created'
-                  ? '#d4a05a'
+                  ? '#2563eb'
                   : session.status === 'completed'
-                    ? '#7a6e60'
-                    : '#c44a3a'
+                    ? '#94a3b8'
+                    : '#dc2626'
             const title = session.title || '新对话'
             const preview = readSessionPreview(session) || (session.visibility === 'workspace_share' ? '共享工作区会话' : '点击继续对话')
 
@@ -223,19 +225,23 @@ export default function LeftSidebar({ onOpenSettings }) {
                 }}
                 aria-label={`选择会话: ${title}`}
                 aria-current={isActive ? 'true' : undefined}
-                className={`w-full text-left px-3.5 py-3 rounded-[16px] border text-sm transition-all ${
+                className={`w-full rounded-[18px] border px-3.5 py-3 text-left text-sm transition-all ${
                   isActive
-                    ? 'border-brand bg-[rgba(212,160,90,0.12)] shadow-[0_12px_32px_rgba(212,160,90,0.08)]'
-                    : 'border-[rgba(181,148,116,0.14)] bg-[rgba(14,11,9,0.72)] hover:bg-black/45 hover:border-[var(--line-strong)]'
+                    ? 'border-brand bg-brand/10 shadow-[0_12px_32px_rgba(37,99,235,0.12)]'
+                    : 'border-[var(--line)] bg-[var(--surface-muted)] hover:border-[var(--line-strong)] hover:bg-white'
                 }`}
               >
                 <div className="flex items-start gap-2">
-                  <span className="inline-block w-2 h-2 rounded-full shrink-0 mt-1" style={{ background: dotColor, boxShadow: `0 0 0 4px ${isActive ? 'rgba(212,160,90,0.08)' : 'rgba(255,255,255,0.03)'}` }} aria-hidden="true"></span>
+                  <span
+                    className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: dotColor, boxShadow: `0 0 0 4px ${isActive ? 'rgba(37,99,235,0.08)' : 'rgba(148,163,184,0.08)'}` }}
+                    aria-hidden="true"
+                  />
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-[13px] leading-tight break-words">{title}</div>
-                    <div className="mt-1.5 text-[11px] text-[var(--text-muted)] leading-relaxed line-clamp-2">{preview}</div>
+                    <div className="break-words text-[13px] font-semibold leading-tight text-[var(--text)]">{title}</div>
+                    <div className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-[var(--text-muted)]">{preview}</div>
                   </div>
-                  <span className="text-[10px] text-[var(--text-muted)] shrink-0 rounded-full border border-[rgba(181,148,116,0.14)] bg-black/25 px-2 py-1">
+                  <span className="shrink-0 rounded-full border border-[var(--line)] bg-white px-2 py-1 text-[10px] text-[var(--text-muted)]">
                     {statusLabel}
                   </span>
                 </div>

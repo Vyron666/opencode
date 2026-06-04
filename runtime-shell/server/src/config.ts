@@ -85,6 +85,9 @@ export const Config = {
   sandboxDockerImage: process.env.RUNTIME_SHELL_SANDBOX_IMAGE || "opencode-local:latest",
   sandboxDockerAcpEntry: process.env.OPENCODE_ACP_ENTRY || "/workspace/packages/opencode/src/index.ts",
   sandboxDockerSpawnCwd: process.env.OPENCODE_ACP_SPAWN_CWD || "/workspace",
+  // 中文/English: docker sandboxes must reuse the same local models catalog path
+  // as the worker runtime when remote catalog fetch is intentionally disabled.
+  sandboxDockerModelsPath: process.env.OPENCODE_MODELS_PATH || "/workspace/runtime-shell/config/models-api.json",
   sandboxDockerSocketPath: process.env.RUNTIME_SHELL_SANDBOX_DOCKER_SOCKET || "/var/run/docker.sock",
   sandboxDockerNetworkMode: process.env.RUNTIME_SHELL_SANDBOX_NETWORK_MODE || "runtime-shell_default",
   sandboxDockerUser: process.env.RUNTIME_SHELL_SANDBOX_USER || "1000:1000",

@@ -83,15 +83,13 @@ export default function App() {
     <div className="h-dvh w-full overflow-hidden">
       {authBootstrapping ? (
         <div className="h-dvh grid place-items-center px-6 text-center">
-          <div className="grid gap-2 text-[var(--text-muted)]">
+          <div className="panel-card rounded-[28px] px-10 py-8 grid gap-2">
             <div className="text-sm font-semibold text-[var(--text)]">{bootSessionTitle || '正在恢复会话'}</div>
-            <div className="text-xs">{'正在读取登录状态与最近会话，请稍候。'}</div>
+            <div className="text-xs text-[var(--text-muted)]">正在读取登录状态与最近会话，请稍候。</div>
           </div>
         </div>
       ) : isAuthenticated ? (
-        <>
-          <MainLayout />
-        </>
+        <MainLayout />
       ) : (
         <LoginScreen />
       )}

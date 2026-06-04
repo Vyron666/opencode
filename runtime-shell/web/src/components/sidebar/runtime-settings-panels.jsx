@@ -113,8 +113,8 @@ export function ConfigSettingPanel() {
                   }}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                     currentValue === option.id
-                      ? 'bg-brand text-[#14100d] border-brand'
-                      : 'bg-black/20 text-[var(--text-dim)] border-[var(--line)] hover:bg-black/35'
+                      ? 'border-brand bg-brand text-white shadow-[0_10px_24px_rgba(37,99,235,0.16)]'
+                      : 'border-[var(--line)] bg-white text-[var(--text-dim)] hover:bg-[var(--surface-muted)]'
                   }`}
                 >
                   {option.label}

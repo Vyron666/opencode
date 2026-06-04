@@ -19,10 +19,10 @@ export default function ChatView({ settingsOpen, onOpenSettings, onCloseSettings
   const [showDebug, setShowDebug] = useState(false)
 
   return (
-    <main className="chat-shell min-h-0 h-[calc(100dvh-28px)] flex flex-col gap-2.5 overflow-hidden max-[1024px]:order-3 max-[1024px]:h-auto">
+    <main className="chat-shell min-h-0 h-full flex flex-col gap-4 overflow-hidden max-[1024px]:order-3 max-[1024px]:h-auto">
       <ConversationHeader currentSessionId={currentSessionId} sessionTitle={sessionTitle} onOpenSettings={onOpenSettings} />
       {flash ? (
-        <div className="shrink-0 rounded-[14px] px-3.5 py-2 bg-brand/10 border border-[var(--line)] text-xs text-[var(--text-dim)] animate-slide-down">
+        <div className="shrink-0 rounded-[16px] border border-brand/15 bg-brand/10 px-4 py-3 text-xs text-[var(--text-dim)] animate-slide-down">
           {flash}
         </div>
       ) : null}
@@ -30,23 +30,23 @@ export default function ChatView({ settingsOpen, onOpenSettings, onCloseSettings
       {currentSessionId ? (
         <ConversationSection currentSessionId={currentSessionId} showDebug={showDebug} />
       ) : (
-        <section className="flex-1 min-h-0 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] shadow-md overflow-hidden">
-          <div className="h-full px-6 py-8 flex items-center justify-center">
-            <div className="max-w-[520px] text-center grid gap-4">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-[18px] mx-auto bg-brand/15 text-brand text-xl font-bold">
+        <section className="flex-1 min-h-0 overflow-hidden rounded-[28px] border border-[var(--line)] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
+          <div className="flex h-full items-center justify-center bg-[linear-gradient(180deg,#ffffff,#f8fbff)] px-6 py-8">
+            <div className="grid max-w-[520px] gap-4 text-center">
+              <div className="mx-auto inline-flex h-16 w-16 items-center justify-center rounded-[20px] bg-brand text-xl font-bold text-white shadow-glow">
                 RS
               </div>
               <div className="grid gap-2">
-                <h2 className="text-2xl font-bold">开始一段新对话</h2>
-                <p className="text-sm text-[var(--text-muted)] leading-relaxed">
-                  先从左侧创建或选择一个会话。设置、模型和运行时配置都已经收进右上角的设置抽屉，不会再打断主对话区域。
+                <h2 className="text-2xl font-bold text-[var(--text)]">开始一段新对话</h2>
+                <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+                  先从左侧创建或选择一个会话。设置、模型和运行时配置都收拢到了右上角抽屉里，不会再打断主对话区域。
                 </p>
               </div>
-              <div className="flex items-center justify-center gap-3 flex-wrap">
+              <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
                   onClick={onOpenSettings}
-                  className="rounded-[12px] px-4 py-2.5 text-sm font-semibold bg-black/20 text-[var(--text-dim)] border border-[var(--line)] hover:bg-black/35 transition-colors"
+                  className="rounded-[14px] bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-strong)]"
                 >
                   打开设置
                 </button>

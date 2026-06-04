@@ -68,7 +68,7 @@ export function SkillConfigPanel() {
           }}
           className="grid gap-3 animate-fade-in"
         >
-          <div className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3.5 bg-[rgba(12,9,7,0.44)]">
+          <div className="grid gap-2.5 rounded-[18px] border border-[var(--line)] bg-white p-3.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
             <div className="text-xs font-semibold text-[var(--text-dim)]">包管理</div>
 
             <Field label="Skill ZIP">
@@ -112,9 +112,9 @@ export function SkillConfigPanel() {
               <span className="text-xs font-medium text-[var(--text-dim)]">{canManagePlatformSettings ? '当前平台 Skill 包' : '我的 Skill 包'}</span>
               {packages.length === 0 ? <div className="text-[11px] text-[var(--text-muted)]">当前还没有已上传的 Skill 包</div> : null}
               {packages.map((item) => (
-                <div key={item.id} className="grid gap-1.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
+                <div key={item.id} className="grid gap-1.5 rounded-[16px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[var(--text-primary)]">{item.displayName || item.skillName}</span>
+                    <span className="text-xs font-semibold text-[var(--text)]">{item.displayName || item.skillName}</span>
                     <span className="text-[11px] text-[var(--text-muted)]">{item.sourceLabel}</span>
                   </div>
                   <input
@@ -181,16 +181,19 @@ export function SkillConfigPanel() {
             </div>
           </div>
 
-          <div className="grid gap-2.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3.5 bg-[rgba(12,9,7,0.44)]">
+          <div className="grid gap-2.5 rounded-[18px] border border-[var(--line)] bg-white p-3.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
             <div className="text-xs font-semibold text-[var(--text-dim)]">配置管理</div>
 
             <div className="grid gap-2">
               <span className="text-xs font-medium text-[var(--text-dim)]">当前已配置的 Skill 条目</span>
               {configItems.length === 0 ? <div className="text-[11px] text-[var(--text-muted)]">当前没有已配置的 Skill 路径或 URL</div> : null}
               {configItems.map((item) => (
-                <div key={`${item.type}:${item.value}:${item.source}`} className="grid gap-1.5 rounded-[16px] border border-[rgba(181,148,116,0.14)] p-3 bg-[rgba(12,9,7,0.52)]">
+                <div
+                  key={`${item.type}:${item.value}:${item.source}`}
+                  className="grid gap-1.5 rounded-[16px] border border-[var(--line)] bg-[var(--surface-muted)] p-3"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[var(--text-primary)]">{item.type === 'path' ? 'Path' : 'URL'}</span>
+                    <span className="text-xs font-semibold text-[var(--text)]">{item.type === 'path' ? 'Path' : 'URL'}</span>
                     <span className="text-[11px] text-[var(--text-muted)]">{item.source === 'platform_shared' ? '平台共享' : '用户私有'}</span>
                   </div>
                   <div className="text-[11px] text-[var(--text-muted)] break-all">{item.value}</div>
@@ -235,12 +238,16 @@ export function SkillConfigPanel() {
           </div>
 
           {impactPreview ? (
-            <div className="rounded-[10px] border border-[var(--line)] bg-black/20 px-3 py-2 text-[11px] text-[var(--text-dim)]">
+            <div className="rounded-[12px] border border-brand/15 bg-brand/5 px-3 py-2 text-[11px] text-[var(--text-dim)]">
               {impactPreview.summary}；预计影响 {impactPreview.affectedSessionCount} 个活跃会话
             </div>
           ) : null}
 
-          <button type="submit" disabled={Boolean(pendingSettingsAction)} className="rounded-[10px] py-2.5 px-4 font-semibold text-sm bg-brand text-[#14100d] hover:brightness-110 active:scale-[0.985] transition-all shadow-glow disabled:opacity-40 disabled:cursor-not-allowed">
+          <button
+            type="submit"
+            disabled={Boolean(pendingSettingsAction)}
+            className="rounded-[12px] bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] shadow-[0_12px_30px_rgba(37,99,235,0.18)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
             {pendingSettingsAction === 'skill' ? '保存中...' : '保存 Skill 配置'}
           </button>
         </form>

@@ -1,5 +1,11 @@
 import { createLogger } from "../log"
-import { cleanupDockerWarmPool, closeDockerWarmPoolSlot, ensureDockerWarmPool, getDockerWarmPoolSnapshot } from "./sandbox/docker-sandbox-manager"
+import {
+  cleanupDockerWarmPool,
+  cleanupDockerWarmPoolProcessExit,
+  closeDockerWarmPoolSlot,
+  ensureDockerWarmPool,
+  getDockerWarmPoolSnapshot,
+} from "./sandbox/docker-sandbox-manager"
 import { queryFailure, queryHeartbeat, queryLease, queryRuntime } from "./worker-agent-query"
 import { createRuntimeHandlers } from "./worker-agent-runtime"
 
@@ -46,6 +52,9 @@ const server = Bun.serve({
       }
       if (url.pathname === "/runtime/open-session") {
         return json(await runtimeHandlers.openSession(await request.json()))
+      }
+      if (url.pathname === "/runtime/prewarm-session") {
+        return json(await runtimeHandlers.prewarmSession(await request.json()))
       }
       if (url.pathname === "/runtime/load-session") {
         return json(await runtimeHandlers.loadSession(await request.json()))
@@ -154,9 +163,7 @@ function registerGracefulShutdown() {
       try {
         // 中文/English: warm slots are pure acceleration state, so reclaim them on
         // process exit to avoid leaking detached containers after compose down/restart.
-        await cleanupDockerWarmPool({
-          recycleReady: true,
-        })
+        await cleanupDockerWarmPoolProcessExit()
       } catch (error) {
         log.warn("worker agent warm pool cleanup failed", {
           signal,

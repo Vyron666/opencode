@@ -10,13 +10,13 @@ export const TABS = [
 ]
 
 export const inputClassName =
-  'w-full rounded-[12px] border border-[rgba(181,148,116,0.24)] px-3.5 py-2.5 bg-[rgba(12,9,7,0.82)] text-sm text-[var(--text)] outline-none transition-colors focus:border-[rgba(212,160,90,0.36)] focus:shadow-[0_0_0_3px_rgba(212,160,90,0.1)] placeholder:text-[var(--text-muted)]'
+  'w-full rounded-[12px] border border-[var(--line)] px-3.5 py-2.5 bg-[var(--surface)] text-sm text-[var(--text)] outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.12)] placeholder:text-[var(--text-muted)]'
 
 export const selectClassName =
-  'w-full rounded-[12px] border border-[rgba(181,148,116,0.24)] px-3.5 py-2.5 bg-[rgba(12,9,7,0.82)] text-sm text-[var(--text)] outline-none transition-colors focus:border-[rgba(212,160,90,0.36)] focus:shadow-[0_0_0_3px_rgba(212,160,90,0.1)] appearance-none disabled:opacity-40 disabled:cursor-not-allowed'
+  'w-full rounded-[12px] border border-[var(--line)] px-3.5 py-2.5 bg-[var(--surface)] text-sm text-[var(--text)] outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.12)] appearance-none disabled:opacity-40 disabled:cursor-not-allowed'
 
 export const secondaryButtonClassName =
-  'self-start px-3.5 py-2 text-xs font-semibold rounded-[10px] bg-brand/10 text-brand-text border border-[rgba(181,148,116,0.24)] hover:bg-brand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  'self-start rounded-[10px] border border-[var(--line)] bg-white px-3.5 py-2 text-xs font-semibold text-brand transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-40'
 
 let configuredProviderModelsCache = []
 let configuredProviderModelsRequest = null
@@ -41,7 +41,7 @@ export function Select({ id, options, value, onChange, emptyLabel = '\u8bf7\u514
       className={selectClassName}
       style={{
         backgroundImage:
-          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a69888' d='M6 7.8L2.4 4.2h7.2z'/%3E%3C/svg%3E\")",
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 7.8L2.4 4.2h7.2z'/%3E%3C/svg%3E\")",
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'right 12px center',
         paddingRight: '32px',

@@ -3,6 +3,7 @@ import type { RuntimeEntry } from "./worker-agent-types"
 const runtimesById = new Map<string, RuntimeEntry>()
 const runtimesByBusinessSessionId = new Map<string, RuntimeEntry>()
 const runtimeClaimsByWorkspaceId = new Map<string, Array<{
+  businessSessionId: string
   workerId: string
   containerName?: string
 }>>()
@@ -17,6 +18,8 @@ export function forgetRuntime(entry: RuntimeEntry) {
   if (runtimesByBusinessSessionId.get(entry.businessSessionId)?.remoteRuntimeId === entry.remoteRuntimeId) {
     runtimesByBusinessSessionId.delete(entry.businessSessionId)
   }
+  entry.disposeClientExitHandler?.()
+  entry.disposeClientExitHandler = undefined
 }
 
 export function rememberRuntimeClaim(input: {
@@ -27,6 +30,7 @@ export function rememberRuntimeClaim(input: {
 }) {
   const claims = runtimeClaimsByWorkspaceId.get(input.workspaceId) || []
   claims.push({
+    businessSessionId: input.businessSessionId,
     workerId: input.workerId,
     containerName: input.containerName,
   })
@@ -41,7 +45,9 @@ export function releaseRuntimeClaim(input: {
 }) {
   const claims = runtimeClaimsByWorkspaceId.get(input.workspaceId) || []
   const nextClaims = claims.filter((claim) =>
-    claim.workerId !== input.workerId || claim.containerName !== input.containerName,
+    claim.businessSessionId !== input.businessSessionId
+    || claim.workerId !== input.workerId
+    || claim.containerName !== input.containerName,
   )
   if (nextClaims.length === 0) {
     runtimeClaimsByWorkspaceId.delete(input.workspaceId)

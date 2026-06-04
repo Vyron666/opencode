@@ -4,12 +4,12 @@ import { buildQuestionFormContent, hasEmptyRequiredQuestionField } from './quest
 export function QuestionSchemaForm(input) {
   return (
     <div className="grid gap-3">
-      {(input.schema?.title || input.schema?.description) && (
-        <div className="rounded-[12px] border border-[var(--line)] bg-black/20 px-3 py-2 grid gap-1">
-          {input.schema?.title && <div className="text-xs font-semibold text-[var(--text)]">{input.schema.title}</div>}
-          {input.schema?.description && <div className="text-[11px] text-[var(--text-muted)]">{input.schema.description}</div>}
+      {input.schema?.title || input.schema?.description ? (
+        <div className="grid gap-1 rounded-[12px] border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2">
+          {input.schema?.title ? <div className="text-xs font-semibold text-[var(--text)]">{input.schema.title}</div> : null}
+          {input.schema?.description ? <div className="text-[11px] text-[var(--text-muted)]">{input.schema.description}</div> : null}
         </div>
-      )}
+      ) : null}
 
       {input.fields.map((field) => (
         <label key={field.id} className="grid gap-1.5">
@@ -27,25 +27,25 @@ export function QuestionSchemaForm(input) {
         </label>
       ))}
 
-      <div className="flex gap-2 justify-end">
+      <div className="flex justify-end gap-2">
         <button
           onClick={() => input.respondQuestion(input.requestId, 'cancel', {})}
           disabled={input.submitting}
-          className="text-xs px-3 py-1 rounded-[8px] bg-black/20 text-[var(--text-dim)] border border-[var(--line)] hover:bg-black/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-[8px] border border-[var(--line)] bg-white px-3 py-1 text-xs text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {input.submitting ? '提交中...' : '取消'}
         </button>
         <button
           onClick={() => input.respondQuestion(input.requestId, 'decline', {})}
           disabled={input.submitting}
-          className="text-xs px-3 py-1 rounded-[8px] bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-[8px] border border-danger/20 bg-danger/10 px-3 py-1 text-xs text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {input.submitting ? '提交中...' : '拒绝'}
         </button>
         <button
           onClick={() => input.respondQuestion(input.requestId, 'accept', buildQuestionFormContent(input.fields, input.formValues))}
           disabled={input.submitting || hasEmptyRequiredQuestionField(input.fields, input.formValues)}
-          className="text-xs px-3 py-1 rounded-[8px] bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-[8px] border border-success/20 bg-success/10 px-3 py-1 text-xs text-success transition-colors hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {input.submitting ? '提交中...' : '提交'}
         </button>

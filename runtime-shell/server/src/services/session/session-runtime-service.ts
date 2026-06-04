@@ -1,4 +1,4 @@
-import { getRuntime, openRealRuntime } from "../../acp-runtime-manager"
+import { getRuntime, openRealRuntime, prewarmRealRuntime } from "../../acp-runtime-manager"
 import { createLogger } from "../../log"
 import type { BusinessSession } from "../../types"
 import { renewRuntimeLeaseForSession } from "../runtime-governance/runtime-lease-service"
@@ -6,6 +6,7 @@ import { markSessionActive } from "./session-status-machine-service"
 import { sessionService } from "../store/store-singleton"
 
 const log = createLogger("session-runtime-service")
+const pendingSessionPrewarms = new Map<string, Promise<void>>()
 
 export async function openSessionWithFallback(session: BusinessSession) {
   const existingRuntime = getRuntime(session.id)
@@ -32,10 +33,26 @@ export async function openSessionWithFallback(session: BusinessSession) {
   return (await sessionService.getSession(session.id)) || session
 }
 
+export async function ensureSessionRuntimePrewarmed(session: BusinessSession) {
+  if (getRuntime(session.id)) return
+  const pending = pendingSessionPrewarms.get(session.id)
+  if (pending) return pending
+  const task = prewarmRealRuntime(session)
+  pendingSessionPrewarms.set(session.id, task)
+  try {
+    await task
+  } finally {
+    if (pendingSessionPrewarms.get(session.id) === task) {
+      pendingSessionPrewarms.delete(session.id)
+    }
+  }
+}
+
 export function preopenSessionRuntime(session: BusinessSession) {
-  // 中文/English: preopen runs in background after create so the user's first explicit
-  // open/prompt can reuse the same pending runtime load instead of paying the full cold start.
-  void openRealRuntime(session).catch((error) => {
+  // 中文/English: create warmup and explicit open must share one prewarm promise,
+  // otherwise fast create->open traffic races the background warm path and falls
+  // back to a full cold runtime bootstrap.
+  void ensureSessionRuntimePrewarmed(session).catch((error) => {
     log.warn("session preopen failed", {
       businessSessionId: session.id,
       workerId: session.workerId,

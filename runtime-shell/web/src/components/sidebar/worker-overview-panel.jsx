@@ -21,9 +21,12 @@ export function WorkerOverviewPanel() {
 
       <div className="grid gap-1.5">
         {workers.map((worker) => (
-          <div key={worker.id} className="rounded-[12px] border border-[var(--line)] bg-black/20 px-3 py-2 text-xs text-[var(--text-dim)]">
+          <div
+            key={worker.id}
+            className="rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text-dim)]"
+          >
             <div className="flex items-center justify-between gap-2">
-              <span className="font-medium text-[var(--text-primary)]">{worker.name}</span>
+              <span className="font-medium text-[var(--text)]">{worker.name}</span>
               <span>{worker.status}</span>
             </div>
             <div className="mt-1 text-[var(--text-muted)]">

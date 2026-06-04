@@ -20,7 +20,7 @@ export function PlanPanel() {
         </div>
       </div>
 
-      <div className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] text-xs leading-relaxed text-[var(--text-dim)] min-h-[100px] max-h-[180px] overflow-auto mb-2">
+      <div className="mb-2 min-h-[100px] max-h-[180px] overflow-auto rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-xs leading-relaxed text-[var(--text-dim)]">
         {entries.length > 0 ? (
           <div className="grid gap-1.5">
             {entries.map((entry, index) => (
@@ -37,7 +37,7 @@ export function PlanPanel() {
         )}
       </div>
 
-      <pre className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] font-mono text-xs leading-relaxed text-[var(--text-dim)] whitespace-pre-wrap break-words overflow-auto min-h-[100px] max-h-[160px]">
+      <pre className="min-h-[100px] max-h-[160px] overflow-auto whitespace-pre-wrap break-words rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3 font-mono text-xs leading-relaxed text-[var(--text-dim)]">
         {usage ? JSON.stringify(usage, null, 2) : '暂无 Usage 数据'}
       </pre>
     </div>
@@ -73,7 +73,7 @@ export function EventStreamPanel() {
       </div>
 
       <div className="grid gap-2">
-        <div className="rounded-[14px] border border-[var(--line)] bg-black/35 overflow-hidden">
+        <div className="overflow-hidden rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)]">
           <div className="max-h-[180px] overflow-auto divide-y divide-[var(--line)]">
             {recent.length > 0 ? (
               recent.map((event) => (
@@ -82,7 +82,7 @@ export function EventStreamPanel() {
                   type="button"
                   onClick={() => setSelectedEventId(event.eventId || '')}
                   className={`w-full px-3 py-2 text-left text-xs transition-colors ${
-                    selectedEvent?.eventId === event.eventId ? 'bg-brand/10 text-[var(--text)]' : 'hover:bg-white/5 text-[var(--text-dim)]'
+                    selectedEvent?.eventId === event.eventId ? 'bg-brand/10 text-[var(--text)]' : 'text-[var(--text-dim)] hover:bg-white hover:text-[var(--text)]'
                   }`}
                 >
                   <div className="font-semibold">{event.eventType}</div>
@@ -97,7 +97,7 @@ export function EventStreamPanel() {
           </div>
         </div>
 
-        <pre className="rounded-[14px] p-3 bg-black/60 border border-[var(--line)] font-mono text-xs leading-relaxed text-[var(--text-dim)] whitespace-pre-wrap break-words overflow-auto min-h-[180px] max-h-[320px]">
+        <pre className="min-h-[180px] max-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-[14px] border border-[var(--line)] bg-[var(--surface-muted)] p-3 font-mono text-xs leading-relaxed text-[var(--text-dim)]">
           {selectedEvent ? JSON.stringify(selectedEvent, null, 2) : '暂无事件详情'}
         </pre>
       </div>

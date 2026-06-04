@@ -2,10 +2,9 @@ import { useMemo, useState } from 'react'
 import { ToolData } from './ToolData'
 
 export function ToolBlock({ block }) {
-  const statusColor = block.status === 'completed' ? '#5a9e7c' : block.status === 'failed' ? '#c44a3a' : '#d4a05a'
+  const statusColor = block.status === 'completed' ? '#059669' : block.status === 'failed' ? '#dc2626' : '#2563eb'
   const [expanded, setExpanded] = useState(block.status === 'pending' || block.status === 'failed')
   const hasDetails = Boolean(block.input || block.output || (block.content?.length > 0) || (block.locations?.length > 0))
-  const isOpen = expanded
   const summary = useMemo(() => {
     if (block.locations?.length) return `涉及 ${block.locations.length} 个位置`
     if (block.output) return '已返回工具输出'
@@ -16,39 +15,43 @@ export function ToolBlock({ block }) {
 
   return (
     <div
-      className="min-w-0 rounded-[18px] px-4 py-3.5 border border-[rgba(181,148,116,0.12)] grid gap-2.5 max-w-[700px] w-full shadow-[0_10px_28px_rgba(0,0,0,0.1)]"
-      style={{ background: block.status === 'failed' ? 'rgba(196,74,58,0.08)' : 'rgba(20,16,13,0.42)' }}
+      className="grid min-w-0 w-full max-w-[700px] gap-2.5 rounded-[20px] border px-4 py-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.07)]"
+      style={{
+        background: block.status === 'failed' ? 'rgba(220,38,38,0.05)' : '#ffffff',
+        borderColor: block.status === 'failed' ? 'rgba(220,38,38,0.16)' : 'var(--line)',
+      }}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: statusColor }} />
-        <span className="text-[10px] font-bold uppercase tracking-widest shrink-0" style={{ color: statusColor }}>
+        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: statusColor }} />
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest" style={{ color: statusColor }}>
           {block.status}
         </span>
-        {block.kind ? <span className="min-w-0 text-[10px] text-[var(--text-muted)] uppercase truncate">{block.kind}</span> : null}
+        {block.kind ? <span className="min-w-0 truncate text-[10px] uppercase text-[var(--text-muted)]">{block.kind}</span> : null}
         {hasDetails ? (
           <button
             type="button"
             onClick={() => setExpanded((current) => !current)}
-            className="ml-auto text-[10px] px-2.5 py-1 rounded-full border border-[rgba(181,148,116,0.18)] bg-black/25 text-[var(--text-muted)] hover:bg-black/35 transition-colors"
-            aria-label={isOpen ? '收起工具结果' : '展开工具结果'}
+            className="ml-auto rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-2.5 py-1 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-strong)]"
+            aria-label={expanded ? '收起工具结果' : '展开工具结果'}
           >
-            {isOpen ? '收起' : '展开'}
+            {expanded ? '收起' : '展开'}
           </button>
         ) : null}
       </div>
 
-      <div className="min-w-0 text-[13px] font-semibold text-[var(--text-dim)] break-words line-clamp-2">{block.title}</div>
+      <div className="min-w-0 break-words text-[13px] font-semibold text-[var(--text-dim)] line-clamp-2">{block.title}</div>
 
-      {!isOpen && summary ? (
-        <div className="text-[11px] text-[var(--text-muted)] truncate">{summary}</div>
-      ) : null}
+      {!expanded && summary ? <div className="truncate text-[11px] text-[var(--text-muted)]">{summary}</div> : null}
 
-      {isOpen ? (
-        <div className="grid gap-2.5 max-h-[400px] overflow-y-auto pr-1">
+      {expanded ? (
+        <div className="grid max-h-[400px] gap-2.5 overflow-y-auto pr-1">
           {block.locations?.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {block.locations.map((location, index) => (
-                <span key={`${location.path}-${index}`} className="text-[10px] px-2.5 py-1 rounded-full bg-black/30 text-[var(--text-muted)] border border-[rgba(181,148,116,0.16)]">
+                <span
+                  key={`${location.path}-${index}`}
+                  className="rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-2.5 py-1 text-[10px] text-[var(--text-muted)]"
+                >
                   {location.path}
                   {location.line ? `:${location.line}` : ''}
                 </span>

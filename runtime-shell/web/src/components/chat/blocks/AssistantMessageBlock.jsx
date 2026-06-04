@@ -1,6 +1,7 @@
-﻿import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { subscribeAssistantChunk } from '../../../store/sse/assistant-stream-channel'
 import { MarkdownContent } from './MarkdownContent'
+
 export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block }) {
   const textRef = useRef(null)
   const textNodeRef = useRef(null)
@@ -103,38 +104,34 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
   }
 
   return (
-    <div className="group flex min-w-0 gap-3 items-start">
-      <div
-        className="w-[36px] h-[36px] rounded-[14px] grid place-items-center shrink-0 text-xs font-bold border border-[rgba(212,160,90,0.12)]"
-        style={{ background: 'linear-gradient(135deg, rgba(212,160,90,0.22), rgba(212,160,90,0.08))', color: '#f0d6a4' }}
-      >
+    <div className="group flex min-w-0 items-start gap-3">
+      <div className="grid h-[36px] w-[36px] shrink-0 place-items-center rounded-[14px] border border-brand/15 bg-brand/10 text-xs font-bold text-brand">
         AI
       </div>
-      <div className="relative grid gap-2.5 max-w-[88%] min-w-0">
+
+      <div className="relative grid min-w-0 max-w-[88%] gap-2.5">
         <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-          <span className="font-bold text-xs tracking-[0.04em] text-brand">Assistant</span>
-          {block.streaming && <span className="text-[10px] opacity-60">流式输出中...</span>}
+          <span className="text-xs font-bold tracking-[0.04em] text-brand">Assistant</span>
+          {block.streaming ? <span className="text-[10px] opacity-60">流式输出中...</span> : null}
         </div>
+
         <div className="pointer-events-none absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <button
             type="button"
             onClick={() => void handleCopy()}
-            className="pointer-events-auto rounded-full border border-[rgba(181,148,116,0.18)] bg-black/45 px-2.5 py-1 text-[11px] text-[var(--text-dim)] hover:bg-black/60 transition-colors"
+            className="pointer-events-auto rounded-full border border-[var(--line)] bg-white px-2.5 py-1 text-[11px] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)]"
             aria-label="复制 AI 消息"
             title="复制"
           >
             {copied ? '已复制' : '复制'}
           </button>
         </div>
+
         <div
-          className="min-w-0 max-w-full rounded-[22px] px-4.5 py-3.5 text-sm leading-relaxed break-words markdown-body shadow-[0_14px_34px_rgba(0,0,0,0.12)]"
+          className="markdown-body min-w-0 max-w-full break-words rounded-[22px] border border-[var(--line)] bg-white px-4.5 py-3.5 text-sm leading-relaxed shadow-[0_14px_34px_rgba(15,23,42,0.08)]"
           data-assistant-block-key={block.key}
           data-assistant-render-mode={renderPlainText ? 'plain' : 'markdown'}
-          style={{
-            background: 'linear-gradient(180deg, rgba(35,30,25,0.98), rgba(31,26,22,0.96))',
-            borderTopLeftRadius: '6px',
-            border: '1px solid rgba(181,148,116,0.12)',
-          }}
+          style={{ borderTopLeftRadius: '6px' }}
         >
           {renderPlainText ? (
             <pre ref={textRef} className="max-w-full overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" />

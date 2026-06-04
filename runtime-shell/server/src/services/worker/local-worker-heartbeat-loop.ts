@@ -12,21 +12,18 @@ const CREATED_SESSION_RESERVATION_MS = 30000
 const LOCAL_WORKER_HEALTH_TIMEOUT_MS = 3000
 
 let localWorkerHeartbeatTimer: Timer | undefined
+let pendingLocalWorkerHeartbeat: Promise<void> | undefined
 
 export function startLocalWorkerHeartbeatLoop() {
   if (localWorkerHeartbeatTimer) return
-  void beatLocalWorker()
+  void runLocalWorkerHeartbeat()
   localWorkerHeartbeatTimer = setInterval(() => {
-    void beatLocalWorker().catch((error) => {
-      log.warn("local worker heartbeat failed", {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    })
+    void runLocalWorkerHeartbeat()
   }, readHeartbeatIntervalMs())
 }
 
 export async function refreshLocalWorkersNow() {
-  await beatLocalWorker()
+  await runLocalWorkerHeartbeat()
 }
 
 function readHeartbeatIntervalMs() {
@@ -113,6 +110,22 @@ async function beatLocalWorker() {
       })
     }),
   )
+}
+
+function runLocalWorkerHeartbeat() {
+  if (pendingLocalWorkerHeartbeat) return pendingLocalWorkerHeartbeat
+  const task = beatLocalWorker().catch((error) => {
+    log.warn("local worker heartbeat failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  })
+  const trackedTask = task.finally(() => {
+    if (pendingLocalWorkerHeartbeat === trackedTask) {
+      pendingLocalWorkerHeartbeat = undefined
+    }
+  })
+  pendingLocalWorkerHeartbeat = trackedTask
+  return trackedTask
 }
 
 async function queryRemoteWorkerHeartbeat(agentBaseUrl: string | undefined, workerId: string) {

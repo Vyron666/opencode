@@ -10,7 +10,10 @@ export function MarkdownContent({ content }) {
         a: ({ node, ...props }) => <a {...props} className="text-brand underline underline-offset-2" target="_blank" rel="noreferrer" />,
         code: ({ inline, className, children, ...props }) =>
           inline ? (
-            <code {...props} className={`rounded bg-black/40 px-1 py-0.5 text-[0.9em] break-all ${className || ''}`.trim()}>
+            <code
+              {...props}
+              className={`break-all rounded border border-[var(--line)] bg-[var(--surface-muted)] px-1 py-0.5 text-[0.9em] ${className || ''}`.trim()}
+            >
               {children}
             </code>
           ) : (
@@ -24,12 +27,12 @@ export function MarkdownContent({ content }) {
             <table {...props} className="min-w-full border-collapse text-left text-xs" />
           </div>
         ),
-        th: ({ node, ...props }) => <th {...props} className="border border-[var(--line)] px-2 py-1 bg-black/30" />,
-        td: ({ node, ...props }) => <td {...props} className="border border-[var(--line)] px-2 py-1 align-top" />,
-        ul: ({ node, ...props }) => <ul {...props} className="list-disc pl-5 my-2 space-y-1" />,
-        ol: ({ node, ...props }) => <ol {...props} className="list-decimal pl-5 my-2 space-y-1" />,
+        th: ({ node, ...props }) => <th {...props} className="border border-[var(--line)] bg-[var(--surface-muted)] px-2 py-1" />,
+        td: ({ node, ...props }) => <td {...props} className="border border-[var(--line)] bg-white px-2 py-1 align-top" />,
+        ul: ({ node, ...props }) => <ul {...props} className="my-2 list-disc space-y-1 pl-5" />,
+        ol: ({ node, ...props }) => <ol {...props} className="my-2 list-decimal space-y-1 pl-5" />,
         p: ({ node, ...props }) => <p {...props} className="my-2 first:mt-0 last:mb-0" />,
-        blockquote: ({ node, ...props }) => <blockquote {...props} className="border-l-2 border-brand/50 pl-3 my-3 text-[var(--text-dim)]" />,
+        blockquote: ({ node, ...props }) => <blockquote {...props} className="my-3 border-l-2 border-brand/50 pl-3 text-[var(--text-dim)]" />,
       }}
     >
       {content}
@@ -51,8 +54,8 @@ function CodeBlock({ children, ...props }) {
   }, [copied])
 
   return (
-    <div className="my-3 overflow-hidden rounded-[14px] border border-[rgba(181,148,116,0.14)] bg-[rgba(8,6,5,0.78)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[rgba(181,148,116,0.12)] px-3.5 py-2.5 text-[11px]">
+    <div className="my-3 overflow-hidden rounded-[14px] border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-3.5 py-2.5 text-[11px]">
         <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{language}</span>
         <button
           type="button"
@@ -61,12 +64,14 @@ function CodeBlock({ children, ...props }) {
             await navigator.clipboard.writeText(codeText)
             setCopied(true)
           }}
-          className="rounded-full border border-[rgba(181,148,116,0.18)] bg-black/20 px-2.5 py-1 text-[var(--text-dim)] hover:bg-black/35 transition-colors"
+          className="rounded-full border border-[var(--line)] bg-white px-2.5 py-1 text-[var(--text-dim)] transition-colors hover:bg-[var(--bg-strong)]"
         >
           {copied ? '已复制' : '复制'}
         </button>
       </div>
-      <pre {...props} className="max-w-full overflow-x-auto px-3.5 py-3 text-sm">{children}</pre>
+      <pre {...props} className="max-w-full overflow-x-auto px-3.5 py-3 text-sm">
+        {children}
+      </pre>
     </div>
   )
 }
