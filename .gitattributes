@@ -1,4 +1,5 @@
-.gitattributes text eol=lf
+packages/core/migration/**/snapshot.json linguist-generated
+packages/core/src/database/migration.gen.ts linguist-generated
 *.lock text eol=lf
 bun.lock text eol=lf
 *.json text eol=lf
