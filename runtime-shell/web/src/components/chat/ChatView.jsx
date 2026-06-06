@@ -27,7 +27,7 @@ export default function ChatView({ settingsOpen, settingsSection, onOpenSettings
         </div>
       ) : null}
       <ConversationPhaseBanner currentSessionId={currentSessionId} />
-      <ConversationSection currentSessionId={currentSessionId} showDebug={showDebug} onOpenSettings={onOpenSettings} />
+      <ConversationSection currentSessionId={currentSessionId} showDebug={showDebug} />
       <ComposerSection
         currentSessionId={currentSessionId}
         showDebug={showDebug}

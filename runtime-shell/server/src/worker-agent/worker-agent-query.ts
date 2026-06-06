@@ -21,6 +21,15 @@ export function queryRuntime(url: URL) {
     pendingPermissionCount: entry.pendingPermissions.size,
     pendingQuestionCount: entry.pendingQuestions.size,
     snapshot: entry.snapshot,
+    sandbox: entry.sandboxHandle
+      ? {
+          // 中文/English: expose the concrete container for runtime governance and E2E verification.
+          containerName: entry.sandboxHandle.containerName,
+          source: entry.sandboxHandle.poolSlotId ? "warm_pool" : "cold_runtime",
+          poolSlotId: entry.sandboxHandle.poolSlotId,
+          runtimeCwd: entry.sandboxHandle.runtimeCwd,
+        }
+      : undefined,
   }
 }
 

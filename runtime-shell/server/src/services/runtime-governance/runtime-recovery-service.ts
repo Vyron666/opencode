@@ -82,7 +82,9 @@ export async function cleanupRuntimeGovernanceForUser(user: User) {
   const authorization = authorizeSystemWorkersAccess(user)
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
 
-  const sessions = await sessionService.listSessions()
+  const sessions = await sessionService.listSessionsByFilter({
+    statuses: ["opening", "active", "waiting_input", "cancelling", "closing", "orphaned", "failed"],
+  })
   const offlineWorkers = await workerService.listWorkersByStatus(["offline", "draining"])
   const offlineWorkerIds = new Set(offlineWorkers.map((worker) => worker.id))
   const cleanedSessionIds: string[] = []

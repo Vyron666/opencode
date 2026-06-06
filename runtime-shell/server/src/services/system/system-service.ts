@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises"
+import path from "node:path"
 import { Config } from "../../config"
 import { closeRuntime } from "../../acp-runtime-manager"
 import type { User } from "../../types"
@@ -11,10 +13,12 @@ import {
   cleanupStalePreparedSandboxWorkspaces,
   closeSandboxWorkspace,
   markSandboxWorkspaceClosing,
+  purgeSandboxWorkspaceByWorkspaceId,
 } from "../sandbox/sandbox-workspace-service"
 import { listQuotaPolicies, saveQuotaPolicy } from "../sandbox/sandbox-quota-service"
 import { listRuntimeOperations } from "../sandbox/sandbox-queue-service"
-import { workerService, sessionService } from "../store/store-singleton"
+import { workerService, sessionService, workspaceService, workspaceShareService } from "../store/store-singleton"
+import { deleteRuntimeBindingsBySessionIds } from "../runtime-governance/runtime-binding-service"
 import { markSessionOrphaned } from "../session/session-status-machine-service"
 import { resetSessionRuntime } from "../session/session-lifecycle-service"
 
@@ -191,6 +195,78 @@ export async function cleanupSandboxesForUser(input: {
   }
 }
 
+export async function cleanupWorkspacesByPrefixForUser(input: {
+  user: User
+  namePrefix: string
+  limit: number
+}) {
+  const authorization = authorizeSystemWorkersAccess(input.user)
+  if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
+  if (!isTestWorkspaceCleanupPrefix(input.namePrefix)) {
+    return { ok: false as const, reason: "invalid_cleanup_prefix" }
+  }
+  const workspaces = await workspaceService.listWorkspacesByNamePrefix({
+    tenantId: input.user.tenantId,
+    organizationId: input.user.organizationId,
+    namePrefix: input.namePrefix,
+    limit: input.limit,
+    // 中文/English: cleanup-prefix is reserved for the current operator's test
+    // workspaces so prefix-based cleanup never sweeps another user's data.
+    createdBy: input.user.id,
+  })
+  const cleanedWorkspaceIds: string[] = []
+  const cleanedSessionIds: string[] = []
+  for (const workspace of workspaces) {
+    const sessions = await sessionService.listSessionsByFilter({
+      workspaceId: workspace.id,
+    })
+    const workspaceSessionIds: string[] = []
+    for (const session of sessions) {
+      if (
+        session.status === "opening" ||
+        session.status === "active" ||
+        session.status === "waiting_input" ||
+        session.status === "cancelling" ||
+        session.status === "closing"
+      ) {
+        await markSandboxWorkspaceClosing(session.id)
+        await closeRuntime(session.id).catch(() => false)
+        await resetSessionRuntime(session.id, "completed")
+        await closeSandboxWorkspace(session.id)
+      }
+      workspaceSessionIds.push(session.id)
+      cleanedSessionIds.push(session.id)
+    }
+    await purgeSandboxWorkspaceByWorkspaceId(workspace.id)
+    // 中文/English: cleanup-prefix must remove runtime binding residue for the
+    // exact test sessions being deleted so governance tables do not keep stale rows.
+    await deleteRuntimeBindingsBySessionIds(workspaceSessionIds)
+    await sessionService.softDeleteSessionsByWorkspaceId({
+      workspaceId: workspace.id,
+      deletedBy: input.user.id,
+    })
+    await workspaceShareService.softDeleteSharesByWorkspaceId({
+      workspaceId: workspace.id,
+      deletedBy: input.user.id,
+    })
+    await workspaceService.softDeleteWorkspaceById({
+      workspaceId: workspace.id,
+      deletedBy: input.user.id,
+    })
+    await removeWorkspaceRoot(workspace.rootPath)
+    cleanedWorkspaceIds.push(workspace.id)
+  }
+  return {
+    ok: true as const,
+    cleanedWorkspaceIds,
+    cleanedSessionIds: [...new Set(cleanedSessionIds)],
+  }
+}
+
+function isTestWorkspaceCleanupPrefix(namePrefix: string) {
+  return namePrefix === "persist-check-" || namePrefix === "pressure-10-"
+}
+
 function shouldExposeWorker(
   worker: Awaited<ReturnType<typeof workerService.listWorkers>>[number],
 ) {
@@ -233,4 +309,12 @@ async function cleanupWarmPoolForAllWorkers(recycleWarmPoolReady: boolean) {
       }
     }
   }))
+}
+
+async function removeWorkspaceRoot(rootPath: string) {
+  const normalizedRoot = path.resolve(rootPath)
+  const normalizedWorkspaceRoot = path.resolve(Config.workspaceRootDir)
+  const relative = path.relative(normalizedWorkspaceRoot, normalizedRoot)
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return
+  await rm(normalizedRoot, { recursive: true, force: true }).catch(() => {})
 }

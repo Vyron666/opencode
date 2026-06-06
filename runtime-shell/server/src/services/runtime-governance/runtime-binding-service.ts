@@ -58,3 +58,8 @@ export async function markRuntimeBindingLost(sessionId: string) {
   await refreshWorkerLoad(binding.workerId)
   return updated
 }
+
+export async function deleteRuntimeBindingsBySessionIds(sessionIds: string[]) {
+  if (sessionIds.length === 0) return
+  await SessionRuntimeBindingRepo.deleteBindingsBySessionIds(sessionIds)
+}

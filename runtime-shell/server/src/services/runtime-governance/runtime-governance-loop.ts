@@ -52,7 +52,11 @@ async function markHeartbeatExpiredWorkersOffline() {
   const expiredWorkers = await workerService.listWorkersHeartbeatExpired(expireBefore)
   if (!expiredWorkers.length) return
 
-  const sessions = await sessionService.listSessions()
+  const expiredWorkerIds = expiredWorkers.map((worker) => worker.id)
+  const sessions = await sessionService.listSessionsByFilter({
+    workerIds: expiredWorkerIds,
+    statuses: ["active", "waiting_input", "opening", "orphaned"],
+  })
   for (const worker of expiredWorkers) {
     if (!(await hasWorkerHeartbeat(worker.id))) continue
     if (worker.status !== "offline") {
@@ -147,7 +151,9 @@ async function hasRecordedWorkerOfflineFailure(sessionId: string) {
 }
 
 async function cleanupStaleClosingSessions() {
-  const sessions = await sessionService.listSessions()
+  const sessions = await sessionService.listSessionsByFilter({
+    statuses: ["closing"],
+  })
   for (const session of sessions) {
     if (session.status !== "closing") continue
     if (Date.now() - new Date(session.updatedAt).getTime() < STALE_CLOSING_SESSION_MS) continue

@@ -39,7 +39,11 @@ export async function selectWorkerForNewSession(
     return
   }
   return runWithWorkerSelectionGate(async () => {
-    const sessions = await sessionService.listSessions()
+    const sessions = await sessionService.listSessionsByFilter({
+      tenantId: user.tenantId,
+      organizationId: user.organizationId,
+      statuses: ["created", "opening", "active", "waiting_input", "cancelling", "closing", "orphaned"],
+    })
     const pinnedWorkspaceWorker = await resolveWorkspacePinnedWorker({
       sessions,
       workspaceId,
@@ -73,7 +77,7 @@ export async function selectWorkerForNewSession(
               session.status === "closing"),
         ).length
         const [runningSandboxCount, queuedOperationCount] = await Promise.all([
-          SandboxInstanceRepo.countSandboxInstancesByWorkerStatus(worker.id, ["preparing", "ready", "running"]),
+          SandboxInstanceRepo.countBusinessSandboxInstancesByWorkerStatus(worker.id, ["preparing", "ready", "running"]),
           RuntimeOperationQueueRepo.countRuntimeOperationsByScope({
             tenantId: user.tenantId,
             organizationId: user.organizationId,
@@ -138,7 +142,10 @@ export async function resolveStickyWorkerForSession(session: BusinessSession) {
 export async function refreshWorkerLoad(workerId: string) {
   const worker = await workerService.findWorkerById(workerId)
   if (!worker) return
-  const sessions = await sessionService.listSessions()
+  const sessions = await sessionService.listSessionsByFilter({
+    workerId,
+    statuses: ["created", "opening", "active", "waiting_input", "cancelling", "closing"],
+  })
   const activeSessionCount = sessions.filter(
     (session) =>
       session.workerId === workerId &&
@@ -203,6 +210,9 @@ async function resolveWorkspacePinnedWorker(input: {
 }
 
 function compareWorkers(left: WorkerNode, right: WorkerNode) {
+  const leftWarmRuntimeSpare = readWarmRuntimeSpare(left)
+  const rightWarmRuntimeSpare = readWarmRuntimeSpare(right)
+  if (leftWarmRuntimeSpare !== rightWarmRuntimeSpare) return rightWarmRuntimeSpare - leftWarmRuntimeSpare
   if (left.activeSessionCount !== right.activeSessionCount) {
     return left.activeSessionCount - right.activeSessionCount
   }
@@ -256,6 +266,7 @@ function pickWorkerWithRoundRobin(candidates: WorkerNode[]) {
 }
 
 function isWorkerPressureEquivalent(left: WorkerNode, right: WorkerNode) {
+  if (Math.abs(readWarmRuntimeSpare(left) - readWarmRuntimeSpare(right)) > 0) return false
   if (left.activeSessionCount !== right.activeSessionCount) return false
   const leftRunningSandboxes = left.resourceSummary?.runningSandboxCount ?? left.activeSessionCount
   const rightRunningSandboxes = right.resourceSummary?.runningSandboxCount ?? right.activeSessionCount
@@ -266,4 +277,11 @@ function isWorkerPressureEquivalent(left: WorkerNode, right: WorkerNode) {
   const leftSpare = left.capacity - left.activeSessionCount
   const rightSpare = right.capacity - right.activeSessionCount
   return Math.abs(leftSpare - rightSpare) <= 1
+}
+
+function readWarmRuntimeSpare(worker: WorkerNode) {
+  // 中文/English: warmPoolReady already counts only unleased materialized runtimes.
+  // Active sessions are excluded by the worker snapshot, so subtracting them here
+  // double-counts load and hides real warm capacity from scheduling.
+  return Math.max(0, worker.warmPoolReady ?? 0)
 }

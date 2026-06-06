@@ -184,3 +184,27 @@ export async function patchSession(sessionId: string, patch: BusinessSessionPatc
   )
   return session
 }
+
+export async function softDeleteSessionsByWorkspaceId(input: {
+  workspaceId: string
+  deletedBy: string
+}) {
+  const deletedAt = now()
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE business_session
+      SET
+        deleted_at = ?,
+        updated_at = ?,
+        updated_by = ?
+      WHERE workspace_binding_id = ?
+        AND deleted_at IS NULL
+    `,
+    [
+      deletedAt,
+      deletedAt,
+      input.deletedBy,
+      input.workspaceId,
+    ],
+  )
+}

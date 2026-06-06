@@ -35,6 +35,9 @@ CREATE INDEX idx_sandbox_instance_session
 CREATE INDEX idx_sandbox_instance_worker_status
   ON sandbox_instance (worker_node_id, status, updated_at);
 
+CREATE INDEX idx_sandbox_instance_updated
+  ON sandbox_instance (updated_at);
+
 CREATE TABLE IF NOT EXISTS runtime_operation_queue (
   id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL,
@@ -56,6 +59,12 @@ CREATE TABLE IF NOT EXISTS runtime_operation_queue (
 
 CREATE INDEX idx_runtime_operation_queue_scope_status
   ON runtime_operation_queue (tenant_id, organization_id, status, created_at);
+
+CREATE INDEX idx_runtime_operation_queue_created
+  ON runtime_operation_queue (created_at);
+
+CREATE INDEX idx_runtime_operation_queue_stale
+  ON runtime_operation_queue (status, updated_at, started_at);
 
 CREATE INDEX idx_runtime_operation_queue_session
   ON runtime_operation_queue (business_session_id, created_at);

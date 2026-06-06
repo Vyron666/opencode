@@ -132,6 +132,52 @@ export async function listWorkspacesForUser(user: User) {
   return rows.map(toWorkspace)
 }
 
+export async function listWorkspacesByNamePrefix(input: {
+  tenantId: string
+  organizationId: string
+  namePrefix: string
+  limit: number
+  createdBy?: string
+}) {
+  const db = getRuntimeDatabaseClient()
+  const createdByClause = input.createdBy ? "AND created_by = ?" : ""
+  const rows = await db.queryRows<WorkspaceRow>(
+    `
+      SELECT
+        id,
+        tenant_id,
+        organization_id,
+        project_id,
+        name,
+        root_path,
+        status,
+        created_by,
+        created_at,
+        updated_at
+      FROM workspace_binding
+      WHERE tenant_id = ?
+        AND organization_id = ?
+        AND name LIKE ? ESCAPE '!'
+        ${createdByClause}
+        AND deleted_at IS NULL
+      ORDER BY created_at ASC
+      LIMIT ?
+    `,
+    [
+      input.tenantId,
+      input.organizationId,
+      `${escapeLikePattern(input.namePrefix)}%`,
+      ...(input.createdBy ? [input.createdBy] : []),
+      input.limit,
+    ],
+  )
+  return rows.map(toWorkspace)
+}
+
+function escapeLikePattern(value: string) {
+  return value.replace(/[!%_]/g, (match) => `!${match}`)
+}
+
 export async function ensureWorkspace(input: {
   tenantId: string
   organizationId: string
@@ -191,4 +237,30 @@ export async function ensureWorkspace(input: {
     ],
   )
   return workspace
+}
+
+export async function softDeleteWorkspaceById(input: {
+  workspaceId: string
+  deletedBy: string
+}) {
+  const timestamp = now()
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE workspace_binding
+      SET
+        status = ?,
+        updated_at = ?,
+        updated_by = ?,
+        deleted_at = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    [
+      "deleted",
+      timestamp,
+      input.deletedBy,
+      timestamp,
+      input.workspaceId,
+    ],
+  )
 }

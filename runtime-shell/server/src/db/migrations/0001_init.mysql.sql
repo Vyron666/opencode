@@ -123,23 +123,6 @@ CREATE TABLE IF NOT EXISTS business_session (
   deleted_at DATETIME(3) NULL
 );
 
-CREATE TABLE IF NOT EXISTS workspace_share_binding (
-  id VARCHAR(64) PRIMARY KEY,
-  tenant_id VARCHAR(64) NOT NULL,
-  organization_id VARCHAR(64) NOT NULL,
-  project_id VARCHAR(64) NOT NULL,
-  workspace_id VARCHAR(64) NOT NULL,
-  owner_user_id VARCHAR(64) NOT NULL,
-  target_user_id VARCHAR(64) NOT NULL,
-  status VARCHAR(32) NOT NULL,
-  created_at DATETIME(3) NOT NULL,
-  created_by VARCHAR(64) NOT NULL,
-  updated_at DATETIME(3) NOT NULL,
-  updated_by VARCHAR(64),
-  deleted_at DATETIME(3) NULL,
-  UNIQUE KEY uk_workspace_share_binding_workspace_user (workspace_id, target_user_id)
-);
-
 CREATE TABLE IF NOT EXISTS audit_log (
   id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL,
@@ -162,9 +145,10 @@ CREATE INDEX idx_user_account_scope ON user_account (tenant_id, organization_id)
 CREATE INDEX idx_auth_session_user_id ON auth_session (user_id);
 CREATE INDEX idx_auth_session_expires_at ON auth_session (expires_at);
 CREATE INDEX idx_workspace_binding_scope ON workspace_binding (tenant_id, organization_id, project_id);
+CREATE INDEX idx_workspace_binding_cleanup_prefix ON workspace_binding (tenant_id, organization_id, created_by, name, deleted_at);
 CREATE INDEX idx_worker_node_status ON worker_node (status);
 CREATE INDEX idx_business_session_scope ON business_session (tenant_id, organization_id, project_id);
+CREATE INDEX idx_business_session_scope_updated ON business_session (tenant_id, organization_id, project_id, deleted_at, updated_at);
+CREATE INDEX idx_business_session_workspace_status ON business_session (workspace_binding_id, status, deleted_at, updated_at);
 CREATE INDEX idx_business_session_worker_node_id ON business_session (worker_node_id);
-CREATE INDEX idx_workspace_share_binding_target_user_id ON workspace_share_binding (target_user_id, status);
-CREATE INDEX idx_workspace_share_binding_workspace_id ON workspace_share_binding (workspace_id, target_user_id);
 CREATE INDEX idx_audit_log_scope ON audit_log (tenant_id, organization_id, created_at);

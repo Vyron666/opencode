@@ -15,10 +15,10 @@ export const ConversationHeader = memo(function ConversationHeader({ currentSess
     'Runtime'
 
   const subtitle = !currentSessionId
-    ? '从左侧选择会话，或新建一个会话开始交互'
-    : phase.isBusy
-      ? phase.detail || '当前会话正在继续推进任务'
-      : '保持上下文，继续这项工作'
+    ? '从左侧选择会话，或新建一个会话继续当前工作台流程'
+      : phase.isBusy
+        ? phase.detail || '当前会话正在继续推进任务'
+        : '保持上下文，继续这项工作'
 
   const statusLabel = !currentSessionId ? '未连接' : isConnected ? '就绪' : reconnectAttempt > 0 ? `重连 ${reconnectAttempt}` : '连接中'
   const statusClassName = !currentSessionId

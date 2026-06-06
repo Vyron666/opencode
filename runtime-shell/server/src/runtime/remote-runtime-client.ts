@@ -33,6 +33,7 @@ type RemoteSessionRequest = {
   workspacePath: string
   sandboxPath: string
   configContent?: string
+  warmPoolTarget?: number
 }
 
 export class RemoteRuntimeClient implements ManagedRuntimeClient {
@@ -224,6 +225,7 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
       workspacePath,
       sandboxPath: sandboxWorkspace?.sandboxPath || workspacePath,
       configContent: this.configContent,
+      warmPoolTarget: this.worker.warmPoolTarget,
     }
   }
 }

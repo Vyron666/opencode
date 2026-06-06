@@ -1,16 +1,17 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
-import { chown, cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { spawn } from "node:child_process"
 import { Database } from "bun:sqlite"
 import { Config } from "../../config"
+import { ensureSandboxUserOwnership } from "../../lib/sandbox-user-ownership"
 import { runColdStartRuntimeHomePrepare } from "./docker-sandbox-cold-start"
 
 const RUNTIME_HOME_ROOT = path.join(Config.workspaceRootDir, ".runtime-home")
 const RUNTIME_HOME_DATA_DIR = path.join(".local", "share", "opencode")
 const RUNTIME_HOME_PRIMARY_DB_NAME = "opencode.db"
 const RUNTIME_HOME_SEED_TIMEOUT_MS = 60_000
-const RUNTIME_HOME_LAYOUT_VERSION = "runtime-home-v2"
+const RUNTIME_HOME_LAYOUT_VERSION_PREFIX = "runtime-home-v2"
 const RUNTIME_HOME_LAYOUT_MARKER = ".runtime-shell-layout-version"
 
 const runtimeHomeSeedPromiseByWorker = new Map<string, Promise<string>>()
@@ -37,6 +38,14 @@ export function buildWarmRuntimeHomePath(input: {
     sanitizePathSegment(input.workerId),
     "warm",
     sanitizePathSegment(input.slotId),
+  )
+}
+
+export function buildWarmRuntimeHomeRoot(workerId: string) {
+  return path.join(
+    RUNTIME_HOME_ROOT,
+    sanitizePathSegment(workerId),
+    "warm",
   )
 }
 
@@ -271,7 +280,7 @@ function hasRuntimeHomeDatabase(runtimeHomePath: string) {
 
 function hasCurrentRuntimeHomeLayout(runtimeHomePath: string) {
   try {
-    return readFileSync(path.join(runtimeHomePath, RUNTIME_HOME_LAYOUT_MARKER), "utf8").trim() === RUNTIME_HOME_LAYOUT_VERSION
+    return readFileSync(path.join(runtimeHomePath, RUNTIME_HOME_LAYOUT_MARKER), "utf8").trim() === readRuntimeHomeLayoutVersion()
   } catch {
     return false
   }
@@ -307,31 +316,26 @@ async function writeRuntimeHomeLayoutMarker(runtimeHomePath: string) {
   await mkdir(runtimeHomePath, { recursive: true })
   await writeFile(
     path.join(runtimeHomePath, RUNTIME_HOME_LAYOUT_MARKER),
-    `${RUNTIME_HOME_LAYOUT_VERSION}\n`,
+    `${readRuntimeHomeLayoutVersion()}\n`,
     "utf8",
   )
 }
 
-async function ensureRuntimeHomeOwnership(runtimeHomePath: string) {
-  const ownership = readSandboxRuntimeOwnership()
-  if (!ownership || !existsSync(runtimeHomePath)) return
-  await applyOwnershipRecursive(runtimeHomePath, ownership)
+function readRuntimeHomeLayoutVersion() {
+  const migrationRoot = path.join(Config.sandboxDockerSpawnCwd, "packages", "opencode", "migration")
+  const latestMigration = readdirSync(migrationRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .at(-1)
+  // 中文/English: sandbox ACP skips per-process migrations only when the copied
+  // runtime-home seed matches the current upstream migration directory.
+  return `${RUNTIME_HOME_LAYOUT_VERSION_PREFIX}:${latestMigration || "unknown"}`
 }
 
-async function applyOwnershipRecursive(targetPath: string, ownership: {
-  uid: number
-  gid: number
-}) {
-  await chown(targetPath, ownership.uid, ownership.gid).catch(() => {})
-  const entries = await readdir(targetPath, { withFileTypes: true }).catch(() => [])
-  await Promise.all(entries.map(async (entry) => {
-    const entryPath = path.join(targetPath, entry.name)
-    if (entry.isDirectory()) {
-      await applyOwnershipRecursive(entryPath, ownership)
-      return
-    }
-    await chown(entryPath, ownership.uid, ownership.gid).catch(() => {})
-  }))
+async function ensureRuntimeHomeOwnership(runtimeHomePath: string) {
+  if (!existsSync(runtimeHomePath)) return
+  await ensureSandboxUserOwnership(runtimeHomePath)
 }
 
 function buildRuntimeHomeSeedDir(workerId: string) {
@@ -353,15 +357,6 @@ function readWorkerIdFromRuntimeHomePath(runtimeHomePath: string) {
 
 function sanitizePathSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9_.-]/g, "_")
-}
-
-function readSandboxRuntimeOwnership() {
-  const matched = /^(\d+)(?::(\d+))?$/.exec(Config.sandboxDockerUser)
-  if (!matched) return
-  return {
-    uid: Number(matched[1]),
-    gid: Number(matched[2] || matched[1]),
-  }
 }
 
 function toSqliteStringLiteral(value: string) {

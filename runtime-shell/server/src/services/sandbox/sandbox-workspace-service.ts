@@ -1,6 +1,7 @@
-import { cp, mkdir, readdir, rm } from "node:fs/promises"
+import { cp, mkdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { Config } from "../../config"
+import { ensureSandboxUserOwnership } from "../../lib/sandbox-user-ownership"
 import { createConcurrencyGate } from "../../lib/concurrency-gate"
 import {
   deleteSandboxInstanceByWorkspaceId,
@@ -18,8 +19,18 @@ import {
 import type { BusinessSession, SandboxWorkspace } from "../../types"
 import { runColdStartWorkspacePrepare } from "../../worker-agent/sandbox/docker-sandbox-cold-start"
 import { removeColdRuntimeHomesByWorkspace } from "../../worker-agent/sandbox/docker-sandbox-runtime-home"
+import { queryRemoteRuntimeForSession } from "../system/remote-runtime-observe-service"
 import { auditService, sessionService } from "../store/store-singleton"
 import { readSandboxBackend } from "./sandbox-backend"
+import {
+  hasLiveWorkspaceSessions,
+  hasReusableWorkspaceSessions,
+} from "./sandbox-workspace-liveness"
+import {
+  isDirectoryEmpty,
+  isSandboxWorkLayerPath,
+  persistWorkspaceFromSandbox,
+} from "./sandbox-workspace-sync"
 
 const sandboxWorkspacePreparations = new Map<string, Promise<SandboxWorkspace>>()
 const runWithSandboxWorkspaceGate = createConcurrencyGate(Config.sandboxWorkspacePrepareConcurrency)
@@ -55,13 +66,18 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
       // 中文/English: a brand-new workspace can skip the first full copy; the
       // managed sandbox root only needs to exist before the first write.
       await mkdir(sandboxPath, { recursive: true })
+      await ensureSandboxUserOwnership(sandboxPath)
     } else {
       await cp(session.workspacePath, sandboxPath, {
         recursive: true,
         force: true,
         // 中文/English: never nest the managed sandbox work layer into itself.
-        filter: (source) => !isSandboxWorkLayerPath(source),
+        filter: (source) => !isSandboxWorkLayerPath({
+          workspaceRootDir: Config.workspaceRootDir,
+          source,
+        }),
       })
+      await ensureSandboxUserOwnership(sandboxPath)
     }
     const now = new Date().toISOString()
     const workspace: SandboxWorkspace = {
@@ -119,7 +135,7 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
 export async function markSandboxWorkspaceClosing(sessionId: string) {
   const session = await sessionService.getSession(sessionId)
   if (!session) return
-  if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) return
+  if (await hasLiveSessions(session.workspaceId, [session.id])) return
   const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
   if (!existing) return
   await upsertSandboxWorkspace({
@@ -154,9 +170,10 @@ export async function markSandboxWorkspaceClosing(sessionId: string) {
 export async function closeSandboxWorkspace(sessionId: string) {
   const session = await sessionService.getSession(sessionId)
   if (!session) return
-  if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) return
+  if (await hasLiveSessions(session.workspaceId, [session.id])) return
   const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
   if (!existing) return
+  await persistSandboxWorkspace(existing)
   const instance = await findSandboxInstanceByWorkspaceId(session.workspaceId)
   const now = new Date().toISOString()
   await upsertSandboxWorkspace({
@@ -208,6 +225,8 @@ export async function markSandboxWorkspaceRunning(session: BusinessSession) {
   if (!existing) return
   const instance = await findSandboxInstanceByWorkspaceId(session.workspaceId)
   const now = new Date().toISOString()
+  const remoteRuntime = await queryRemoteRuntimeForSession(session)
+  const remoteSandbox = readRemoteRuntimeSandbox(remoteRuntime)
   await upsertSandboxInstance({
     id: instance?.id || `sbi_${session.workspaceId}`,
     tenantId: session.tenantId,
@@ -226,6 +245,7 @@ export async function markSandboxWorkspaceRunning(session: BusinessSession) {
     openedAt: now,
     detail: {
       workspacePath: session.workspacePath,
+      ...remoteSandbox,
     },
   })
 }
@@ -275,7 +295,7 @@ export async function cleanupStalePreparedSandboxWorkspaces(limit = 100) {
       })
       continue
     }
-    if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) continue
+    if (await hasLiveSessions(session.workspaceId, [session.id])) continue
     if (
       session.status !== "created" &&
       session.status !== "completed" &&
@@ -286,7 +306,7 @@ export async function cleanupStalePreparedSandboxWorkspaces(limit = 100) {
     if (workspace) {
       await cleanupSandboxWorkspaceRecord(workspace)
     } else {
-      await deleteSandboxInstanceByWorkspaceId(session.workspaceId)
+      await closeInactiveSandboxWorkspace(session, sandbox)
     }
     results.push({
       sessionId: session.id,
@@ -322,7 +342,7 @@ export async function cleanupStaleInactiveSandboxInstances(limit = 100) {
       })
       continue
     }
-    if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) continue
+    if (await hasReusableSessions(session.workspaceId, [session.id])) continue
     if (session.status === "orphaned") {
       if (await RuntimeLeaseRepo.findLeaseBySessionId(session.id)) continue
       // 中文/English: orphaned sessions may still reopen from the workspace copy,
@@ -362,7 +382,7 @@ export async function cleanupClosedSandboxWorkspace(sessionId: string) {
       reason: "session_not_found",
     }
   }
-  if (await hasReusableWorkspaceSessions(session.workspaceId, [session.id])) {
+  if (await hasReusableSessions(session.workspaceId, [session.id])) {
     return {
       sessionId,
       cleaned: false,
@@ -384,13 +404,23 @@ export async function cleanupClosedSandboxWorkspace(sessionId: string) {
   }
 }
 
+export async function purgeSandboxWorkspaceByWorkspaceId(workspaceId: string) {
+  const workspace = await findSandboxWorkspaceByWorkspaceId(workspaceId)
+  if (workspace) {
+    await cleanupSandboxWorkspaceRecord(workspace)
+    return
+  }
+  await removeColdRuntimeHomesByWorkspace(workspaceId)
+  await deleteSandboxInstanceByWorkspaceId(workspaceId)
+}
+
 async function cleanupSandboxWorkspaces(workspaces: SandboxWorkspace[]) {
   const results: Array<{
     sessionId: string
     cleaned: boolean
   }> = []
   for (const workspace of workspaces) {
-    if (await hasReusableWorkspaceSessions(workspace.workspaceId)) continue
+    if (await hasReusableSessions(workspace.workspaceId)) continue
     await cleanupSandboxWorkspaceRecord(workspace)
     results.push({
       sessionId: workspace.businessSessionId,
@@ -403,35 +433,86 @@ async function cleanupSandboxWorkspaces(workspaces: SandboxWorkspace[]) {
 async function cleanupSandboxWorkspaceRecord(workspace: SandboxWorkspace) {
   // 中文/English: cleanup touches only a workspace sandbox that is already closed
   // and no longer referenced by any resumable session.
+  await persistSandboxWorkspace(workspace)
   await rm(workspace.sandboxPath, { recursive: true, force: true }).catch(() => {})
   await removeColdRuntimeHomesByWorkspace(workspace.workspaceId)
   await deleteSandboxInstanceByWorkspaceId(workspace.workspaceId)
   await deleteSandboxWorkspaceByWorkspaceId(workspace.workspaceId)
 }
 
-async function hasReusableWorkspaceSessions(workspaceId: string, excludedSessionIds: string[] = []) {
-  const excluded = new Set(excludedSessionIds)
-  const sessions = (await sessionService.listSessions()).filter((session) =>
-    session.workspaceId === workspaceId && !excluded.has(session.id),
-  )
-  return sessions.some((session) =>
-    session.status === "opening" ||
-    session.status === "active" ||
-    session.status === "waiting_input" ||
-    session.status === "cancelling" ||
-    session.status === "closing" ||
-    // 中文/English: orphaned sessions still have a user-visible reopen path, so
-    // keep the workspace sandbox copy until governance or explicit cleanup reclaims it.
-    session.status === "orphaned",
-  )
+async function closeInactiveSandboxWorkspace(session: BusinessSession, sandbox: {
+  id: string
+  createdAt: string
+  sandboxPath: string
+}) {
+  const workspace = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
+  if (workspace) {
+    await persistSandboxWorkspace(workspace)
+  }
+  const now = new Date().toISOString()
+  if (workspace && workspace.status !== "closed") {
+    await upsertSandboxWorkspace({
+      ...workspace,
+      businessSessionId: session.id,
+      status: "closed",
+      updatedAt: now,
+      closedAt: workspace.closedAt || now,
+      expiresAt: workspace.expiresAt || new Date(Date.now() + Config.sandboxWorkspaceTtlMs).toISOString(),
+    })
+  }
+  await upsertSandboxInstance({
+    id: sandbox.id,
+    tenantId: session.tenantId,
+    organizationId: session.organizationId,
+    projectId: session.projectId,
+    workspaceId: session.workspaceId,
+    businessSessionId: session.id,
+    workerId: session.workerId,
+    backend: readSandboxBackend(),
+    runtimeClass: Config.sandboxRuntimeClass || undefined,
+    isolationMode: Config.sandboxIsolationMode || undefined,
+    status: "closed",
+    sandboxPath: workspace?.sandboxPath || sandbox.sandboxPath,
+    createdAt: sandbox.createdAt,
+    updatedAt: now,
+    closedAt: now,
+    detail: {
+      workspacePath: session.workspacePath,
+    },
+  })
 }
 
-function isSandboxWorkLayerPath(source: string) {
-  const relative = path.relative(path.join(Config.workspaceRootDir, ".sandbox"), source)
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+async function hasReusableSessions(workspaceId: string, excludedSessionIds: string[] = []) {
+  return hasReusableWorkspaceSessions({ sessionService, workspaceId, excludedSessionIds })
 }
 
-async function isDirectoryEmpty(targetDir: string) {
-  const entries = await Bun.file(targetDir).exists() ? await readdir(targetDir) : []
-  return entries.length === 0
+async function hasLiveSessions(workspaceId: string, excludedSessionIds: string[] = []) {
+  return hasLiveWorkspaceSessions({ sessionService, workspaceId, excludedSessionIds })
+}
+
+async function persistSandboxWorkspace(workspace: SandboxWorkspace) {
+  return persistWorkspaceFromSandbox({
+    workspacePath: workspace.workspacePath,
+    sandboxPath: workspace.sandboxPath,
+    runWithGate: runWithSandboxWorkspaceGate,
+    ensureOwnership: ensureSandboxUserOwnership,
+  })
+}
+
+function readRemoteRuntimeSandbox(remoteRuntime: unknown) {
+  if (!remoteRuntime || typeof remoteRuntime !== "object") return {}
+  const sandbox = (remoteRuntime as { sandbox?: unknown }).sandbox
+  if (!sandbox || typeof sandbox !== "object") return {}
+  const detail = sandbox as {
+    containerName?: unknown
+    source?: unknown
+    poolSlotId?: unknown
+    runtimeCwd?: unknown
+  }
+  return {
+    containerName: typeof detail.containerName === "string" ? detail.containerName : undefined,
+    source: typeof detail.source === "string" ? detail.source : undefined,
+    poolSlotId: typeof detail.poolSlotId === "string" ? detail.poolSlotId : undefined,
+    runtimeCwd: typeof detail.runtimeCwd === "string" ? detail.runtimeCwd : undefined,
+  }
 }

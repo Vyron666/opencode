@@ -20,6 +20,9 @@ CREATE INDEX IF NOT EXISTS idx_sandbox_workspace_session
 CREATE INDEX IF NOT EXISTS idx_sandbox_workspace_status
   ON sandbox_workspace (status, updated_at);
 
+CREATE INDEX IF NOT EXISTS idx_sandbox_workspace_cleanup
+  ON sandbox_workspace (status, expires_at, updated_at);
+
 CREATE TABLE IF NOT EXISTS sandbox_diff (
   id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL,

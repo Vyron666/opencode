@@ -219,3 +219,14 @@ export async function updateBinding(bindingId: string, patch: {
   )
   return updated
 }
+
+export async function deleteBindingsBySessionIds(sessionIds: string[]) {
+  if (sessionIds.length === 0) return
+  await getRuntimeDatabaseClient().execute(
+    `
+      DELETE FROM business_session_runtime_binding
+      WHERE business_session_id IN (${sessionIds.map(() => "?").join(", ")})
+    `,
+    sessionIds,
+  )
+}

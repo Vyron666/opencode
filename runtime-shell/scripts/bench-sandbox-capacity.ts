@@ -1,3 +1,5 @@
+import { cleanupWorkspacePrefixBestEffort } from "./test-workspace-cleanup"
+
 export {}
 
 const baseUrl = process.env.RUNTIME_SHELL_SMOKE_BASE_URL || "http://127.0.0.1:3100"
@@ -30,41 +32,50 @@ assert(login.status === 200, "login failed")
 
 const projectId = login.body.data.user.projectIds[0]
 const startedAt = Date.now()
+const namePrefix = `bench-${Date.now()}`
 
-const results = await Promise.all(
-  Array.from({ length: concurrency }, async (_, index) => {
-    const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
-      method: "POST",
-      body: {
-        projectId,
-        name: `bench-${Date.now()}-${index}`,
-      },
-    })
-    assert(workspace.status === 200, `workspace/create failed at ${index}`)
-    const session = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
-      method: "POST",
-      body: {
-        title: `Bench ${Date.now()}-${index}`,
-        projectId,
-        workspaceId: workspace.body.data.id,
-      },
-    })
-    assert(session.status === 200, `session/create failed at ${index}`)
-    const open = await requestJson<ApiEnvelope<SessionSummary>>("/api/acp/session/open", {
-      method: "POST",
-      body: { businessSessionId: session.body.data.id },
-    })
-    assert(open.status === 200, `session/open failed at ${index}`)
-    return session.body.data.id
-  }),
-)
+try {
+  const results = await Promise.all(
+    Array.from({ length: concurrency }, async (_, index) => {
+      const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
+        method: "POST",
+        body: {
+          projectId,
+          name: `${namePrefix}-${index}`,
+        },
+      })
+      assert(workspace.status === 200, `workspace/create failed at ${index}`)
+      const session = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
+        method: "POST",
+        body: {
+          title: `Bench ${Date.now()}-${index}`,
+          projectId,
+          workspaceId: workspace.body.data.id,
+        },
+      })
+      assert(session.status === 200, `session/create failed at ${index}`)
+      const open = await requestJson<ApiEnvelope<SessionSummary>>("/api/acp/session/open", {
+        method: "POST",
+        body: { businessSessionId: session.body.data.id },
+      })
+      assert(open.status === 200, `session/open failed at ${index}`)
+      return session.body.data.id
+    }),
+  )
 
-console.log(JSON.stringify({
-  ok: true,
-  concurrency,
-  elapsedMs: Date.now() - startedAt,
-  sessionCount: results.length,
-}))
+  console.log(JSON.stringify({
+    ok: true,
+    concurrency,
+    elapsedMs: Date.now() - startedAt,
+    sessionCount: results.length,
+  }))
+} finally {
+  await cleanupWorkspacePrefixBestEffort({
+    baseUrl,
+    cookieJar,
+    namePrefix,
+  })
+}
 
 async function requestJson<T>(path: string, init: { method?: string; body?: unknown } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {

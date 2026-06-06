@@ -25,6 +25,16 @@ export class StoreWorkspaceService {
     return WorkspaceRepo.listWorkspacesForUser(user)
   }
 
+  async listWorkspacesByNamePrefix(input: {
+    tenantId: string
+    organizationId: string
+    namePrefix: string
+    limit: number
+    createdBy?: string
+  }) {
+    return WorkspaceRepo.listWorkspacesByNamePrefix(input)
+  }
+
   async ensureWorkspace(input: {
     tenantId: string
     organizationId: string
@@ -39,5 +49,12 @@ export class StoreWorkspaceService {
       await this.persistState()
     }
     return workspace
+  }
+
+  async softDeleteWorkspaceById(input: {
+    workspaceId: string
+    deletedBy: string
+  }) {
+    return WorkspaceRepo.softDeleteWorkspaceById(input)
   }
 }

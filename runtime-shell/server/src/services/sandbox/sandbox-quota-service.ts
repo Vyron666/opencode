@@ -132,21 +132,13 @@ async function resolveEffectiveQuota(user: User, projectId: string) {
 }
 
 async function countActiveSessions(user: User, projectId: string) {
-  const sessions = await sessionService.listSessions()
-  return sessions.filter((session) =>
-    session.tenantId === user.tenantId &&
-    session.organizationId === user.organizationId &&
-    session.projectId === projectId &&
-    session.createdBy === user.id &&
-    (
-      session.status === "created" ||
-      session.status === "opening" ||
-      session.status === "active" ||
-      session.status === "waiting_input" ||
-      session.status === "cancelling" ||
-      session.status === "closing"
-    ),
-  ).length
+  return sessionService.countSessions({
+    tenantId: user.tenantId,
+    organizationId: user.organizationId,
+    projectId,
+    createdBy: user.id,
+    statuses: ["created", "opening", "active", "waiting_input", "cancelling", "closing"],
+  })
 }
 
 async function countRunningSandboxes(user: User, projectId: string) {

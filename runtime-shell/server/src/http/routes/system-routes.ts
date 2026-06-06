@@ -9,6 +9,7 @@ import {
 import { heartbeatWorkerForUser, registerWorkerForUser } from "../../services/worker/worker-service"
 import {
   cleanupSandboxesForUser,
+  cleanupWorkspacesByPrefixForUser,
   getHealthOverview,
   getQueueOverviewForUser,
   getQuotaOverviewForUser,
@@ -17,7 +18,7 @@ import {
   closeSandboxForUser,
   updateQuotaForUser,
 } from "../../services/system/system-service"
-import { quotaPolicyUpdateSchema, sandboxCleanupSchema, workerHeartbeatSchema, workerRegisterSchema } from "../schemas"
+import { quotaPolicyUpdateSchema, sandboxCleanupSchema, workerHeartbeatSchema, workerRegisterSchema, workspacePrefixCleanupSchema } from "../schemas"
 import { jsonError, jsonOk, requestId } from "../response"
 import { requireUser, unauthorized } from "../auth-helpers"
 
@@ -147,6 +148,26 @@ export function registerSystemRoutes(app: Hono) {
     return c.json(jsonOk({
       cleanedSessionIds: result.cleanedSessionIds,
       warmPoolCleanup: result.warmPoolCleanup,
+    }, reqId))
+  })
+
+  app.post("/api/system/workspace/cleanup-prefix", async (c) => {
+    const reqId = requestId(c)
+    const user = await requireUser(c)
+    if (!user) return unauthorized(c)
+    const body = workspacePrefixCleanupSchema.safeParse(await c.req.json())
+    if (!body.success) {
+      return c.json(jsonError("invalid workspace cleanup payload", 400, reqId, body.error.flatten()), 400)
+    }
+    const result = await cleanupWorkspacesByPrefixForUser({
+      user,
+      namePrefix: body.data.namePrefix,
+      limit: body.data.limit,
+    })
+    if (!result.ok) return c.json(jsonError("forbidden", 403, reqId), 403)
+    return c.json(jsonOk({
+      cleanedWorkspaceIds: result.cleanedWorkspaceIds,
+      cleanedSessionIds: result.cleanedSessionIds,
     }, reqId))
   })
 

@@ -41,9 +41,12 @@ export async function applyApprovedPlatformProviderConfig(input: {
       affectedWorkerIds: affected.affectedWorkerIds,
     },
   })
-  const affectedSessions = (await sessionService.listSessions()).filter((session) =>
-    affected.affectedSessionIds.includes(session.id),
-  )
+  const affectedSessionIds = new Set(affected.affectedSessionIds)
+  const affectedSessions = (await sessionService.listSessionsByFilter({
+    tenantId: input.user.tenantId,
+    organizationId: input.user.organizationId,
+    statuses: ["active"],
+  })).filter((session) => affectedSessionIds.has(session.id))
   for (const session of affectedSessions) {
     await closeRuntime(session.id)
     await markSessionCreated(session.id)

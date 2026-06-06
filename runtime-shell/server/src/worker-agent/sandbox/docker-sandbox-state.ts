@@ -26,6 +26,7 @@ export type WarmPoolSlot = {
   workspacePrepared?: boolean
   preparingRuntime?: boolean
   runtimeClient?: AcpProcessClient
+  runtimeClientPromise?: Promise<AcpProcessClient>
 }
 
 export const log = createLogger("docker-sandbox")
@@ -37,6 +38,7 @@ export const docker = new Docker({
 export const warmPoolByWorker = new Map<string, WarmPoolSlot[]>()
 export const warmPoolTargetByWorker = new Map<string, number>()
 export const pendingWarmPoolEnsureByWorker = new Map<string, Promise<unknown>>()
+export const pendingWarmPoolReconcileByWorker = new Map<string, Promise<void>>()
 export const runWithRuntimeBootGate = createConcurrencyGate(Config.sandboxRuntimeBootConcurrency)
 // 中文/English: cold-start heavy stages must share one global gate so workspace copy,
 // runtime-home preparation and first container boot back-pressure the same budget.

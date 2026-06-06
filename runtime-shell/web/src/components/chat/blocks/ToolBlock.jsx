@@ -20,24 +20,24 @@ export function ToolBlock({ block }) {
   }, [block.content, block.input, block.locations, block.output])
 
   return (
-    <div className="grid w-full max-w-[760px] gap-2.5 rounded-[18px] border border-[#dce6f8] bg-[#f7f9fe] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-      <div className="flex min-w-0 items-center gap-2">
+    <div className="grid w-full max-w-[780px] gap-3 rounded-[24px] border border-[#dce6f8] bg-[linear-gradient(180deg,#fbfcff_0%,#f5f8ff_100%)] px-5 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 items-center gap-2.5">
         <span className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ color: statusMeta.color, background: statusMeta.background }}>
           {statusMeta.label}
         </span>
-        {block.kind ? <span className="truncate text-[11px] text-[#8a96ab]">{block.kind}</span> : null}
+        {block.kind ? <span className="truncate rounded-full bg-white px-2.5 py-1 text-[11px] text-[#8a96ab]">{block.kind}</span> : null}
         {hasDetails ? (
           <button
             type="button"
             onClick={() => setExpanded((current) => !current)}
-            className="ml-auto rounded-full border border-[#dbe5f6] bg-white px-2.5 py-1 text-[11px] text-[#61718d] transition-colors hover:bg-[#f6f8fe]"
+            className="ml-auto rounded-full border border-[#dbe5f6] bg-white px-2.5 py-1 text-[11px] text-[#61718d] shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition-colors hover:bg-[#f6f8fe]"
           >
             {expanded ? '收起' : '展开'}
           </button>
         ) : null}
       </div>
 
-      <div className="min-w-0 break-words text-[14px] font-semibold text-[#24324a]">{block.title}</div>
+      <div className="min-w-0 break-words text-[15px] font-semibold text-[#24324a]">{block.title}</div>
       {!expanded && summary ? <div className="truncate text-[12px] text-[#7c8aa5]">{summary}</div> : null}
 
       {expanded ? (

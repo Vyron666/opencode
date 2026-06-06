@@ -1,3 +1,5 @@
+import { cleanupWorkspacePrefixBestEffort } from "./test-workspace-cleanup"
+
 export {}
 
 const baseUrl = process.env.RUNTIME_SHELL_PRESSURE_BASE_URL || "http://127.0.0.1:3100"
@@ -188,134 +190,141 @@ async function runPressureScenario(concurrency: number) {
     createStartedAt: Date.now(),
   }))
   const scenarioStartedAt = Date.now()
-
-  const creationResults = await Promise.all(
-    sessions.map(async (session) => {
-      try {
-        const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
-          method: "POST",
-          body: {
-            projectId,
-            name: `${scenarioLabel}-workspace-${session.index}`,
-          },
-        })
-        session.workspaceId = workspace.body.data.id
-        const created = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
-          method: "POST",
-          body: {
-            title: `${scenarioLabel}-session-${session.index}`,
-            projectId,
-            workspaceId: workspace.body.data.id,
-          },
-        })
-        session.createCompletedAt = Date.now()
-        session.createStatus = created.status
-        if (created.status === 200) {
-          session.sessionId = created.body.data.id
-          session.workerId = created.body.data.workerId || undefined
-        } else {
-          session.createError = created.body.message
+  try {
+    const creationResults = await Promise.all(
+      sessions.map(async (session) => {
+        try {
+          const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
+            method: "POST",
+            body: {
+              projectId,
+              name: `${scenarioLabel}-workspace-${session.index}`,
+            },
+          })
+          session.workspaceId = workspace.body.data.id
+          const created = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
+            method: "POST",
+            body: {
+              title: `${scenarioLabel}-session-${session.index}`,
+              projectId,
+              workspaceId: workspace.body.data.id,
+            },
+          })
+          session.createCompletedAt = Date.now()
+          session.createStatus = created.status
+          if (created.status === 200) {
+            session.sessionId = created.body.data.id
+            session.workerId = created.body.data.workerId || undefined
+          } else {
+            session.createError = created.body.message
+          }
+        } catch (error) {
+          session.createCompletedAt = Date.now()
+          session.createStatus = 0
+          session.createError = error instanceof Error ? error.message : String(error)
         }
-      } catch (error) {
-        session.createCompletedAt = Date.now()
-        session.createStatus = 0
-        session.createError = error instanceof Error ? error.message : String(error)
-      }
-      return session
-    }),
-  )
+        return session
+      }),
+    )
 
-  const createdSessions = creationResults.filter((session) => session.sessionId)
-  const openResultsPromise = Promise.all(
-    createdSessions.map(async (session) => {
-      session.openStartedAt = Date.now()
-      try {
-        const open = await requestJson<ApiEnvelope<SessionSummary>>("/api/acp/session/open", {
-          method: "POST",
-          body: { businessSessionId: session.sessionId },
-        })
-        session.openCompletedAt = Date.now()
-        session.openStatus = open.status
-        if (open.status !== 200) session.openError = open.body.message
-      } catch (error) {
-        session.openCompletedAt = Date.now()
-        session.openStatus = 0
-        session.openError = error instanceof Error ? error.message : String(error)
-      }
-      return session
-    }),
-  )
-  const systemSnapshotsPromise = waitForSessionConvergence(createdSessions, openSettleTimeoutMs)
-  const openResults = await openResultsPromise
+    const createdSessions = creationResults.filter((session) => session.sessionId)
+    const openResultsPromise = Promise.all(
+      createdSessions.map(async (session) => {
+        session.openStartedAt = Date.now()
+        try {
+          const open = await requestJson<ApiEnvelope<SessionSummary>>("/api/acp/session/open", {
+            method: "POST",
+            body: { businessSessionId: session.sessionId },
+          })
+          session.openCompletedAt = Date.now()
+          session.openStatus = open.status
+          if (open.status !== 200) session.openError = open.body.message
+        } catch (error) {
+          session.openCompletedAt = Date.now()
+          session.openStatus = 0
+          session.openError = error instanceof Error ? error.message : String(error)
+        }
+        return session
+      }),
+    )
+    const systemSnapshotsPromise = waitForSessionConvergence(createdSessions, openSettleTimeoutMs)
+    const openResults = await openResultsPromise
 
-  const openableSessions = openResults.filter((session) => session.sessionId && session.openStatus === 200)
-  const systemSnapshots = await systemSnapshotsPromise
-  const queues = await requestJson<ApiEnvelope<SystemQueuesResponse>>(`/api/system/queues?limit=${systemLimit}`)
-  const sandboxes = await requestJson<ApiEnvelope<SystemSandboxesResponse>>(`/api/system/sandboxes?limit=${systemLimit}`)
-  const workers = await requestJson<ApiEnvelope<WorkerListResponse>>("/api/worker/list")
-  const operationMetrics = buildOperationMetrics(openableSessions, queues.body.data.items)
-  const sandboxMetrics = buildSandboxMetrics(openableSessions, sandboxes.body.data.items)
-  const recovery = skipRecoveryProbe
-    ? {
-        skipped: true,
-        concurrency,
-        reason: "recovery_probe_disabled",
-      }
-    : await runRecoveryProbe(concurrency, openableSessions).catch((error) => ({
-        skipped: true,
-        concurrency,
-        reason: "probe_failed",
-        // 中文/English: recovery probe should never discard the pressure metrics that
-        // were already collected successfully; record the probe failure separately.
-        error: error instanceof Error ? error.message : String(error),
-      }))
+    const openableSessions = openResults.filter((session) => session.sessionId && session.openStatus === 200)
+    const systemSnapshots = await systemSnapshotsPromise
+    const queues = await requestJson<ApiEnvelope<SystemQueuesResponse>>(`/api/system/queues?limit=${systemLimit}`)
+    const sandboxes = await requestJson<ApiEnvelope<SystemSandboxesResponse>>(`/api/system/sandboxes?limit=${systemLimit}`)
+    const workers = await requestJson<ApiEnvelope<WorkerListResponse>>("/api/worker/list")
+    const operationMetrics = buildOperationMetrics(openableSessions, queues.body.data.items)
+    const sandboxMetrics = buildSandboxMetrics(openableSessions, sandboxes.body.data.items)
+    const recovery = skipRecoveryProbe
+      ? {
+          skipped: true,
+          concurrency,
+          reason: "recovery_probe_disabled",
+        }
+      : await runRecoveryProbe(concurrency, openableSessions).catch((error) => ({
+          skipped: true,
+          concurrency,
+          reason: "probe_failed",
+          // 中文/English: recovery probe should never discard the pressure metrics that
+          // were already collected successfully; record the probe failure separately.
+          error: error instanceof Error ? error.message : String(error),
+        }))
 
-  await closeSessionsBestEffort(createdSessions)
-
-  return {
-    concurrency,
-    scenarioLabel,
-    startedAt: new Date(scenarioStartedAt).toISOString(),
-    finishedAt: new Date().toISOString(),
-    summary: buildScenarioSummary({
-      sessions,
-      operationMetrics,
-      sandboxMetrics,
+    return {
+      concurrency,
+      scenarioLabel,
+      startedAt: new Date(scenarioStartedAt).toISOString(),
+      finishedAt: new Date().toISOString(),
+      summary: buildScenarioSummary({
+        sessions,
+        operationMetrics,
+        sandboxMetrics,
+        systemSnapshots,
+        workers: workers.body.data.items,
+        sandboxes: sandboxes.body.data.summary,
+      }),
+      sessions: sessions.map((session) => ({
+        index: session.index,
+        sessionId: session.sessionId,
+        workspaceId: session.workspaceId,
+        createStatus: session.createStatus,
+        openStatus: session.openStatus,
+        terminalStatus: session.terminalStatus,
+        workerId: session.workerId,
+        createMs: duration(session.createStartedAt, session.createCompletedAt),
+        openRequestMs: duration(session.openStartedAt, session.openCompletedAt),
+        openToActiveMs: duration(session.openStartedAt, session.activeAt),
+        createToActiveMs: duration(session.createStartedAt, session.activeAt),
+        createError: session.createError,
+        openError: session.openError,
+        queueDelayMs: operationMetrics.bySessionId.get(session.sessionId || "")?.queueDelayMs,
+        operationRunMs: operationMetrics.bySessionId.get(session.sessionId || "")?.runMs,
+        operationTotalMs: operationMetrics.bySessionId.get(session.sessionId || "")?.totalMs,
+        operationStage: operationMetrics.bySessionId.get(session.sessionId || "")?.stage,
+        operationStageTimings: operationMetrics.bySessionId.get(session.sessionId || "")?.stageTimings,
+        sandboxCreateToRunningMs: sandboxMetrics.bySessionId.get(session.sessionId || "")?.createToRunningMs,
+      })),
+      operationMetrics: {
+        items: operationMetrics.items,
+        stats: operationMetrics.stats,
+      },
+      sandboxMetrics: {
+        items: sandboxMetrics.items,
+        stats: sandboxMetrics.stats,
+      },
       systemSnapshots,
-      workers: workers.body.data.items,
-      sandboxes: sandboxes.body.data.summary,
-    }),
-    sessions: sessions.map((session) => ({
-      index: session.index,
-      sessionId: session.sessionId,
-      workspaceId: session.workspaceId,
-      createStatus: session.createStatus,
-      openStatus: session.openStatus,
-      terminalStatus: session.terminalStatus,
-      workerId: session.workerId,
-      createMs: duration(session.createStartedAt, session.createCompletedAt),
-      openRequestMs: duration(session.openStartedAt, session.openCompletedAt),
-      openToActiveMs: duration(session.openStartedAt, session.activeAt),
-      createToActiveMs: duration(session.createStartedAt, session.activeAt),
-      createError: session.createError,
-      openError: session.openError,
-      queueDelayMs: operationMetrics.bySessionId.get(session.sessionId || "")?.queueDelayMs,
-      operationRunMs: operationMetrics.bySessionId.get(session.sessionId || "")?.runMs,
-      operationTotalMs: operationMetrics.bySessionId.get(session.sessionId || "")?.totalMs,
-      operationStage: operationMetrics.bySessionId.get(session.sessionId || "")?.stage,
-      operationStageTimings: operationMetrics.bySessionId.get(session.sessionId || "")?.stageTimings,
-      sandboxCreateToRunningMs: sandboxMetrics.bySessionId.get(session.sessionId || "")?.createToRunningMs,
-    })),
-    operationMetrics: {
-      items: operationMetrics.items,
-      stats: operationMetrics.stats,
-    },
-    sandboxMetrics: {
-      items: sandboxMetrics.items,
-      stats: sandboxMetrics.stats,
-    },
-    systemSnapshots,
-    recovery,
+      recovery,
+    }
+  } finally {
+    await closeSessionsBestEffort(sessions.filter((session) => session.sessionId))
+    await cleanupWorkspacePrefixBestEffort({
+      baseUrl,
+      cookieJar,
+      namePrefix: concurrency === 10 ? "pressure-10-" : scenarioLabel,
+      limit: systemLimit,
+    })
   }
 }
 
@@ -340,6 +349,7 @@ async function waitForSessionConvergence(sessions: ScenarioSession[], timeoutMs:
     details.forEach((detail, index) => {
       if (!detail || detail.status !== 200) return
       const sessionId = pendingIds[index]
+      if (!sessionId) return
       const current = sessions.find((item) => item.sessionId === sessionId)
       if (!current) return
       current.terminalStatus = detail.body.data.session.status
@@ -502,6 +512,7 @@ async function closeSessionsBestEffort(sessions: ScenarioSession[]) {
       }),
   )
 }
+
 
 async function collectBaseline() {
   const [workers, sandboxes, queues, quotas] = await Promise.all([

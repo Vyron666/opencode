@@ -209,6 +209,9 @@ function buildSandboxEnv() {
   return [
     "OPENCODE_CLIENT=acp",
     "OPENCODE_DB=opencode.db",
+    // 中文/English: sandbox runtime homes are copied from a versioned, pre-migrated seed.
+    // Skipping per-process schema migration checks keeps cold ACP startup on the fast path.
+    "OPENCODE_SKIP_MIGRATIONS=1",
     "OPENCODE_DISABLE_MODELS_FETCH=1",
     "OPENCODE_DISABLE_PROJECT_CONFIG=1",
     `OPENCODE_CONFIG=${path.join(SANDBOX_SHARED_CONFIG_TARGET, "opencode.example.jsonc")}`,

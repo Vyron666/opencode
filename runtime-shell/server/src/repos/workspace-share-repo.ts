@@ -235,3 +235,23 @@ export async function revokeShareBinding(input: {
   )
   return true
 }
+
+export async function softDeleteSharesByWorkspaceId(input: {
+  workspaceId: string
+  deletedBy: string
+}) {
+  const timestamp = now()
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE workspace_share_binding
+      SET
+        status = ?,
+        updated_at = ?,
+        updated_by = ?,
+        deleted_at = ?
+      WHERE workspace_id = ?
+        AND deleted_at IS NULL
+    `,
+    ["revoked", timestamp, input.deletedBy, timestamp, input.workspaceId],
+  )
+}

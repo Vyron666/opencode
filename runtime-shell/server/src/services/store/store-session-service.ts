@@ -14,6 +14,35 @@ export class StoreSessionService {
     return SessionRepo.listAllSessions()
   }
 
+  async listSessionsByFilter(input: {
+    tenantId?: string
+    organizationId?: string
+    projectId?: string
+    workspaceId?: string
+    workspaceIds?: string[]
+    createdBy?: string
+    workerId?: string
+    workerIds?: string[]
+    statuses?: BusinessSession["status"][]
+    limit?: number
+  }) {
+    return SessionRepo.listSessions(input)
+  }
+
+  async countSessions(input: {
+    tenantId?: string
+    organizationId?: string
+    projectId?: string
+    workspaceId?: string
+    workspaceIds?: string[]
+    createdBy?: string
+    workerId?: string
+    workerIds?: string[]
+    statuses?: BusinessSession["status"][]
+  }) {
+    return SessionRepo.countSessions(input)
+  }
+
   async listUserSessions(user: User) {
     return SessionRepo.listSessionsForUser(user)
   }
@@ -45,6 +74,13 @@ export class StoreSessionService {
 
   async updateSession(sessionId: string, patch: BusinessSessionPatch) {
     return SessionRepo.patchSession(sessionId, patch)
+  }
+
+  async softDeleteSessionsByWorkspaceId(input: {
+    workspaceId: string
+    deletedBy: string
+  }) {
+    return SessionRepo.softDeleteSessionsByWorkspaceId(input)
   }
 
   async stageSessionEvent(event: SessionEvent, sessionPatch?: BusinessSessionPatch) {

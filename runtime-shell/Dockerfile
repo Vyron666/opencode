@@ -6,10 +6,13 @@ WORKDIR /workspace
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV NODE_OPTIONS=--use-openssl-ca
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 RUN apt-get update \
   -o Acquire::Retries=3 \
   && apt-get install -y --no-install-recommends -o Acquire::Retries=3 ca-certificates libstdc++6 ripgrep git bash python3 make g++ \
+  && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock bunfig.toml turbo.json ./

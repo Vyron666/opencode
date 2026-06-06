@@ -11,6 +11,10 @@ import { sessionService, userService, workerService } from "../store/store-singl
 const log = createLogger("local-worker-heartbeat")
 const CREATED_SESSION_RESERVATION_MS = 30000
 const LOCAL_WORKER_HEALTH_TIMEOUT_MS = 3000
+const LOCAL_WARM_POOL_ENSURE_TIMEOUT_MS = Math.max(
+  LOCAL_WORKER_HEALTH_TIMEOUT_MS,
+  Math.min(Config.workerHeartbeatTimeoutMs, 15000),
+)
 
 let localWorkerHeartbeatTimer: Timer | undefined
 let pendingLocalWorkerHeartbeat: Promise<void> | undefined
@@ -32,7 +36,9 @@ function readHeartbeatIntervalMs() {
 }
 
 async function beatLocalWorker() {
-  const sessions = await sessionService.listSessions()
+  const sessions = await sessionService.listSessionsByFilter({
+    statuses: ["created", "opening", "active", "waiting_input", "cancelling", "closing"],
+  })
   const adminUser = userService.findUser(Config.adminUsername)
   await Promise.all(
     Config.localWorkers.map(async (localWorker) => {
@@ -69,9 +75,9 @@ async function beatLocalWorker() {
         })
         return
       }
-      const warmPoolTarget = localWorker.warmPoolTarget ?? worker.warmPoolTarget ?? 0
-      const [runningSandboxCount, queuedOperationCount, warmPoolSnapshot, remoteHeartbeat] = await Promise.all([
-        SandboxInstanceRepo.countSandboxInstancesByWorkerStatus(localWorker.id, ["preparing", "ready", "running"]),
+      const configuredWarmPoolTarget = localWorker.warmPoolTarget ?? worker.warmPoolTarget ?? 0
+      const [runningSandboxCount, queuedOperationCount, remoteHeartbeat] = await Promise.all([
+        SandboxInstanceRepo.countBusinessSandboxInstancesByWorkerStatus(localWorker.id, ["preparing", "ready", "running"]),
         worker.tenantId && worker.organizationId
           ? RuntimeOperationQueueRepo.countRuntimeOperationsByScope({
               tenantId: worker.tenantId,
@@ -80,16 +86,24 @@ async function beatLocalWorker() {
               statuses: ["queued", "running"],
             })
           : 0,
-        ensureRemoteWarmPool(worker, localWorker.agentBaseUrl, warmPoolTarget),
         queryRemoteWorkerHeartbeat(localWorker.agentBaseUrl, localWorker.id),
       ])
+      const warmPoolTarget = readEffectiveWarmPoolTarget({
+        configuredTarget: configuredWarmPoolTarget,
+        capacity: worker.capacity,
+        activeSessionCount,
+        runningSandboxCount,
+        queuedOperationCount,
+      })
+      const warmPoolSnapshot = await ensureRemoteWarmPool(worker, localWorker.agentBaseUrl, warmPoolTarget)
       const warmPoolReady = warmPoolSnapshot.readyCount
+      const warmShellReady = warmPoolSnapshot.warmShellReadyCount ?? warmPoolReady
       await syncWarmPoolSandboxInstances(worker, warmPoolSnapshot)
       const resourceSummary = {
         // 中文/English: derive capacity stats from persisted runtime-shell state and
         // remote warm pool state so scheduling sees one consistent pressure model.
         runningSandboxCount,
-        warmSandboxCount: warmPoolReady,
+        warmSandboxCount: warmShellReady,
         queuedOperationCount,
         cpuPercent: remoteHeartbeat.cpuPercent,
         memoryBytes: remoteHeartbeat.memoryBytes,
@@ -111,6 +125,19 @@ async function beatLocalWorker() {
       })
     }),
   )
+}
+
+function readEffectiveWarmPoolTarget(input: {
+  configuredTarget: number
+  capacity: number
+  activeSessionCount: number
+  runningSandboxCount: number
+  queuedOperationCount: number
+}) {
+  const livePressure = Math.max(input.activeSessionCount, input.runningSandboxCount)
+  const queuePenalty = input.queuedOperationCount > 0 ? 1 : 0
+  const spareCapacity = Math.max(0, input.capacity - livePressure - queuePenalty)
+  return Math.min(input.configuredTarget, spareCapacity)
 }
 
 function runLocalWorkerHeartbeat() {
@@ -223,9 +250,17 @@ async function ensureRemoteWarmPool(
         workerId: worker.id,
         target,
       }),
-      signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
+      // 中文/English: warm-pool ensure is a bounded control-plane operation, not a
+      // liveness probe. It needs a longer timeout than `/healthz`, otherwise the
+      // server sees `warmPoolReady=0` even while the worker is still building slots.
+      signal: AbortSignal.timeout(LOCAL_WARM_POOL_ENSURE_TIMEOUT_MS),
     })
     if (!response.ok) {
+      log.warn("remote warm pool ensure failed", {
+        workerId: worker.id,
+        target,
+        status: response.status,
+      })
       return {
         readyCount: 0,
         leasedCount: 0,
@@ -237,6 +272,7 @@ async function ensureRemoteWarmPool(
       readyCount?: number
       leasedCount?: number
       target?: number
+      warmShellReadyCount?: number
       slots?: Array<{
         slotId: string
         containerName: string
@@ -247,11 +283,17 @@ async function ensureRemoteWarmPool(
     }
     return {
       readyCount: typeof payload.readyCount === "number" ? payload.readyCount : 0,
+      warmShellReadyCount: typeof payload.warmShellReadyCount === "number" ? payload.warmShellReadyCount : undefined,
       leasedCount: typeof payload.leasedCount === "number" ? payload.leasedCount : 0,
       target: typeof payload.target === "number" ? payload.target : target,
       slots: Array.isArray(payload.slots) ? payload.slots : [],
     }
-  } catch {
+  } catch (error) {
+    log.warn("remote warm pool ensure failed", {
+      workerId: worker.id,
+      target,
+      message: error instanceof Error ? error.message : String(error),
+    })
     return {
       readyCount: 0,
       leasedCount: 0,

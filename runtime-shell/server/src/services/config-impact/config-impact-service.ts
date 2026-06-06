@@ -1,5 +1,5 @@
 import { getRuntime } from "../../acp-runtime-manager"
-import type { BusinessSession, User } from "../../types"
+import type { User } from "../../types"
 import { sessionService } from "../store/store-singleton"
 
 export type ConfigImpactPreview = {
@@ -17,14 +17,11 @@ export async function previewPlatformProviderImpact(input: {
   organizationId: string
   providerId: string
 }) {
-  const sessions = await sessionService.listSessions()
-  const activeSessions = sessions.filter(
-    (session) =>
-      session.tenantId === input.tenantId &&
-      session.organizationId === input.organizationId &&
-      session.status === "active" &&
-      Boolean(getRuntime(session.id)),
-  )
+  const activeSessions = (await sessionService.listSessionsByFilter({
+    tenantId: input.tenantId,
+    organizationId: input.organizationId,
+    statuses: ["active"],
+  })).filter((session) => Boolean(getRuntime(session.id)))
   return {
     affectedSessionIds: activeSessions.map((session) => session.id),
     reloadedSessionCount: activeSessions.length,
@@ -38,15 +35,12 @@ export async function previewUserPrivateProviderImpact(input: {
   userId: string
   providerId: string
 }) {
-  const sessions = await sessionService.listSessions()
-  const activeSessions = sessions.filter(
-    (session) =>
-      session.tenantId === input.tenantId &&
-      session.organizationId === input.organizationId &&
-      session.createdBy === input.userId &&
-      session.status === "active" &&
-      Boolean(getRuntime(session.id)),
-  )
+  const activeSessions = (await sessionService.listSessionsByFilter({
+    tenantId: input.tenantId,
+    organizationId: input.organizationId,
+    createdBy: input.userId,
+    statuses: ["active"],
+  })).filter((session) => Boolean(getRuntime(session.id)))
   return {
     affectedSessionIds: activeSessions.map((session) => session.id),
     reloadedSessionCount: activeSessions.length,
@@ -91,8 +85,12 @@ export async function previewConfigImpact(input: {
     } satisfies ConfigImpactPreview
   }
 
-  const sessions = await sessionService.listSessions()
-  const activeSessions = sessions.filter((session) => sessionMatchesConfigImpactScope(session, input.user))
+  const activeSessions = (await sessionService.listSessionsByFilter({
+    tenantId: input.user.tenantId,
+    organizationId: input.user.organizationId,
+    ...(input.user.role === "admin" ? {} : { createdBy: input.user.id }),
+    statuses: ["active"],
+  })).filter((session) => getRuntime(session.id))
   const source = input.user.role === "admin" ? "platform_shared" : "user_private"
   const subject = input.namespace === "mcp" ? "MCP 配置" : "Skill 配置"
   const summary =
@@ -109,16 +107,4 @@ export async function previewConfigImpact(input: {
     affectedSessionCount: activeSessions.length,
     affectedWorkerIds: [...new Set(activeSessions.map((session) => session.workerId).filter(Boolean))],
   } satisfies ConfigImpactPreview
-}
-function sessionMatchesConfigImpactScope(session: BusinessSession, user: User) {
-  if (
-    session.tenantId !== user.tenantId ||
-    session.organizationId !== user.organizationId ||
-    session.status !== "active" ||
-    !getRuntime(session.id)
-  ) {
-    return false
-  }
-  if (user.role === "admin") return true
-  return session.createdBy === user.id
 }

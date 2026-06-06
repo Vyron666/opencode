@@ -4,8 +4,8 @@ import { buildConversationState, finalizeConversationView } from '../conversatio
 import { ChatBlockItem } from '../chat-blocks'
 import { convergeInteractionState } from '../../../store/session-events'
 
-export function ConversationTimeline({ blocks, currentSessionId, onOpenSettings }) {
-  if (blocks.length === 0) return <EmptyConversation currentSessionId={currentSessionId} onOpenSettings={onOpenSettings} />
+export function ConversationTimeline({ blocks, currentSessionId }) {
+  if (blocks.length === 0) return <EmptyConversation currentSessionId={currentSessionId} />
 
   return (
     <div className="mx-auto grid min-w-0 max-w-[1120px] content-start gap-3.5 pb-6">

@@ -13,7 +13,7 @@ import { resetSessionRuntime } from "./session-lifecycle-service"
 import { markSessionClosing, markSessionOpening } from "./session-status-machine-service"
 import { buildSessionViewForUser } from "./session-summary-service"
 import { listWorkspaceSharesForWorkspace } from "./workspace-share-application-service"
-import { ensureSessionRuntimePrewarmed, openSessionWithFallback, preopenSessionRuntime } from "./session-runtime-service"
+import { ensureSessionRuntimePrewarmed, openSessionWithFallback, preopenSessionRuntime, waitForSessionRuntimePrewarmed } from "./session-runtime-service"
 import {
   assignWorkerForNewSession,
   assignWorkerForNewSessionWithReservation,
@@ -128,11 +128,11 @@ export async function createSessionForUser(input: {
         workspaceId: workspaceResult.workspace.id,
       },
     })
+    preopenSessionRuntime(session)
     void ensureSandboxWorkspace(session)
       .then(async () => {
         await markRuntimeOperationRunning(warmupOperation.id, worker?.id)
       })
-      .then(() => preopenSessionRuntime(session))
       .then(() => markRuntimeOperationCompleted(warmupOperation.id))
       .catch((error) => {
         log.warn("session warmup sandbox prepare failed", {
@@ -344,6 +344,7 @@ async function openSessionForUserInner(input: {
       message: error instanceof Error ? error.message : String(error),
     })
   })
+  await waitForSessionRuntimePrewarmed(reopenedSession)
   await markRuntimeOperationStage({
     operationId: operation.id,
     stage: "runtime_open",

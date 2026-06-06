@@ -103,7 +103,9 @@ export const Config = {
   sandboxRuntimeClass: process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_CLASS || "",
   sandboxIsolationMode: process.env.RUNTIME_SHELL_SANDBOX_ISOLATION_MODE || "",
   sandboxWorkspacePrepareConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_PREPARE_CONCURRENCY || "4"),
-  sandboxRuntimeBootConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_BOOT_CONCURRENCY || "6"),
+  // 中文/English: ACP bootstrap is CPU/IO heavy; a small per-worker default keeps
+  // cold starts fast under bursts instead of letting many bootstraps thrash together.
+  sandboxRuntimeBootConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_BOOT_CONCURRENCY || "2"),
   sandboxColdStartConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_COLD_START_CONCURRENCY || "4"),
   // 中文/English: keep a small explicit local worker list so scheduler and governance
   // can exercise multi-node behavior before remote execution is fully separated.

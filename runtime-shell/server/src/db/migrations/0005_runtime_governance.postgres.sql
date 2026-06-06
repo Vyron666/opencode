@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS runtime_failure_log (
 CREATE INDEX IF NOT EXISTS idx_worker_heartbeat_worker_reported_at
   ON worker_heartbeat (worker_node_id, reported_at);
 
+CREATE INDEX IF NOT EXISTS idx_worker_heartbeat_worker_reported_desc
+  ON worker_heartbeat (worker_node_id, reported_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_runtime_lease_worker_expires_at
   ON runtime_lease (worker_node_id, lease_expires_at);
 

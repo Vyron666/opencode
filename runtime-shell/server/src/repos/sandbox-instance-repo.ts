@@ -121,6 +121,21 @@ export async function countSandboxInstancesByWorkerStatus(workerId: string, stat
   return Number(row?.count || 0)
 }
 
+export async function countBusinessSandboxInstancesByWorkerStatus(workerId: string, statuses: SandboxInstanceStatus[]) {
+  if (!statuses.length) return 0
+  const placeholders = statuses.map(() => "?").join(", ")
+  const rows = await getRuntimeDatabaseClient().queryRows<Pick<SandboxInstanceRow, "detail_json">>(
+    `
+      SELECT detail_json
+      FROM sandbox_instance
+      WHERE worker_node_id = ?
+        AND status IN (${placeholders})
+    `,
+    [workerId, ...statuses],
+  )
+  return rows.filter((row) => readSandboxDetailSource(row.detail_json) !== "warm_pool").length
+}
+
 export async function upsertSandboxInstance(input: SandboxInstance) {
   const existing = await findSandboxInstanceById(input.id)
   if (!existing) {
@@ -261,5 +276,15 @@ function toSandboxInstance(row: SandboxInstanceRow): SandboxInstance {
     updatedAt: row.updated_at,
     openedAt: row.opened_at || undefined,
     closedAt: row.closed_at || undefined,
+  }
+}
+
+function readSandboxDetailSource(detailJson: string | null) {
+  if (!detailJson) return
+  try {
+    const detail = JSON.parse(detailJson) as { source?: unknown }
+    return typeof detail.source === "string" ? detail.source : undefined
+  } catch {
+    return
   }
 }

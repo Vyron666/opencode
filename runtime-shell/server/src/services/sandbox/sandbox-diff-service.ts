@@ -1,16 +1,17 @@
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
-import path from "node:path"
-import { Config } from "../../config"
 import {
   createSandboxDiff,
   findLatestSandboxDiffBySessionId,
   findSandboxDiffById,
   updateSandboxDiffStatus,
 } from "../../repos/sandbox-diff-repo"
-import type { BusinessSession, SandboxDiff, SandboxDiffSummary, User } from "../../types"
+import type { BusinessSession, SandboxDiff, User } from "../../types"
 import { auditService } from "../store/store-singleton"
 import { evaluateSandboxDiffPolicy } from "./sandbox-policy-service"
 import { getSandboxWorkspace } from "./sandbox-workspace-service"
+import {
+  applyWorkspaceSyncSummary,
+  buildWorkspaceSyncSummary,
+} from "./sandbox-workspace-sync"
 
 export async function createSessionDiff(input: {
   session: BusinessSession
@@ -18,12 +19,8 @@ export async function createSessionDiff(input: {
 }) {
   const sandboxWorkspace = await getSandboxWorkspace(input.session.workspaceId)
   if (!sandboxWorkspace || sandboxWorkspace.status !== "ready") return
-  const summary = await buildDiffSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath)
+  const summary = await buildWorkspaceSyncSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath)
   const policyResult = evaluateSandboxDiffPolicy(summary)
-  const artifactDir = path.join(Config.storageDir, "sandbox-diff")
-  await mkdir(artifactDir, { recursive: true })
-  const artifactPath = path.join(artifactDir, `${input.session.id}.json`)
-  await writeFile(artifactPath, JSON.stringify(summary, null, 2), "utf8")
   const now = new Date().toISOString()
   const diff: SandboxDiff = {
     id: `sbd_${crypto.randomUUID().replace(/-/g, "")}`,
@@ -36,7 +33,6 @@ export async function createSessionDiff(input: {
     workspaceMode: "copy",
     status: policyResult.requiresReview ? "pending_review" : "created",
     summary,
-    artifactUri: artifactPath,
     policyResult,
     createdBy: input.user.id,
     createdAt: now,
@@ -133,7 +129,7 @@ export async function applySessionDiff(input: {
   }
   const sandboxWorkspace = await getSandboxWorkspace(input.session.workspaceId)
   if (!sandboxWorkspace || sandboxWorkspace.status !== "ready") return
-  await applyDiffSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath, diff.summary)
+  await applyWorkspaceSyncSummary(input.session.workspacePath, sandboxWorkspace.sandboxPath, diff.summary)
   const now = new Date().toISOString()
   await updateSandboxDiffStatus({
     diffId: diff.id,
@@ -156,66 +152,4 @@ export async function applySessionDiff(input: {
     },
   })
   return findSandboxDiffById(diff.id)
-}
-
-async function buildDiffSummary(realPath: string, sandboxPath: string): Promise<SandboxDiffSummary> {
-  const realFiles = await listRelativeFiles(realPath)
-  const sandboxFiles = await listRelativeFiles(sandboxPath)
-  const realSet = new Set(realFiles)
-  const sandboxSet = new Set(sandboxFiles)
-  const addedFiles = sandboxFiles.filter((file) => !realSet.has(file))
-  const deletedFiles = realFiles.filter((file) => !sandboxSet.has(file))
-  const maybeModifiedFiles = sandboxFiles.filter((file) => realSet.has(file))
-  const modifiedFiles: string[] = []
-  for (const file of maybeModifiedFiles) {
-    const [left, right] = await Promise.all([
-      readFile(path.join(realPath, file)),
-      readFile(path.join(sandboxPath, file)),
-    ])
-    if (!left.equals(right)) modifiedFiles.push(file)
-  }
-  return {
-    addedFiles: addedFiles.sort(),
-    modifiedFiles: modifiedFiles.sort(),
-    deletedFiles: deletedFiles.sort(),
-  }
-}
-
-async function applyDiffSummary(realPath: string, sandboxPath: string, summary: SandboxDiffSummary) {
-  for (const file of summary.deletedFiles) {
-    const target = path.join(realPath, file)
-    requireSafeWorkspacePath(realPath, target)
-    await rm(target, { recursive: true, force: true }).catch(() => {})
-  }
-  for (const file of [...summary.addedFiles, ...summary.modifiedFiles]) {
-    const source = path.join(sandboxPath, file)
-    const target = path.join(realPath, file)
-    requireSafeWorkspacePath(realPath, target)
-    await mkdir(path.dirname(target), { recursive: true })
-    await copyFile(source, target)
-  }
-}
-
-async function listRelativeFiles(root: string, current = root): Promise<string[]> {
-  const entries = await readdir(current, { withFileTypes: true })
-  const files: string[] = []
-  for (const entry of entries) {
-    if (entry.name === ".git" || entry.name === ".sandbox") continue
-    const absolute = path.join(current, entry.name)
-    const relative = path.relative(root, absolute).replace(/\\/g, "/")
-    if (entry.isDirectory()) {
-      files.push(...await listRelativeFiles(root, absolute))
-      continue
-    }
-    if (!entry.isFile()) continue
-    files.push(relative)
-  }
-  return files
-}
-
-function requireSafeWorkspacePath(root: string, target: string) {
-  const relative = path.relative(root, target)
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`sandbox diff path escapes workspace: ${target}`)
-  }
 }

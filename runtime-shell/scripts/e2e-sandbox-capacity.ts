@@ -1,3 +1,5 @@
+import { cleanupWorkspacePrefixBestEffort } from "./test-workspace-cleanup"
+
 export {}
 
 const baseUrl = process.env.RUNTIME_SHELL_SMOKE_BASE_URL || "http://127.0.0.1:3100"
@@ -40,69 +42,78 @@ await requestJson<ApiEnvelope<{ user: { projectIds: string[] } }>>("/api/auth/lo
 const me = await requestJson<ApiEnvelope<{ user: { projectIds: string[] } }>>("/api/auth/me")
 assert(me.status === 200 && me.body.data.user.projectIds.length > 0, "auth/me failed")
 const projectId = me.body.data.user.projectIds[0]
+const namePrefix = `sandbox-capacity-${Date.now()}`
 
-const sessionIds = await Promise.all(
-  Array.from({ length: concurrency }, async (_, index) => {
-    const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
+try {
+  const sessionIds = await Promise.all(
+    Array.from({ length: concurrency }, async (_, index) => {
+      const workspace = await requestJson<ApiEnvelope<WorkspaceSummary>>("/api/workspace/create", {
+        method: "POST",
+        body: {
+          projectId,
+          name: `${namePrefix}-${index}`,
+        },
+      })
+      assert(workspace.status === 200, `workspace/create failed at ${index}`)
+      const session = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
+        method: "POST",
+        body: {
+          title: `Sandbox Capacity ${Date.now()}-${index}`,
+          projectId,
+          workspaceId: workspace.body.data.id,
+        },
+      })
+      assert(session.status === 200, `session/create failed at ${index}`)
+      const openResult = await requestJson<ApiEnvelope<SessionSummary>>("/api/acp/session/open", {
+        method: "POST",
+        body: { businessSessionId: session.body.data.id },
+      })
+      assert(openResult.status === 200, `session/open failed at ${index}`)
+      return session.body.data.id
+    }),
+  )
+
+  await Bun.sleep(1500)
+
+  const workers = await requestJson<ApiEnvelope<{ items: WorkerSummary[] }>>("/api/worker/list")
+  assert(workers.status === 200 && workers.body.data.items.length > 0, "worker/list failed")
+  assert(
+    workers.body.data.items.some((item) =>
+      typeof item.resourceSummary?.cpuPercent === "number" &&
+      typeof item.resourceSummary?.memoryBytes === "number" &&
+      typeof item.resourceSummary?.diskBytes === "number"),
+    "worker resource summary is incomplete",
+  )
+
+  const sandboxes = await requestJson<ApiEnvelope<{ summary: Record<string, number> }>>("/api/system/sandboxes?limit=200")
+  assert(sandboxes.status === 200, "system/sandboxes failed")
+  assert((sandboxes.body.data.summary.running || 0) >= 1, "running sandbox summary should be present")
+
+  const queues = await requestJson<ApiEnvelope<{ items: Array<{ status: string }> }>>("/api/system/queues?limit=200")
+  assert(queues.status === 200, "system/queues failed")
+
+  await Promise.all(sessionIds.map(async (businessSessionId) => {
+    const closeResult = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/close", {
       method: "POST",
-      body: {
-        projectId,
-        name: `sandbox-capacity-${Date.now()}-${index}`,
-      },
+      body: { businessSessionId },
     })
-    assert(workspace.status === 200, `workspace/create failed at ${index}`)
-    const session = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/create", {
-      method: "POST",
-      body: {
-        title: `Sandbox Capacity ${Date.now()}-${index}`,
-        projectId,
-        workspaceId: workspace.body.data.id,
-      },
-    })
-    assert(session.status === 200, `session/create failed at ${index}`)
-    const openResult = await requestJson<ApiEnvelope<SessionSummary>>("/api/acp/session/open", {
-      method: "POST",
-      body: { businessSessionId: session.body.data.id },
-    })
-    assert(openResult.status === 200, `session/open failed at ${index}`)
-    return session.body.data.id
-  }),
-)
+    assert(closeResult.status === 200, `session/close failed for ${businessSessionId}`)
+  }))
 
-await Bun.sleep(1500)
-
-const workers = await requestJson<ApiEnvelope<{ items: WorkerSummary[] }>>("/api/worker/list")
-assert(workers.status === 200 && workers.body.data.items.length > 0, "worker/list failed")
-assert(
-  workers.body.data.items.some((item) =>
-    typeof item.resourceSummary?.cpuPercent === "number" &&
-    typeof item.resourceSummary?.memoryBytes === "number" &&
-    typeof item.resourceSummary?.diskBytes === "number"),
-  "worker resource summary is incomplete",
-)
-
-const sandboxes = await requestJson<ApiEnvelope<{ summary: Record<string, number> }>>("/api/system/sandboxes?limit=200")
-assert(sandboxes.status === 200, "system/sandboxes failed")
-assert((sandboxes.body.data.summary.running || 0) >= 1, "running sandbox summary should be present")
-
-const queues = await requestJson<ApiEnvelope<{ items: Array<{ status: string }> }>>("/api/system/queues?limit=200")
-assert(queues.status === 200, "system/queues failed")
-
-await Promise.all(sessionIds.map(async (businessSessionId) => {
-  const closeResult = await requestJson<ApiEnvelope<SessionSummary>>("/api/session/close", {
-    method: "POST",
-    body: { businessSessionId },
+  console.log(JSON.stringify({
+    ok: true,
+    concurrency,
+    sessionCount: sessionIds.length,
+    runningSummary: sandboxes.body.data.summary.running || 0,
+    queueItemCount: queues.body.data.items.length,
+  }))
+} finally {
+  await cleanupWorkspacePrefixBestEffort({
+    baseUrl,
+    cookieJar,
+    namePrefix,
   })
-  assert(closeResult.status === 200, `session/close failed for ${businessSessionId}`)
-}))
-
-console.log(JSON.stringify({
-  ok: true,
-  concurrency,
-  sessionCount: sessionIds.length,
-  runningSummary: sandboxes.body.data.summary.running || 0,
-  queueItemCount: queues.body.data.items.length,
-}))
+}
 
 async function requestJson<T>(path: string, init: { method?: string; body?: unknown } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {

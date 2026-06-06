@@ -32,4 +32,11 @@ export class StoreWorkspaceShareService {
   }) {
     return WorkspaceShareRepo.revokeShareBinding(input)
   }
+
+  async softDeleteSharesByWorkspaceId(input: {
+    workspaceId: string
+    deletedBy: string
+  }) {
+    return WorkspaceShareRepo.softDeleteSharesByWorkspaceId(input)
+  }
 }

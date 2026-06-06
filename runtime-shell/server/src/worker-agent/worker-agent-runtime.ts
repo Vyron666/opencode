@@ -24,11 +24,14 @@ import { prewarmSessionRuntimeOnWorker, tryOpenWarmRuntimeEntry } from "./worker
 import type { RuntimeEntry } from "./worker-agent-types"
 import { closeOrphanDockerSandbox } from "./sandbox/docker-sandbox-manager"
 import { buildColdRuntimeHomePath } from "./sandbox/docker-sandbox-runtime-home"
+import { runAcpBootstrapGate } from "./sandbox/docker-sandbox-cold-start"
 import { createLogger } from "../log"
 import { buildRuntimeConfigContext } from "../runtime/runtime-config-content"
+import { Config } from "../config"
 
 const log = createLogger("worker-agent-runtime")
 const pendingRuntimeBootstraps = new Map<string, Promise<ReturnType<typeof toBootstrap>>>()
+const RUNTIME_OPEN_TIMEOUT_MS = Math.max(1_000, Config.workerAgentRequestTimeoutMs - 1_000)
 
 type SessionRuntimeRequest = {
   businessSessionId: string
@@ -37,6 +40,7 @@ type SessionRuntimeRequest = {
   sandboxPath: string
   workerId: string
   configContent?: string
+  warmPoolTarget?: number
 }
 
 type SessionResumeRequest = SessionRuntimeRequest & {
@@ -269,15 +273,17 @@ export function createRuntimeHandlers(input: {
 
 async function openRuntimeEntry<T>(entry: ReturnType<typeof createRuntimeEntry>, open: () => Promise<T>) {
   try {
-    return await open()
+    return await withRuntimeOpenTimeout(entry.businessSessionId, open)
   } catch (error) {
     entry.closing = true
-    if (entry.releaseRuntime) {
-      await entry.releaseRuntime().catch(() => {})
-    } else {
-      await entry.client.close().catch(() => {})
+    entry.lastFailure = {
+      at: new Date().toISOString(),
+      message: error instanceof Error ? error.message : String(error),
+      detail: {
+        source: "runtime_open",
+      },
     }
-    await entry.closeSandbox?.().catch(() => {})
+    await disposeFailedOpeningRuntime(entry, error)
     throw error
   }
 }
@@ -357,7 +363,7 @@ async function openManagedSessionInner(
     entry,
     request,
     actionLabel: input.action === "fork" ? "fork session" : `${input.action} session`,
-    start: () => input.coldStart(entry),
+    start: () => runAcpBootstrapGate(() => input.coldStart(entry)),
   })
 }
 
@@ -425,6 +431,59 @@ async function runRuntimeBootstrap<T extends ReturnType<typeof toBootstrap>>(
   }
 }
 
+async function disposeFailedOpeningRuntime(entry: ReturnType<typeof createRuntimeEntry>, error: unknown) {
+  if (shouldForceTerminateOpeningRuntime(entry, error)) {
+    if (entry.sandboxHandle) {
+      // 中文/English: a timed-out or warm-slot bootstrap can no longer be trusted.
+      // Mark the slot invalid so release destroys the container/runtime immediately.
+      entry.sandboxHandle.invalidPoolSlot = true
+    }
+    entry.client.terminate(describeOpeningFailure(error))
+    await entry.closeSandbox?.().catch(() => {})
+    return
+  }
+  if (entry.releaseRuntime) {
+    await entry.releaseRuntime().catch(() => {})
+  } else {
+    await entry.client.close().catch(() => {})
+  }
+  await entry.closeSandbox?.().catch(() => {})
+}
+
+function shouldForceTerminateOpeningRuntime(entry: ReturnType<typeof createRuntimeEntry>, error: unknown) {
+  if (entry.sandboxHandle?.poolSlotId) return true
+  return isRuntimeOpenTimeoutError(error)
+}
+
+function isRuntimeOpenTimeoutError(error: unknown) {
+  return error instanceof Error && error.name === "RuntimeOpenTimeoutError"
+}
+
+function describeOpeningFailure(error: unknown) {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+async function withRuntimeOpenTimeout<T>(businessSessionId: string, taskFactory: () => Promise<T>) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      taskFactory(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(
+            `runtime open timed out after ${RUNTIME_OPEN_TIMEOUT_MS}ms: ${businessSessionId}`,
+          )
+          error.name = "RuntimeOpenTimeoutError"
+          reject(error)
+        }, RUNTIME_OPEN_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 function readSessionRuntimeRequest(body: Record<string, unknown>): SessionRuntimeRequest {
   const workspacePath = requireString(body.workspacePath, "workspacePath")
   return {
@@ -434,6 +493,9 @@ function readSessionRuntimeRequest(body: Record<string, unknown>): SessionRuntim
     sandboxPath: typeof body.sandboxPath === "string" ? body.sandboxPath : workspacePath,
     workerId: requireString(body.workerId, "workerId"),
     configContent: typeof body.configContent === "string" ? body.configContent : undefined,
+    warmPoolTarget: typeof body.warmPoolTarget === "number" && Number.isFinite(body.warmPoolTarget)
+      ? Math.max(0, Math.floor(body.warmPoolTarget))
+      : undefined,
   }
 }
 

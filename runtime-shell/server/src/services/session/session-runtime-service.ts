@@ -7,6 +7,7 @@ import { sessionService } from "../store/store-singleton"
 
 const log = createLogger("session-runtime-service")
 const pendingSessionPrewarms = new Map<string, Promise<void>>()
+const SESSION_OPEN_PREWARM_WAIT_MS = 1_500
 
 export async function openSessionWithFallback(session: BusinessSession) {
   const existingRuntime = getRuntime(session.id)
@@ -46,6 +47,14 @@ export async function ensureSessionRuntimePrewarmed(session: BusinessSession) {
       pendingSessionPrewarms.delete(session.id)
     }
   }
+}
+
+export async function waitForSessionRuntimePrewarmed(session: BusinessSession, waitMs = SESSION_OPEN_PREWARM_WAIT_MS) {
+  const prewarm = ensureSessionRuntimePrewarmed(session)
+  await Promise.race([
+    prewarm.catch(() => {}),
+    Bun.sleep(waitMs),
+  ])
 }
 
 export function preopenSessionRuntime(session: BusinessSession) {

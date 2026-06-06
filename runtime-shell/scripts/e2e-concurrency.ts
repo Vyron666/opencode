@@ -1,3 +1,5 @@
+import { cleanupWorkspacePrefixBestEffort } from "./test-workspace-cleanup"
+
 const baseUrl = process.env.RUNTIME_SHELL_CONCURRENCY_BASE_URL || "http://127.0.0.1:3100"
 const username = process.env.RUNTIME_SHELL_CONCURRENCY_USERNAME || "admin"
 const password = process.env.RUNTIME_SHELL_CONCURRENCY_PASSWORD || "change-me"
@@ -31,105 +33,114 @@ assert(login.status === 200, "login failed")
 
 const projectId = login.body.data.user.projectIds[0]
 assert(projectId, "admin project scope missing")
+const namePrefix = `concurrency-${Date.now()}`
 
-const workspace = await requestJson<ApiEnvelope<{ id: string }>>("/api/workspace/create", {
-  method: "POST",
-  body: {
-    projectId,
-    name: `concurrency-${Date.now()}`,
-  },
-})
-assert(workspace.status === 200, "workspace/create failed")
+try {
+  const workspace = await requestJson<ApiEnvelope<{ id: string }>>("/api/workspace/create", {
+    method: "POST",
+    body: {
+      projectId,
+      name: namePrefix,
+    },
+  })
+  assert(workspace.status === 200, "workspace/create failed")
 
-const session = await requestJson<ApiEnvelope<{ id: string }>>("/api/session/create", {
-  method: "POST",
-  body: {
-    title: `Concurrency ${Date.now()}`,
-    projectId,
-    workspaceId: workspace.body.data.id,
-  },
-})
-assert(session.status === 200, "session/create failed")
+  const session = await requestJson<ApiEnvelope<{ id: string }>>("/api/session/create", {
+    method: "POST",
+    body: {
+      title: `Concurrency ${Date.now()}`,
+      projectId,
+      workspaceId: workspace.body.data.id,
+    },
+  })
+  assert(session.status === 200, "session/create failed")
 
-const businessSessionId = session.body.data.id
+  const businessSessionId = session.body.data.id
 
-const openResults = await Promise.all(
-  Array.from({ length: 3 }, () =>
-    requestJson<ApiEnvelope<SessionDetail>>("/api/acp/session/open", {
-      method: "POST",
-      body: { businessSessionId },
-    }),
-  ),
-)
-assert(openResults.every((item) => item.status === 200), "parallel open should not fail")
+  const openResults = await Promise.all(
+    Array.from({ length: 3 }, () =>
+      requestJson<ApiEnvelope<SessionDetail>>("/api/acp/session/open", {
+        method: "POST",
+        body: { businessSessionId },
+      }),
+    ),
+  )
+  assert(openResults.every((item) => item.status === 200), "parallel open should not fail")
 
-const activeDetail = await waitForSessionDetail(
-  businessSessionId,
-  (detail) => detail.status === "active" && detail.runtimeHint?.bindingStatus === "bound",
-  "session should converge to active after parallel open",
-)
-
-const reopenResults = await Promise.all(
-  ["/api/acp/session/open", "/api/acp/session/load", "/api/acp/session/resume"].map((path) =>
-    requestJson<ApiEnvelope<SessionDetail>>(path, {
-      method: "POST",
-      body: { businessSessionId },
-    }),
-  ),
-)
-assert(reopenResults.every((item) => item.status === 200), "parallel open/load/resume should not fail")
-
-const promptResults = await Promise.all(
-  Array.from({ length: 3 }, (_, index) =>
-    requestJson<ApiEnvelope<{ accepted: boolean }>>("/api/acp/session/input", {
-      method: "POST",
-      body: {
-        businessSessionId,
-        parts: [{ type: "text", text: `并发测试 ${index + 1}` }],
-      },
-    }),
-  ),
-)
-assert(promptResults.some((item) => item.status === 200), "at least one prompt should be accepted")
-assert(promptResults.every((item) => item.status === 200 || item.status === 409), "parallel prompt should converge with 200/409 only")
-
-await Bun.sleep(1500)
-
-const cancelResults = await Promise.all(
-  Array.from({ length: 3 }, () =>
-    requestJson<ApiEnvelope<{ success: boolean }>>("/api/acp/session/cancel", {
-      method: "POST",
-      body: { businessSessionId },
-    }),
-  ),
-)
-assert(cancelResults.every((item) => item.status === 200 || item.status === 409), "parallel cancel should converge with 200/409 only")
-
-const detail = await requestJson<ApiEnvelope<{ session: SessionDetail }>>(
-  `/api/session/detail?businessSessionId=${encodeURIComponent(businessSessionId)}`,
-)
-assert(detail.status === 200, "session/detail failed")
-assert(detail.body.data.session.runtimeHint?.hasLease === true, "active session should still hold a lease")
-
-const close = await requestJson<ApiEnvelope<SessionDetail>>("/api/session/close", {
-  method: "POST",
-  body: { businessSessionId },
-})
-assert(close.status === 200, "session/close failed")
-
-console.log(
-  JSON.stringify({
-    ok: true,
-    baseUrl,
+  const activeDetail = await waitForSessionDetail(
     businessSessionId,
-    openStatuses: openResults.map((item) => item.status),
-    reopenStatuses: reopenResults.map((item) => item.status),
-    promptStatuses: promptResults.map((item) => item.status),
-    cancelStatuses: cancelResults.map((item) => item.status),
-    finalStatusBeforeClose: activeDetail.status,
-    closeStatus: close.body.data.status,
-  }),
-)
+    (detail) => detail.status === "active" && detail.runtimeHint?.bindingStatus === "bound",
+    "session should converge to active after parallel open",
+  )
+
+  const reopenResults = await Promise.all(
+    ["/api/acp/session/open", "/api/acp/session/load", "/api/acp/session/resume"].map((path) =>
+      requestJson<ApiEnvelope<SessionDetail>>(path, {
+        method: "POST",
+        body: { businessSessionId },
+      }),
+    ),
+  )
+  assert(reopenResults.every((item) => item.status === 200), "parallel open/load/resume should not fail")
+
+  const promptResults = await Promise.all(
+    Array.from({ length: 3 }, (_, index) =>
+      requestJson<ApiEnvelope<{ accepted: boolean }>>("/api/acp/session/input", {
+        method: "POST",
+        body: {
+          businessSessionId,
+          parts: [{ type: "text", text: `并发测试 ${index + 1}` }],
+        },
+      }),
+    ),
+  )
+  assert(promptResults.some((item) => item.status === 200), "at least one prompt should be accepted")
+  assert(promptResults.every((item) => item.status === 200 || item.status === 409), "parallel prompt should converge with 200/409 only")
+
+  await Bun.sleep(1500)
+
+  const cancelResults = await Promise.all(
+    Array.from({ length: 3 }, () =>
+      requestJson<ApiEnvelope<{ success: boolean }>>("/api/acp/session/cancel", {
+        method: "POST",
+        body: { businessSessionId },
+      }),
+    ),
+  )
+  assert(cancelResults.every((item) => item.status === 200 || item.status === 409), "parallel cancel should converge with 200/409 only")
+
+  const detail = await requestJson<ApiEnvelope<{ session: SessionDetail }>>(
+    `/api/session/detail?businessSessionId=${encodeURIComponent(businessSessionId)}`,
+  )
+  assert(detail.status === 200, "session/detail failed")
+  assert(detail.body.data.session.runtimeHint?.hasLease === true, "active session should still hold a lease")
+
+  const close = await requestJson<ApiEnvelope<SessionDetail>>("/api/session/close", {
+    method: "POST",
+    body: { businessSessionId },
+  })
+  assert(close.status === 200, "session/close failed")
+
+  console.log(
+    JSON.stringify({
+      ok: true,
+      baseUrl,
+      businessSessionId,
+      openStatuses: openResults.map((item) => item.status),
+      reopenStatuses: reopenResults.map((item) => item.status),
+      promptStatuses: promptResults.map((item) => item.status),
+      cancelStatuses: cancelResults.map((item) => item.status),
+      finalStatusBeforeClose: activeDetail.status,
+      closeStatus: close.body.data.status,
+    }),
+  )
+} finally {
+  await cleanupWorkspacePrefixBestEffort({
+    baseUrl,
+    cookieJar,
+    namePrefix,
+  })
+}
 
 async function waitForSessionDetail(sessionId: string, predicate: (detail: SessionDetail) => boolean, message: string) {
   let latest: SessionDetail | null = null

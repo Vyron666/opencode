@@ -58,39 +58,42 @@ export default function LeftSidebar({ onOpenSettings }) {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenSettings('workspace')}
-            className="mt-5 flex w-full items-center justify-between rounded-[12px] border border-[#d7e3fb] bg-white px-3.5 py-3 text-left transition-colors hover:bg-[#f5f8ff]"
-          >
-            <span className="inline-flex items-center gap-2 text-[14px] text-[#18233b]">
-              <span className="grid h-5 w-5 place-items-center rounded-[6px] bg-[#3566df] text-[10px] font-bold text-white">■</span>
-              {currentWorkspace?.name || 'opencode'}
-            </span>
-            <span className="text-[12px] text-[#8390a7]">▼</span>
-          </button>
+          <div className="mt-5 rounded-[16px] border border-[#d7e3fb] bg-white px-3.5 py-3.5 shadow-[0_10px_24px_rgba(53,102,223,0.05)]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#8a97ad]">Workspace</div>
+              <button
+                type="button"
+                onClick={() => onOpenSettings('workspace')}
+                className="text-[12px] font-semibold text-[#3566df] transition-opacity hover:opacity-80"
+              >
+                + 创建
+              </button>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenSettings('workspace')}
-            className="mt-3 w-full rounded-[12px] border border-[#d7e3fb] bg-white px-3.5 py-3 text-left text-[13px] font-medium text-[#3566df] transition-colors hover:bg-[#f5f8ff]"
-          >
-            + 创建工作区
-          </button>
+            <button
+              type="button"
+              onClick={() => onOpenSettings('workspace')}
+              className="mt-3 flex w-full items-center justify-between rounded-[12px] bg-[#f7faff] px-3 py-3 text-left transition-colors hover:bg-[#f2f7ff]"
+            >
+              <span className="inline-flex min-w-0 items-center gap-2 text-[14px] font-semibold text-[#18233b]">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] bg-[#3566df] text-[10px] font-bold text-white">■</span>
+                <span className="truncate">{currentWorkspace?.name || 'opencode'}</span>
+              </span>
+              <span className="text-[12px] text-[#8390a7]">▼</span>
+            </button>
 
-          {user ? (
-            <div className="mt-4 rounded-[16px] bg-[#dfe8fa] px-4 py-3.5">
-              <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-[linear-gradient(135deg,#5f6df4,#7d89ff)] text-sm font-bold text-white">
+            {user ? (
+              <div className="mt-3 flex items-center gap-3 rounded-[12px] bg-[#eef4ff] px-3 py-2.5">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#5f6df4,#7d89ff)] text-sm font-bold text-white">
                   {String(user.displayName || 'R').slice(0, 1)}
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-[14px] font-semibold text-[#18233b]">{user.displayName}</div>
-                  <div className="mt-1 text-[11px] text-[#6d7d98]">{roleLabel(user.role)}</div>
+                  <div className="truncate text-[13px] font-semibold text-[#18233b]">{user.displayName}</div>
+                  <div className="mt-0.5 text-[11px] text-[#6d7d98]">{roleLabel(user.role)}</div>
                 </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
           <button
             type="button"
@@ -100,10 +103,6 @@ export default function LeftSidebar({ onOpenSettings }) {
           >
             {pendingSessionAction === 'create' ? '创建中...' : '+ 新会话'}
           </button>
-
-          <div className="mt-3 rounded-[12px] border border-[#d7e3fb] bg-white px-3.5 py-2.5 text-[13px] text-[#61718d]">
-            工作区 ({currentWorkspace?.name || 'opencode'})
-          </div>
 
           <input
             value={query}

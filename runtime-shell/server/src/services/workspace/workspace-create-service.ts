@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { Config } from "../../config"
+import { ensureSandboxUserOwnership } from "../../lib/sandbox-user-ownership"
 import { auditService, workspaceService } from "../store/store-singleton"
 import type { User, WorkspaceCreationResult } from "../../types"
 
@@ -25,6 +26,7 @@ export async function createWorkspaceForUser(input: {
 
   try {
     await mkdir(rootPath, { recursive: true })
+    await ensureSandboxUserOwnership(rootPath)
   } catch {
     return { ok: false, reason: "create_failed" }
   }

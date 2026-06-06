@@ -3,7 +3,7 @@ import { useStore } from '../../../store'
 import { subscribeAssistantStreamActivity } from '../../../store/sse/assistant-stream-channel'
 import { ConversationTimeline, DebugConversationTimeline } from './ConversationTimeline'
 
-export const ConversationSection = memo(function ConversationSection({ currentSessionId, showDebug, onOpenSettings }) {
+export const ConversationSection = memo(function ConversationSection({ currentSessionId, showDebug }) {
   const conversationVersion = useStore((state) => state.conversationVersion)
   const blocks = useStore((state) => state.conversationBlocks)
   const timelineRef = useRef(null)
@@ -49,11 +49,7 @@ export const ConversationSection = memo(function ConversationSection({ currentSe
         className="relative h-full overflow-y-auto overflow-x-hidden px-6 py-5 max-[1024px]:px-4"
         style={{ background: 'linear-gradient(180deg, #ffffff 0%, #fbfcff 100%)' }}
       >
-        {showDebug ? (
-          <DebugConversationTimeline />
-        ) : (
-          <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} onOpenSettings={onOpenSettings} />
-        )}
+        {showDebug ? <DebugConversationTimeline /> : <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} />}
 
         {!showDebug && !autoScroll && blocks.length > 0 ? (
           <button

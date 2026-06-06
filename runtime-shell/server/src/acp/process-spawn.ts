@@ -11,6 +11,7 @@ const DEFAULT_ACP_MODELS_PATH = path.resolve(import.meta.dir, "../../../config/m
 
 export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWithoutNullStreams {
   ensureLocalOpencodeDbMarker()
+  const opencodeDb = readLocalOpencodeDbName()
   const env = {
     ...process.env,
     // 中文/English: Docker 内也要保证子进程能解析 PATH 里的命令。
@@ -32,6 +33,9 @@ export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWith
     // 中文/English: runtime-shell keeps a slim built-in model catalog on the ACP
     // cold path; user-defined providers/models still arrive through configContent.
     OPENCODE_MODELS_PATH: process.env.OPENCODE_MODELS_PATH || DEFAULT_ACP_MODELS_PATH,
+    // 中文/English: force a stable ACP local database name so runtime-shell warm
+    // boot and cold boot share the same migration marker and avoid channel drift.
+    OPENCODE_DB: opencodeDb,
     // 中文/English: 必须在子进程启动前声明 ACP 身份，避免误走 cli 分支。
     OPENCODE_CLIENT: "acp",
     ...(options.configContent ? { OPENCODE_CONFIG_CONTENT: options.configContent } : {}),
@@ -54,12 +58,27 @@ export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWith
 
 function ensureLocalOpencodeDbMarker() {
   const dataDir = path.join(os.homedir(), ".local", "share", "opencode")
-  const marker = path.join(dataDir, "opencode.db")
   fs.mkdirSync(dataDir, { recursive: true })
-  if (fs.existsSync(marker)) return
-  // 中文/English: touch the default db marker before concurrent ACP boot so
-  // multiple first-open sessions do not race on the one-time json migration gate.
-  fs.closeSync(fs.openSync(marker, "a"))
+  for (const markerName of listLocalOpencodeDbMarkers()) {
+    const markerPath = path.join(dataDir, markerName)
+    if (fs.existsSync(markerPath)) continue
+    // 中文/English: touch every runtime-shell-owned marker before concurrent ACP
+    // boot so the one-time migration gate cannot drift between db file names.
+    fs.closeSync(fs.openSync(markerPath, "a"))
+  }
+}
+
+function listLocalOpencodeDbMarkers() {
+  return [...new Set([
+    "opencode.db",
+    readLocalOpencodeDbName(),
+  ])]
+}
+
+function readLocalOpencodeDbName() {
+  const configured = process.env.OPENCODE_DB
+  if (!configured || configured === ":memory:" || path.isAbsolute(configured)) return "opencode.db"
+  return configured
 }
 
 export function logAcpStderr(proc: ChildProcessWithoutNullStreams, onChunk?: (text: string) => void) {

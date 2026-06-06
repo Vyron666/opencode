@@ -74,9 +74,12 @@ export async function saveProviderConfigForUser(input: {
         affectedWorkerIds: affected.affectedWorkerIds,
       },
     })
-    const affectedSessions = (await sessionService.listSessions()).filter((session) =>
-      affected.affectedSessionIds.includes(session.id),
-    )
+    const affectedSessionIds = new Set(affected.affectedSessionIds)
+    const affectedSessions = (await sessionService.listSessionsByFilter({
+      tenantId: input.user.tenantId,
+      organizationId: input.user.organizationId,
+      statuses: ["active"],
+    })).filter((session) => affectedSessionIds.has(session.id))
     for (const session of affectedSessions) {
       await closeRuntime(session.id)
       await markSessionCreated(session.id)
@@ -127,9 +130,13 @@ export async function saveProviderConfigForUser(input: {
     userId: input.user.id,
     providerId: normalizedConfig.providerId,
   })
-  const affectedSessions = (await sessionService.listSessions()).filter((session) =>
-    affected.affectedSessionIds.includes(session.id),
-  )
+  const affectedSessionIds = new Set(affected.affectedSessionIds)
+  const affectedSessions = (await sessionService.listSessionsByFilter({
+    tenantId: input.user.tenantId,
+    organizationId: input.user.organizationId,
+    createdBy: input.user.id,
+    statuses: ["active"],
+  })).filter((session) => affectedSessionIds.has(session.id))
   for (const session of affectedSessions) {
     await closeRuntime(session.id)
     await markSessionCreated(session.id)
@@ -198,12 +205,16 @@ export async function removeProviderConfigForUser(input: {
     : await previewUserPrivateProviderImpact({
         tenantId: input.user.tenantId,
         organizationId: input.user.organizationId,
-        userId: input.user.id,
-        providerId: input.providerId,
-      })
-  const affectedSessions = (await sessionService.listSessions()).filter((session) =>
-    affected.affectedSessionIds.includes(session.id),
-  )
+      userId: input.user.id,
+      providerId: input.providerId,
+    })
+  const affectedSessionIds = new Set(affected.affectedSessionIds)
+  const affectedSessions = (await sessionService.listSessionsByFilter({
+    tenantId: input.user.tenantId,
+    organizationId: input.user.organizationId,
+    ...(input.source === "platform_shared" ? {} : { createdBy: input.user.id }),
+    statuses: ["active"],
+  })).filter((session) => affectedSessionIds.has(session.id))
   for (const session of affectedSessions) {
     await closeRuntime(session.id)
     await markSessionCreated(session.id)

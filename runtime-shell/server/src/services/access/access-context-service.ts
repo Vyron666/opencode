@@ -18,7 +18,25 @@ export async function buildAccessContext(user: User) {
   const workspaces = [...workspaceMap.values()]
   const visibleWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id))
   const visibleProjectIds = new Set(workspaces.map((workspace) => workspace.projectId))
-  const sessions = (await sessionService.listUserSessions(user)).filter((session) => {
+  if (visibleWorkspaceIds.size === 0) {
+    return {
+      user,
+      tenantId: user.tenantId,
+      organizationId: user.organizationId,
+      projectIds: visibleProjectIds,
+      sessions: [],
+      workspaces,
+      sessionIds: new Set<string>(),
+      workspaceIds: visibleWorkspaceIds,
+      workerIds: new Set<string>(),
+      sharedWorkspaceIds,
+    }
+  }
+  const sessions = (await sessionService.listSessionsByFilter({
+    tenantId: user.tenantId,
+    organizationId: user.organizationId,
+    workspaceIds: [...visibleWorkspaceIds],
+  })).filter((session) => {
     if (!visibleWorkspaceIds.has(session.workspaceId)) return false
     if (!visibleProjectIds.has(session.projectId)) return false
     if (user.role === "admin") return true

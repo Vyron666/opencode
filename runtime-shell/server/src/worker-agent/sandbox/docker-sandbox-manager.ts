@@ -6,6 +6,7 @@ import { hasRuntimeActivityByWorkspaceId } from "../worker-agent-store"
 import type { SandboxManager } from "./sandbox-manager"
 import type { SandboxHandle } from "./sandbox-types"
 import {
+  pendingWarmPoolReconcileByWorker,
   pendingWarmPoolEnsureByWorker,
   warmPoolByWorker,
   warmPoolTargetByWorker,
@@ -120,20 +121,45 @@ async function doEnsureDockerWarmPool(input: {
   const workerPool = readWarmPool(input.workerId)
   await reclaimStaleLeasedWarmPoolSlots(input.workerId)
   await pruneMissingWarmPoolSlots(workerPool)
-  while (countReadyWarmPoolSlots(workerPool) < input.target) {
-    await createWarmPoolSlot(input.workerId)
+  scheduleWarmPoolReconcile(input.workerId)
+}
+
+function countManagedWarmPoolSlots(slots: Array<unknown>) {
+  return slots.length
+}
+
+function scheduleWarmPoolReconcile(workerId: string) {
+  if (pendingWarmPoolReconcileByWorker.has(workerId)) return
+  const task = reconcileWarmPool(workerId)
+    .catch(() => {})
+    .finally(() => {
+      if (pendingWarmPoolReconcileByWorker.get(workerId) === task) {
+        pendingWarmPoolReconcileByWorker.delete(workerId)
+      }
+      const target = warmPoolTargetByWorker.get(workerId) ?? 0
+      const totalCount = countManagedWarmPoolSlots(readWarmPool(workerId))
+      if (totalCount === target) return
+      scheduleWarmPoolReconcile(workerId)
+    })
+  pendingWarmPoolReconcileByWorker.set(workerId, task)
+}
+
+async function reconcileWarmPool(workerId: string) {
+  const workerPool = readWarmPool(workerId)
+  const target = warmPoolTargetByWorker.get(workerId) ?? 0
+  while (countManagedWarmPoolSlots(workerPool) < target) {
+    await createWarmPoolSlot(workerId)
   }
-  await backfillReadyWarmRuntimeSlots(input.workerId).catch(() => {})
+  // 中文/English: worker heartbeat only needs the warm shell capacity to be ready.
+  // Materializing long-lived ACP warm runtimes continues in background so control
+  // plane calls return promptly instead of waiting on plugin/provider bootstrap.
+  void backfillReadyWarmRuntimeSlots(workerId).catch(() => {})
   const removable = workerPool.filter((slot) => slot.ready && !slot.leased)
-  while (removable.length > input.target) {
+  while (workerPool.length > target && removable.length > 0) {
     const slot = removable.pop()
     if (!slot) break
     await destroyWarmPoolSlot(slot)
   }
-}
-
-function countReadyWarmPoolSlots(slots: Array<{ ready: boolean; leased: boolean }>) {
-  return slots.filter((slot) => slot.ready && !slot.leased).length
 }
 
 export async function cleanupDockerWarmPool(input: {
@@ -184,6 +210,7 @@ export async function cleanupDockerWarmPoolProcessExit() {
     }
     warmPoolByWorker.delete(workerId)
     pendingWarmPoolEnsureByWorker.delete(workerId)
+    pendingWarmPoolReconcileByWorker.delete(workerId)
     warmPoolTargetByWorker.delete(workerId)
   }
 }
