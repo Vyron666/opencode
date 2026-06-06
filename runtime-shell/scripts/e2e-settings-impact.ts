@@ -29,26 +29,78 @@ const adminJar: string[] = []
 const developerJar: string[] = []
 
 const admin = await login(adminJar, adminUsername)
-await login(developerJar, developerUsername)
+const developer = await login(developerJar, developerUsername)
 
 const providerConfigs = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(adminJar, "/api/provider-config")
 assert(providerConfigs.status === 200 && providerConfigs.body.data.items.length > 0, "provider-config get failed")
 const providerConfig = providerConfigs.body.data.items[0]
 const developerProviderConfigs = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(developerJar, "/api/provider-config")
 assert(developerProviderConfigs.status === 200, "developer provider-config get should succeed")
+const adminSharedProviderId = `shared-provider-${Date.now()}`
 const developerPrivateProviderId = `private-provider-${Date.now()}`
 let activeSessionId = ""
 let historySessionId = ""
+let developerSessionId = ""
+let developerSecondSessionId = ""
 let providerSaveStatus = 0
 let activeStatusAfterSave = ""
 let historyStatusAfterSave = ""
 let developerProviderConflictStatus = 0
 let developerPrivateProviderSaveStatus = 0
+let adminSharedProviderSaveStatus = 0
+let developerCapabilityModelId = ""
+let developerSecondCapabilityModelId = ""
 
 try {
+  const adminSharedProviderSave = await requestJson<ApiEnvelope<{ success: boolean; providerId: string; reloadedSessionCount: number }>>(
+    adminJar,
+    "/api/provider-config/save",
+    {
+      method: "POST",
+      body: {
+        providerId: adminSharedProviderId,
+        name: "Admin Shared Provider",
+        api: "@ai-sdk/openai-compatible",
+        baseURL: "https://example.invalid/shared",
+        apiKey: "admin-shared-key",
+        defaultModel: `${adminSharedProviderId}/chat`,
+        models: [
+          {
+            id: "chat",
+            name: "Shared Chat",
+          },
+        ],
+      },
+    },
+  )
+  adminSharedProviderSaveStatus = adminSharedProviderSave.status
+  assert(adminSharedProviderSave.status === 200, "admin shared provider save should succeed")
+  const developerProviderListAfterShared = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(
+    developerJar,
+    "/api/provider-config",
+  )
+  assert(
+    developerProviderListAfterShared.status === 200
+      && developerProviderListAfterShared.body.data.items.some((item) => item.providerId === adminSharedProviderId),
+    "developer should see admin shared provider",
+  )
+
   const developerProviderConflictSave = await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/save", {
     method: "POST",
-    body: providerConfig,
+    body: {
+      providerId: adminSharedProviderId,
+      name: "Developer Conflict Provider",
+      api: "@ai-sdk/openai-compatible",
+      baseURL: "https://example.invalid/conflict",
+      apiKey: "developer-conflict-key",
+      defaultModel: `${adminSharedProviderId}/chat`,
+      models: [
+        {
+          id: "chat",
+          name: "Conflict Chat",
+        },
+      ],
+    },
   })
   developerProviderConflictStatus = developerProviderConflictSave.status
   assert(developerProviderConflictSave.status === 409, "developer provider save should conflict with platform shared provider")
@@ -76,6 +128,80 @@ try {
   )
   developerPrivateProviderSaveStatus = developerPrivateProviderSave.status
   assert(developerPrivateProviderSave.status === 200, "developer private provider save should succeed")
+  const adminProviderListAfterPrivate = await requestJson<ApiEnvelope<{ items: ProviderConfig[] }>>(adminJar, "/api/provider-config")
+  assert(
+    adminProviderListAfterPrivate.status === 200
+      && !adminProviderListAfterPrivate.body.data.items.some((item) => item.providerId === developerPrivateProviderId),
+    "admin should not see developer private provider",
+  )
+
+  const developerWorkspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(developerJar, "/api/workspace/create", {
+    method: "POST",
+    body: {
+      projectId: developer.projectIds[0],
+      name: `settings-private-${Date.now()}`,
+    },
+  })
+  assert(developerWorkspace.status === 200, "developer workspace/create failed")
+  const developerSession = await requestJson<ApiEnvelope<{ id: string }>>(developerJar, "/api/session/create", {
+    method: "POST",
+    body: {
+      title: `Developer Private ${Date.now()}`,
+      projectId: developerWorkspace.body.data.projectId,
+      workspaceId: developerWorkspace.body.data.id,
+    },
+  })
+  assert(developerSession.status === 200, "developer session/create failed")
+  developerSessionId = developerSession.body.data.id
+  const developerOpen = await requestJson<ApiEnvelope<{ id: string; status: string }>>(developerJar, "/api/acp/session/open", {
+    method: "POST",
+    body: { businessSessionId: developerSessionId },
+  })
+  assert(developerOpen.status === 200 && developerOpen.body.data.status === "active", "developer session/open failed")
+  const developerDetail = await waitForSessionDetail(
+    developerJar,
+    developerSessionId,
+    (session) =>
+      session.status === "active"
+      && typeof session.capabilityState?.modelId === "string"
+      && session.capabilityState.modelId === `${developerPrivateProviderId}/chat`,
+    "developer private provider model should become the active runtime model",
+  )
+  developerCapabilityModelId = developerDetail.capabilityState?.modelId || ""
+
+  const developerSecondWorkspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(developerJar, "/api/workspace/create", {
+    method: "POST",
+    body: {
+      projectId: developer.projectIds[0],
+      name: `settings-private-second-${Date.now()}`,
+    },
+  })
+  assert(developerSecondWorkspace.status === 200, "developer second workspace/create failed")
+  const developerSecondSession = await requestJson<ApiEnvelope<{ id: string }>>(developerJar, "/api/session/create", {
+    method: "POST",
+    body: {
+      title: `Developer Private Second ${Date.now()}`,
+      projectId: developerSecondWorkspace.body.data.projectId,
+      workspaceId: developerSecondWorkspace.body.data.id,
+    },
+  })
+  assert(developerSecondSession.status === 200, "developer second session/create failed")
+  developerSecondSessionId = developerSecondSession.body.data.id
+  const developerSecondOpen = await requestJson<ApiEnvelope<{ id: string; status: string }>>(developerJar, "/api/acp/session/open", {
+    method: "POST",
+    body: { businessSessionId: developerSecondSessionId },
+  })
+  assert(developerSecondOpen.status === 200 && developerSecondOpen.body.data.status === "active", "developer second session/open failed")
+  const developerSecondDetail = await waitForSessionDetail(
+    developerJar,
+    developerSecondSessionId,
+    (session) =>
+      session.status === "active"
+      && typeof session.capabilityState?.modelId === "string"
+      && session.capabilityState.modelId === `${developerPrivateProviderId}/chat`,
+    "developer private provider model should stay active across a second workspace/session",
+  )
+  developerSecondCapabilityModelId = developerSecondDetail.capabilityState?.modelId || ""
 
   const workspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(adminJar, "/api/workspace/create", {
     method: "POST",
@@ -165,6 +291,15 @@ try {
   })
   assert(reopenActive.status === 200 && reopenActive.body.data.status === "active", "reopen active after provider save failed")
 } finally {
+  if (adminSharedProviderSaveStatus === 200) {
+    await requestJson<ApiEnvelope<{ success: boolean }>>(adminJar, "/api/provider-config/delete", {
+      method: "POST",
+      body: {
+        providerId: adminSharedProviderId,
+        source: "platform_shared",
+      },
+    }).catch(() => null)
+  }
   await requestJson<ApiEnvelope<{ success: boolean }>>(developerJar, "/api/provider-config/delete", {
     method: "POST",
     body: {
@@ -182,6 +317,9 @@ console.log(JSON.stringify({
   providerSaveStatus,
   activeStatusAfterSave,
   historyStatusAfterSave,
+  adminSharedProviderSaveStatus,
+  developerCapabilityModelId,
+  developerSecondCapabilityModelId,
   developerProviderStatuses: {
     conflictSave: developerProviderConflictStatus,
     privateSave: developerPrivateProviderSaveStatus,
@@ -191,13 +329,13 @@ console.log(JSON.stringify({
 async function waitForSessionDetail(
   jar: string[],
   sessionId: string,
-  predicate: (session: { status: string }) => boolean,
+  predicate: (session: { status: string; capabilityState?: { modelId?: string } }) => boolean,
   message: string,
 ) {
-  let latest: { status: string } | null = null
+  let latest: { status: string; capabilityState?: { modelId?: string } } | null = null
   const startedAt = Date.now()
   while (Date.now() - startedAt < 10000) {
-    const detail = await requestJson<ApiEnvelope<{ session: { status: string } }>>(
+    const detail = await requestJson<ApiEnvelope<{ session: { status: string; capabilityState?: { modelId?: string } } }>>(
       jar,
       `/api/session/detail?businessSessionId=${encodeURIComponent(sessionId)}`,
     )

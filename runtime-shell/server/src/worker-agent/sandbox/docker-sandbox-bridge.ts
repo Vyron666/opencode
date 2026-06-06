@@ -1,7 +1,7 @@
 import { Writable } from "node:stream"
 import net from "node:net"
 import Docker from "dockerode"
-import { SANDBOX_BRIDGE_PORT, SANDBOX_CONFIG_PATH, WARM_POOL_RUNTIME_CWD, docker } from "./docker-sandbox-state"
+import { SANDBOX_BRIDGE_PORT, WARM_POOL_RUNTIME_CWD, docker } from "./docker-sandbox-state"
 
 export async function connectSandboxBridge(container: Docker.Container) {
   const info = await container.inspect()
@@ -26,7 +26,6 @@ export async function connectTcp(host: string, port: number, attempts: number): 
 
 export function createBridgeScript() {
   return `
-const fs = require("node:fs")
 const net = require("node:net")
 const { spawn } = require("node:child_process")
 const server = net.createServer((socket) => {
@@ -41,10 +40,9 @@ const server = net.createServer((socket) => {
     const handshake = line ? JSON.parse(line) : {}
     const childEnv = { ...process.env }
     if (handshake.configB64) {
-      fs.writeFileSync("${SANDBOX_CONFIG_PATH}", Buffer.from(handshake.configB64, "base64"), { mode: 0o600 })
-      childEnv.OPENCODE_CONFIG = "${SANDBOX_CONFIG_PATH}"
+      childEnv.OPENCODE_CONFIG_CONTENT = Buffer.from(handshake.configB64, "base64").toString("utf8")
     } else {
-      delete childEnv.OPENCODE_CONFIG
+      delete childEnv.OPENCODE_CONFIG_CONTENT
     }
     let childStopTimer
     let child = spawn("bun", [process.env.RUNTIME_SHELL_ACP_ENTRY, "acp", "--print-logs", "--cwd=" + (handshake.cwd || "${WARM_POOL_RUNTIME_CWD}")], {

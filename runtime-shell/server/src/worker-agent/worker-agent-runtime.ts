@@ -20,10 +20,12 @@ import {
   requireString,
 } from "./worker-agent-store"
 import { createRuntimeEntry, isPromptInterrupted, toBootstrap, updateSnapshot } from "./worker-agent-runtime-support"
-import { computeRuntimeConfigFingerprint, prewarmSessionRuntimeOnWorker, tryOpenWarmRuntimeEntry } from "./worker-agent-warm-runtime"
+import { prewarmSessionRuntimeOnWorker, tryOpenWarmRuntimeEntry } from "./worker-agent-warm-runtime"
 import type { RuntimeEntry } from "./worker-agent-types"
 import { closeOrphanDockerSandbox } from "./sandbox/docker-sandbox-manager"
+import { buildColdRuntimeHomePath } from "./sandbox/docker-sandbox-runtime-home"
 import { createLogger } from "../log"
+import { buildRuntimeConfigContext } from "../runtime/runtime-config-content"
 
 const log = createLogger("worker-agent-runtime")
 const pendingRuntimeBootstraps = new Map<string, Promise<ReturnType<typeof toBootstrap>>>()
@@ -43,6 +45,8 @@ type SessionResumeRequest = SessionRuntimeRequest & {
 
 type SessionForkRequest = SessionRuntimeRequest & {
   sourceAcpSessionId: string
+  sourceBusinessSessionId?: string
+  sourceRuntimeHomePath?: string
 }
 
 export function createRuntimeHandlers(input: {
@@ -67,14 +71,13 @@ export function createRuntimeHandlers(input: {
 
   async function prewarmSession(body: Record<string, unknown>) {
     const request = readSessionRuntimeRequest(body)
-    const slot = await prewarmSessionRuntimeOnWorker({
+    await prewarmSessionRuntimeOnWorker({
       runtimeShellBaseUrl: input.runtimeShellBaseUrl,
       workerToken: input.workerToken,
       ...request,
     })
     return {
-      warmed: Boolean(slot),
-      slotId: slot?.id,
+      warmed: true,
     }
   }
 
@@ -110,6 +113,45 @@ export function createRuntimeHandlers(input: {
 
   async function forkSession(body: Record<string, unknown>) {
     const request = readSessionForkRequest(body)
+    const liveSourceRuntime = request.sourceBusinessSessionId
+      ? findRuntimeByBusinessSessionId(request.sourceBusinessSessionId)
+      : undefined
+    if (liveSourceRuntime) {
+      return runRuntimeBootstrap(request.businessSessionId, async () => {
+        const existing = findRuntimeByBusinessSessionId(request.businessSessionId)
+        if (existing) return toBootstrap(existing)
+        const sourceRuntimeHomePath = liveSourceRuntime.sandboxHandle?.runtimeHomePath
+        if (!sourceRuntimeHomePath) {
+          throw new Error("live fork source runtime home is unavailable")
+        }
+        const sourceRuntimeCwd = liveSourceRuntime.sandboxHandle?.runtimeCwd
+          || liveSourceRuntime.sandboxPath
+          || liveSourceRuntime.workspacePath
+        const forked = await liveSourceRuntime.client.forkSession(
+          sourceRuntimeCwd,
+          request.sourceAcpSessionId,
+          {
+            sourceBusinessSessionId: request.sourceBusinessSessionId,
+            preserveSourceSessionBinding: true,
+          },
+        )
+        request.sourceRuntimeHomePath = sourceRuntimeHomePath
+        log.info("runtime fork created source session snapshot", {
+          businessSessionId: request.businessSessionId,
+          sourceBusinessSessionId: request.sourceBusinessSessionId,
+          workerId: request.workerId,
+          workspaceId: request.workspaceId,
+          forkedAcpSessionId: forked.sessionId,
+        })
+        return openManagedSessionInner(input, request, {
+          action: "fork",
+          useWarmRuntime: false,
+          matchesExisting: (entry) => entry.client.getSessionId() === forked.sessionId,
+          coldStart: (entry) => entry.client.loadSession(request.sandboxPath, forked.sessionId),
+        })
+      })
+    }
+    request.sourceRuntimeHomePath = resolveForkSourceRuntimeHomePath(request)
     return openManagedSession(input, request, {
       action: "fork",
       useWarmRuntime: false,
@@ -254,36 +296,68 @@ async function openManagedSession(
     coldStart: (entry: RuntimeEntry) => Promise<Record<string, unknown>>
   },
 ) {
-  return runRuntimeBootstrap(request.businessSessionId, async () => {
-    const existing = findRuntimeByBusinessSessionId(request.businessSessionId)
-    if (existing && input.matchesExisting(existing)) return toBootstrap(existing)
-    const warmEntry = input.useWarmRuntime === false
-      ? undefined
-      : await tryOpenWarmRuntimeEntry({
-          runtimeShellBaseUrl: runtimeContext.runtimeShellBaseUrl,
-          workerToken: runtimeContext.workerToken,
-          ...request,
-        })
-    if (warmEntry && input.warmStart) {
-      return openAndRememberRuntimeEntry({
-        entry: warmEntry,
-        request,
-        actionLabel: `warm ${input.action} session`,
-        start: () => input.warmStart!(warmEntry, warmEntry.sandboxHandle?.runtimeCwd || request.sandboxPath),
+  return runRuntimeBootstrap(request.businessSessionId, () => openManagedSessionInner(runtimeContext, request, input))
+}
+
+async function openManagedSessionInner(
+  runtimeContext: {
+    runtimeShellBaseUrl: string
+    workerToken: string
+  },
+  request: SessionRuntimeRequest,
+  input: {
+    action: "open" | "load" | "resume" | "fork"
+    useWarmRuntime?: boolean
+    matchesExisting: (entry: RuntimeEntry) => boolean
+    warmStart?: (entry: RuntimeEntry, cwd: string) => Promise<Record<string, unknown>>
+    coldStart: (entry: RuntimeEntry) => Promise<Record<string, unknown>>
+  },
+) {
+  const openStartedAt = Date.now()
+  const runtimeConfig = buildRuntimeConfigContext(request.configContent)
+  const existing = findRuntimeByBusinessSessionId(request.businessSessionId)
+  if (existing && input.matchesExisting(existing)) return toBootstrap(existing)
+  const warmEntry = input.useWarmRuntime === false
+    ? undefined
+    : await tryOpenWarmRuntimeEntry({
+        runtimeShellBaseUrl: runtimeContext.runtimeShellBaseUrl,
+        workerToken: runtimeContext.workerToken,
+        ...request,
       })
-    }
-    const entry = createRuntimeEntry({
-      runtimeShellBaseUrl: runtimeContext.runtimeShellBaseUrl,
-      workerToken: runtimeContext.workerToken,
-      ...request,
-      configFingerprint: computeRuntimeConfigFingerprint(request.configContent),
+  if (warmEntry && input.warmStart) {
+    log.info("runtime open reusing warm runtime", {
+      businessSessionId: request.businessSessionId,
+      workerId: request.workerId,
+      workspaceId: request.workspaceId,
+      configFingerprint: runtimeConfig.configFingerprint,
+      openWaitMs: Date.now() - openStartedAt,
     })
     return openAndRememberRuntimeEntry({
-      entry,
+      entry: warmEntry,
       request,
-      actionLabel: input.action === "fork" ? "fork session" : `${input.action} session`,
-      start: () => input.coldStart(entry),
+      actionLabel: `warm ${input.action} session`,
+      start: () => input.warmStart!(warmEntry, warmEntry.sandboxHandle?.runtimeCwd || request.sandboxPath),
     })
+  }
+  const entry = createRuntimeEntry({
+    runtimeShellBaseUrl: runtimeContext.runtimeShellBaseUrl,
+    workerToken: runtimeContext.workerToken,
+    ...request,
+    sourceRuntimeHomePath: readOptionalSourceRuntimeHomePath(request),
+    configFingerprint: runtimeConfig.configFingerprint,
+  })
+  log.info("runtime open falling back to cold runtime", {
+    businessSessionId: request.businessSessionId,
+    workerId: request.workerId,
+    workspaceId: request.workspaceId,
+    configFingerprint: runtimeConfig.configFingerprint,
+    openWaitMs: Date.now() - openStartedAt,
+  })
+  return openAndRememberRuntimeEntry({
+    entry,
+    request,
+    actionLabel: input.action === "fork" ? "fork session" : `${input.action} session`,
+    start: () => input.coldStart(entry),
   })
 }
 
@@ -293,7 +367,7 @@ async function openAndRememberRuntimeEntry(input: {
   actionLabel: string
   start: () => Promise<Record<string, unknown>>
 }) {
-  const response = await rememberOpeningRuntime(
+  const opening = await rememberOpeningRuntime(
     input.entry,
     () => openRuntimeEntry(input.entry, input.start),
   ).catch((error) => {
@@ -306,27 +380,31 @@ async function openAndRememberRuntimeEntry(input: {
     })
     throw error
   })
-  updateSnapshot(input.entry, response)
-  rememberRuntime(input.entry)
-  return toBootstrap(input.entry)
+  try {
+    updateSnapshot(input.entry, opening.response)
+    rememberRuntime(input.entry)
+    return toBootstrap(input.entry)
+  } finally {
+    releaseRuntimeClaim(opening.claim)
+  }
 }
 
 async function rememberOpeningRuntime<T>(entry: ReturnType<typeof createRuntimeEntry>, open: () => Promise<T>) {
-  rememberRuntimeClaim({
+  const claim = {
     businessSessionId: entry.businessSessionId,
     workspaceId: entry.workspaceId,
     workerId: entry.workerId,
     containerName: entry.sandboxHandle?.containerName,
-  })
+  }
+  rememberRuntimeClaim(claim)
   try {
-    return await open()
-  } finally {
-    releaseRuntimeClaim({
-      businessSessionId: entry.businessSessionId,
-      workspaceId: entry.workspaceId,
-      workerId: entry.workerId,
-      containerName: entry.sandboxHandle?.containerName,
-    })
+    return {
+      response: await open(),
+      claim,
+    }
+  } catch (error) {
+    releaseRuntimeClaim(claim)
+    throw error
   }
 }
 
@@ -370,5 +448,27 @@ function readSessionForkRequest(body: Record<string, unknown>): SessionForkReque
   return {
     ...readSessionRuntimeRequest(body),
     sourceAcpSessionId: requireString(body.sourceAcpSessionId, "sourceAcpSessionId"),
+    sourceBusinessSessionId: typeof body.sourceBusinessSessionId === "string" ? body.sourceBusinessSessionId : undefined,
   }
+}
+
+function resolveForkSourceRuntimeHomePath(request: SessionForkRequest) {
+  const liveSourceRuntime = request.sourceBusinessSessionId
+    ? findRuntimeByBusinessSessionId(request.sourceBusinessSessionId)
+    : undefined
+  if (liveSourceRuntime?.sandboxHandle?.runtimeHomePath) {
+    return liveSourceRuntime.sandboxHandle.runtimeHomePath
+  }
+  // 中文/English: if the source runtime is not live on this worker anymore,
+  // reuse the workspace-owned cold runtime home as the persisted fallback.
+  return buildColdRuntimeHomePath({
+    workerId: request.workerId,
+    workspaceId: request.workspaceId,
+  })
+}
+
+function readOptionalSourceRuntimeHomePath(request: SessionRuntimeRequest) {
+  return "sourceRuntimeHomePath" in request && typeof request.sourceRuntimeHomePath === "string"
+    ? request.sourceRuntimeHomePath
+    : undefined
 }

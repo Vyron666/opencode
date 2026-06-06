@@ -25,6 +25,7 @@ import { createLogger } from "../log"
 import { spawnAcpProcess, logAcpStderr } from "./process-spawn"
 import { RuntimeShellClient } from "./runtime-shell-client"
 import type { PendingResolver, PermissionResolution, RuntimeClientOptions } from "./types"
+import type { RuntimeForkSource } from "../runtime/runtime-client"
 
 const log = createLogger("acp")
 
@@ -108,6 +109,7 @@ export class AcpProcessClient {
 
   async initialize() {
     if (this.initialized) return this.initialized
+    const startedAt = Date.now()
     log.info("sending initialize", { protocolVersion: PROTOCOL_VERSION })
     this.initialized = await this.connection.initialize({
       protocolVersion: PROTOCOL_VERSION,
@@ -128,6 +130,7 @@ export class AcpProcessClient {
     log.info("initialize succeeded", {
       agent: this.initialized.agentInfo?.name,
       version: this.initialized.agentInfo?.version,
+      durationMs: Date.now() - startedAt,
     })
     return this.initialized
   }
@@ -138,39 +141,54 @@ export class AcpProcessClient {
 
   async createSession(params: NewSessionRequest): Promise<NewSessionResponse> {
     await this.initialize()
+    const startedAt = Date.now()
     log.info("sending newSession")
     const result = await this.connection.newSession(params).catch((error) => {
       throw this.wrapRpcError("newSession", error)
     })
     this.bindSession(result.sessionId)
-    log.info("newSession succeeded", { acpSessionId: result.sessionId })
+    log.info("newSession succeeded", {
+      acpSessionId: result.sessionId,
+      durationMs: Date.now() - startedAt,
+    })
     return result
   }
 
   async loadSession(cwd: string, sessionId: string): Promise<LoadSessionResponse> {
     await this.initialize()
+    const startedAt = Date.now()
     const result = await this.connection.loadSession({ cwd, sessionId, mcpServers: [] }).catch((error) => {
       throw this.wrapRpcError("loadSession", error)
     })
     this.bindSession(sessionId)
+    log.info("loadSession succeeded", {
+      acpSessionId: sessionId,
+      durationMs: Date.now() - startedAt,
+    })
     return result
   }
 
   async resumeSession(cwd: string, sessionId: string) {
     await this.initialize()
+    const startedAt = Date.now()
     const result = await this.connection.resumeSession({ cwd, sessionId, mcpServers: [] }).catch((error) => {
       throw this.wrapRpcError("resumeSession", error)
     })
     this.bindSession(sessionId)
+    log.info("resumeSession succeeded", {
+      acpSessionId: sessionId,
+      durationMs: Date.now() - startedAt,
+    })
     return result
   }
 
-  async forkSession(cwd: string, sessionId: string): Promise<ForkSessionResponse> {
+  async forkSession(cwd: string, sessionId: string, source?: RuntimeForkSource): Promise<ForkSessionResponse> {
     await this.initialize()
+    const previousSessionId = this.sessionId
     const result = await this.connection.unstable_forkSession({ cwd, sessionId, mcpServers: [] }).catch((error) => {
       throw this.wrapRpcError("forkSession", error)
     })
-    this.bindSession(result.sessionId)
+    this.bindSession(source?.preserveSourceSessionBinding ? previousSessionId : result.sessionId)
     return result
   }
 

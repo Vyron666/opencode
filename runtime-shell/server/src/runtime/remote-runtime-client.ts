@@ -14,7 +14,7 @@ import { Config, type LocalWorkerConfig } from "../config"
 import { createLogger } from "../log"
 import { getSandboxWorkspace } from "../services/sandbox/sandbox-workspace-service"
 import type { BusinessSession, PendingPermission, PendingQuestion } from "../types"
-import type { ManagedRuntimeClient } from "./runtime-client"
+import type { ManagedRuntimeClient, RuntimeForkSource } from "./runtime-client"
 
 const log = createLogger("remote-runtime-client")
 
@@ -94,10 +94,11 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
     }
   }
 
-  async forkSession(cwd: string, sessionId: string): Promise<ForkSessionResponse> {
+  async forkSession(cwd: string, sessionId: string, source?: RuntimeForkSource): Promise<ForkSessionResponse> {
     const response = await this.post<RemoteRuntimeBootstrap>("/runtime/fork-session", {
       ...await this.buildSessionRequest(cwd),
       sourceAcpSessionId: sessionId,
+      sourceBusinessSessionId: source?.sourceBusinessSessionId,
     })
     this.bindRemote(response)
     return {
@@ -248,14 +249,37 @@ async function postRemoteWorker<T = { success: true }>(
   body: Record<string, unknown>,
 ) {
   const agentBaseUrl = worker.agentBaseUrl || worker.baseUrl.replace(/:\d+$/, ":4097")
-  const response = await fetch(`${agentBaseUrl}${pathname}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-runtime-worker-token": Config.workerAgentToken,
-    },
-    body: JSON.stringify(body),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(
+    () => controller.abort(`remote worker timeout after ${Config.workerAgentRequestTimeoutMs}ms`),
+    Config.workerAgentRequestTimeoutMs,
+  )
+  let response: Response
+  try {
+    response = await fetch(`${agentBaseUrl}${pathname}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-runtime-worker-token": Config.workerAgentToken,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    clearTimeout(timeout)
+    const message = error instanceof Error ? error.message : String(error)
+    log.warn("remote worker request transport failed", {
+      workerId: worker.id,
+      pathname,
+      timeoutMs: Config.workerAgentRequestTimeoutMs,
+      message,
+    })
+    if (controller.signal.aborted) {
+      throw new Error(`remote worker request timed out: ${pathname}`)
+    }
+    throw new Error(`remote worker request failed: ${message}`)
+  }
+  clearTimeout(timeout)
   if (!response.ok) {
     const message = await response.text()
     log.warn("remote worker request failed", {

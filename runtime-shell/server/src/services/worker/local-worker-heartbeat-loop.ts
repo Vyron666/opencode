@@ -4,6 +4,7 @@ import * as RuntimeOperationQueueRepo from "../../repos/runtime-operation-queue-
 import * as SandboxInstanceRepo from "../../repos/sandbox-instance-repo"
 import type { SandboxInstance } from "../../types"
 import { recordWorkerHeartbeat } from "../runtime-governance/worker-heartbeat-service"
+import { readSandboxBackend } from "../sandbox/sandbox-backend"
 import { registerWorkerForUser } from "./worker-service"
 import { sessionService, userService, workerService } from "../store/store-singleton"
 
@@ -171,19 +172,23 @@ async function queryRemoteWorkerHeartbeat(agentBaseUrl: string | undefined, work
 
 async function isLocalWorkerReachable(worker: { baseUrl: string; agentBaseUrl?: string }) {
   try {
+    if (Config.workerExecutionMode === "remote" && worker.agentBaseUrl) {
+      // 中文/English: remote runtime execution depends on worker-agent `4097`.
+      // Do not mark the worker offline just because the legacy `4096` health
+      // endpoint is slow or unavailable in the same time window.
+      const agentResponse = await fetch(`${worker.agentBaseUrl}/healthz`, {
+        headers: {
+          "x-runtime-worker-token": Config.workerAgentToken,
+        },
+        signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
+      })
+      return agentResponse.ok
+    }
     const response = await fetch(`${worker.baseUrl}/global/health`, {
       headers: readLocalWorkerAuthHeaders(),
       signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
     })
-    if (!response.ok) return false
-    if (Config.workerExecutionMode !== "remote" || !worker.agentBaseUrl) return true
-    const agentResponse = await fetch(`${worker.agentBaseUrl}/healthz`, {
-      headers: {
-        "x-runtime-worker-token": Config.workerAgentToken,
-      },
-      signal: AbortSignal.timeout(LOCAL_WORKER_HEALTH_TIMEOUT_MS),
-    })
-    return agentResponse.ok
+    return response.ok
   } catch (error) {
     log.warn("local worker probe failed", {
       baseUrl: worker.baseUrl,
@@ -291,13 +296,7 @@ async function syncWarmPoolSandboxInstances(
       workspaceId: `warm_pool:${worker.id}:${slot.slotId}`,
       businessSessionId: `warm_pool:${worker.id}:${slot.slotId}`,
       workerId: worker.id,
-      backend: Config.sandboxBackend === "kata"
-        ? "kata"
-        : Config.sandboxBackend === "gvisor"
-          ? "gvisor"
-          : Config.sandboxBackend === "docker"
-            ? "docker"
-            : "local-process",
+      backend: readSandboxBackend(),
       runtimeClass: Config.sandboxRuntimeClass || undefined,
       isolationMode: Config.sandboxIsolationMode || undefined,
       status: slot.status,

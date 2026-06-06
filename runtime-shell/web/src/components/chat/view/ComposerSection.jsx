@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../../../store'
-import { Select, useSessionCapabilities, useViewerContext } from '../../sidebar/sidebar-support'
 import {
   disposeAttachmentPreprocessResources,
   isCancelledError,
@@ -10,6 +9,7 @@ import {
   resetAttachmentPreprocessCache,
 } from '../../../store/attachment-preprocess'
 import { useConversationPhase } from './useConversationPhase'
+import { useSessionCapabilities, useViewerContext } from '../../sidebar/sidebar-support'
 
 export const ComposerSection = memo(function ComposerSection({ currentSessionId, showDebug, setShowDebug, onOpenSettings }) {
   const sendPrompt = useStore((state) => state.sendPrompt)
@@ -35,6 +35,9 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
   const currentModelId = capabilities.modelId || capabilities.models?.[0]?.id || ''
   const hasProviderConfigured = capabilities.models?.length > 0 || capabilities.availableCommands?.length > 0
   const shouldShowProviderHint = Boolean(currentSessionId) && !sessionPreparing && !settingsUpdating && !hasProviderConfigured
+  const skillCount = capabilities.availableCommands?.length || 0
+  const skillStatusLabel = skillCount > 0 ? `${skillCount} 项` : '未配置'
+  const mcpStatusLabel = capabilities.availableCommands?.length > 0 ? '已接入' : '未配置'
 
   useEffect(() => {
     attachmentsRef.current = attachments
@@ -162,7 +165,6 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
 
   const handleDrop = useCallback((event) => {
     event.preventDefault()
-    event.currentTarget.classList.remove('is-dragover')
     const files = Array.from(event.dataTransfer.files || [])
     if (!files.length) return
     startAttachmentPreprocess(files)
@@ -185,17 +187,17 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
   )
 
   return (
-    <section className="shrink-0 rounded-[28px] border border-[var(--line)] bg-white p-4 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
+    <section className="shrink-0 border-t border-[#eef2ff] bg-white px-6 pb-5 pt-4 max-[1024px]:px-4">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 pb-3">
           {attachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-1 text-xs text-[var(--text-dim)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5f6] bg-[#f6f8fe] px-3 py-1.5 text-xs text-[#61718d]"
             >
               <span className="max-w-[180px] truncate">{attachment.file.name}</span>
-              <span className="text-[10px] uppercase tracking-[0.08em] text-brand/90">{attachment.label}</span>
-              <span className="text-[10px] text-[var(--text-muted)]">
+              <span className="text-[10px] uppercase tracking-[0.08em] text-[#3566df]">{attachment.label}</span>
+              <span className="text-[10px] text-[#8a96ab]">
                 {attachment.status === 'pending'
                   ? '待解析'
                   : attachment.status === 'parsing'
@@ -205,18 +207,18 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
                       : '解析失败'}
               </span>
               {attachment.status === 'parsing' || attachment.status === 'ready' ? (
-                <span className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]">{attachment.progressMessage}</span>
+                <span className="max-w-[220px] truncate text-[10px] text-[#8a96ab]">{attachment.progressMessage}</span>
               ) : null}
               {attachment.status === 'failed' && attachment.error ? (
-                <span className="max-w-[220px] truncate text-danger">{attachment.error}</span>
+                <span className="max-w-[220px] truncate text-[#cf4040]">{attachment.error}</span>
               ) : null}
               <button
                 type="button"
                 onClick={() => cancelAttachment(attachment.id)}
-                className="text-[var(--text-muted)] transition-colors hover:text-danger"
+                className="text-[#8a96ab] transition-colors hover:text-[#cf4040]"
                 aria-label={`移除附件 ${attachment.file.name}`}
               >
-                {attachment.status === 'pending' || attachment.status === 'parsing' ? '取消' : 'x'}
+                {attachment.status === 'pending' || attachment.status === 'parsing' ? '取消' : '×'}
               </button>
             </div>
           ))}
@@ -225,11 +227,11 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
 
       <form onSubmit={handleSend} className="grid gap-3">
         {shouldShowProviderHint ? (
-          <div className="rounded-[16px] border border-brand/20 bg-brand/5 px-4 py-3 text-sm text-brand">
+          <div className="rounded-[14px] border border-[#dbe5f6] bg-[#f6f8fe] px-4 py-3 text-sm text-[#3566df]">
             请先配置 AI 服务才能开始对话。
             <button
               type="button"
-              onClick={onOpenSettings}
+              onClick={() => onOpenSettings('provider')}
               className="ml-2 font-semibold underline transition-opacity hover:opacity-80"
             >
               前往配置
@@ -237,122 +239,128 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
           </div>
         ) : null}
 
-        <textarea
-          value={promptText}
-          onChange={(event) => setPromptText(event.target.value)}
-          rows={2}
-          disabled={sessionPreparing}
-          placeholder={
-            !currentSessionId
-              ? '请先打开一个会话'
-              : sessionPreparing
-                ? '会话正在打开或恢复，稍后即可发送'
-                : '输入消息...'
-          }
-          className="w-full min-h-[72px] max-h-[220px] resize-y rounded-[18px] border border-[var(--line)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--text)] outline-none transition-colors focus:border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.10)] placeholder:text-[var(--text-muted)]"
-          style={{ lineHeight: '22px' }}
-          onDragOver={(event) => {
-            event.preventDefault()
-            event.currentTarget.classList.add('is-dragover')
-          }}
-          onDragLeave={(event) => {
-            event.currentTarget.classList.remove('is-dragover')
-          }}
-          onDrop={handleDrop}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey) return
-            event.preventDefault()
-            if (!sendDisabled) void handleSend(event)
-          }}
-        />
+        <div className="rounded-[22px] border border-[#dbe6fb] bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <textarea
+            value={promptText}
+            onChange={(event) => setPromptText(event.target.value)}
+            rows={3}
+            disabled={sessionPreparing}
+            placeholder={
+              !currentSessionId
+                ? '请先打开一个会话'
+                : sessionPreparing
+                  ? '会话正在打开或恢复，稍后即可发送'
+                  : '输入消息...'
+            }
+            className="min-h-[72px] max-h-[220px] w-full resize-y border-0 bg-transparent px-1 py-1 text-sm leading-6 text-[#18233b] outline-none placeholder:text-[#97a4ba]"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={handleDrop}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey) return
+              event.preventDefault()
+              if (!sendDisabled) void handleSend(event)
+            }}
+          />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {currentSessionId ? (
-              <div className="w-[132px]">
-                <Select
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1fb] pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="relative">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.md,.markdown,.xlsx,.csv,image/*"
+                  onChange={handleFileChange}
+                  className="sr-only"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="grid h-10 w-10 place-items-center rounded-[12px] border border-[#dbe6fb] bg-white text-[18px] text-[#61718d] transition-colors hover:bg-[#f5f8ff]"
+                  aria-label="添加附件"
+                >
+                  +
+                </button>
+              </label>
+
+              {currentSessionId ? (
+                <MiniSelect
                   value={currentModeId}
                   onChange={(nextMode) => {
                     if (!nextMode || nextMode === currentModeId || !canUpdateMode || pendingSettingsAction) return
                     void updateMode(nextMode)
                   }}
                   options={capabilities.modes}
-                  emptyLabel="暂无模式"
                   disabled={!canUpdateMode || Boolean(pendingSettingsAction)}
                 />
-              </div>
-            ) : null}
+              ) : null}
 
-            {currentSessionId ? (
-              <div className="w-[188px]">
-                <Select
+              {currentSessionId ? (
+                <MiniSelect
                   value={currentModelId}
                   onChange={(nextModel) => {
                     if (!nextModel || nextModel === currentModelId || !canUpdateModel || pendingSettingsAction) return
                     void updateModel(nextModel)
                   }}
                   options={capabilities.models}
-                  emptyLabel="暂无模型"
                   disabled={!canUpdateModel || Boolean(pendingSettingsAction)}
                 />
-              </div>
-            ) : null}
+              ) : null}
 
-            <label className="relative">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".pdf,.md,.markdown,.xlsx,.csv,image/*"
-                onChange={handleFileChange}
-                className="sr-only"
-              />
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="h-10 w-10 rounded-full border border-[var(--line)] bg-[var(--surface-muted)] text-[var(--text-dim)] transition-colors hover:bg-[var(--bg-strong)]"
-                aria-label="添加附件"
+                onClick={() => onOpenSettings('skill')}
+                className="inline-flex items-center gap-2 rounded-[12px] border border-[#dbe6fb] bg-[#f8faff] px-3 py-2 text-sm text-[#46546d] transition-colors hover:bg-[#f1f5ff]"
               >
-                +
+                <span className="font-semibold text-[#18233b]">Skill</span>
+                <span className="text-[11px] text-[#8a96ab]">{skillStatusLabel}</span>
               </button>
-            </label>
 
-            <label className="hidden shrink-0 cursor-pointer items-center gap-1 text-[11px] text-[var(--text-muted)] sm:flex">
-              <input
-                type="checkbox"
-                checked={showDebug}
-                onChange={(event) => setShowDebug(event.target.checked)}
-                className="h-3.5 w-3.5 accent-brand"
-              />
-              <span>调试事件</span>
-            </label>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            {phase.canCancel ? (
               <button
                 type="button"
-                onClick={() => void cancelPrompt()}
-                disabled={!currentSessionId || phase.id === 'cancelling'}
-                className="h-10 rounded-full border border-danger/20 bg-danger/10 px-4 text-sm font-semibold text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => onOpenSettings('mcp')}
+                className="inline-flex items-center gap-2 rounded-[12px] border border-[#dbe6fb] bg-[#f8faff] px-3 py-2 text-sm text-[#46546d] transition-colors hover:bg-[#f1f5ff]"
               >
-                {phase.id === 'cancelling' ? '取消中...' : '停止'}
+                <span className="font-semibold text-[#18233b]">MCP</span>
+                <span className="text-[11px] text-[#8a96ab]">{mcpStatusLabel}</span>
               </button>
-            ) : null}
 
-            <button
-              type="submit"
-              disabled={sendDisabled}
-              aria-label="发送消息"
-              className="h-10 w-10 rounded-full bg-brand text-sm font-semibold text-white transition-all hover:bg-[var(--brand-strong)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {'->'}
-            </button>
+              <label className="hidden cursor-pointer items-center gap-1 text-[11px] text-[#8a96ab] sm:flex">
+                <input
+                  type="checkbox"
+                  checked={showDebug}
+                  onChange={(event) => setShowDebug(event.target.checked)}
+                  className="h-3.5 w-3.5 accent-[#3566df]"
+                />
+                <span>调试事件</span>
+              </label>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {phase.canCancel ? (
+                <button
+                  type="button"
+                  onClick={() => void cancelPrompt()}
+                  disabled={!currentSessionId || phase.id === 'cancelling'}
+                  className="h-10 rounded-[12px] border border-[#efc4c4] bg-[#fff3f3] px-4 text-sm font-semibold text-[#cf4040] transition-colors hover:bg-[#ffeaea] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {phase.id === 'cancelling' ? '取消中...' : '停止'}
+                </button>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={sendDisabled}
+                className="h-10 rounded-[12px] bg-[#3566df] px-4 text-sm font-semibold text-white transition-all hover:bg-[#2f5fd7] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                → 发送
+              </button>
+            </div>
           </div>
         </div>
 
         {isSharedSession ? (
-          <div className="px-1 text-[11px] text-[var(--text-muted)]">
+          <div className="px-1 text-[11px] text-[#8a96ab]">
             共享工作区会话的模式和模型能力受当前权限控制，无法切换时会保持现状。
           </div>
         ) : null}
@@ -360,3 +368,26 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
     </section>
   )
 })
+
+function MiniSelect({ value, onChange, options, disabled }) {
+  if (!Array.isArray(options) || options.length === 0) return null
+
+  return (
+    <label className="relative">
+      <select
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+        disabled={disabled}
+        className="h-10 rounded-[12px] border border-[#dbe6fb] bg-[#f8faff] px-3 pr-8 text-sm text-[#46546d] outline-none transition-colors hover:bg-[#f1f5ff] disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ appearance: 'none' }}
+      >
+        {options.map((option) => (
+          <option key={option.id || option.value} value={option.id || option.value}>
+            {option.label || option.name || option.id || option.value}
+          </option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#8a96ab]">▼</span>
+    </label>
+  )
+}

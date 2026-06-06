@@ -8,14 +8,14 @@ export function ErrorBlock({ block }) {
 
   return (
     <div className="flex justify-center px-4">
-      <div className="w-full max-w-[540px] rounded-[14px] border border-danger/20 bg-danger/5 px-4 py-3">
-        <div className="text-[11px] leading-relaxed text-danger">{block.message}</div>
+      <div className="w-full max-w-[620px] rounded-[16px] border border-[#efc4c4] bg-[#fff3f3] px-4 py-3">
+        <div className="text-[12px] leading-6 text-[#cf4040]">{block.message}</div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {currentSessionId ? (
             <button
               type="button"
               onClick={() => void connectSSE()}
-              className="rounded-[8px] border border-danger/20 bg-danger/15 px-3 py-1.5 text-xs text-danger transition-colors hover:bg-danger/20"
+              className="rounded-[9px] border border-[#efc4c4] bg-white px-3 py-1.5 text-xs text-[#cf4040] transition-colors hover:bg-[#fff7f7]"
             >
               重新连接
             </button>
@@ -25,7 +25,7 @@ export function ErrorBlock({ block }) {
             <button
               type="button"
               onClick={() => void createQuickSession()}
-              className="rounded-[8px] border border-[var(--line)] bg-white px-3 py-1.5 text-xs text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)]"
+              className="rounded-[9px] border border-[#dbe5f6] bg-white px-3 py-1.5 text-xs text-[#61718d] transition-colors hover:bg-[#f6f8fe]"
             >
               新对话
             </button>

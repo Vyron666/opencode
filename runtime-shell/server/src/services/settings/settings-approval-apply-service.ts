@@ -1,5 +1,4 @@
 import { closeRuntime } from "../../acp-runtime-manager"
-import { saveProviderConfig } from "../../provider-config"
 import type { User, UserMcpConfig, UserSkillConfig } from "../../types"
 import { previewPlatformProviderImpact } from "../config-impact/config-impact-service"
 import {
@@ -26,11 +25,10 @@ export async function applyApprovedPlatformProviderConfig(input: {
     apiKeyMasked: maskApiKey(input.config.apiKey),
     apiKeyConfigured: Boolean(input.config.apiKey?.trim()),
   }
-  const saved = await saveProviderConfig(input.config)
   const affected = await previewPlatformProviderImpact({
     tenantId: input.user.tenantId,
     organizationId: input.user.organizationId,
-    providerId: saved.providerId,
+    providerId: normalizedConfig.providerId,
   })
   await savePlatformProviderConfig({
     user: input.user,
@@ -58,14 +56,14 @@ export async function applyApprovedPlatformProviderConfig(input: {
     requestId: input.requestId,
     action: "provider.save",
     resourceType: "provider_config",
-    resourceId: saved.providerId,
+    resourceId: normalizedConfig.providerId,
     detail: {
       reloadedSessionCount: affectedSessions.length,
       approvalApplied: true,
     },
   })
   return {
-    providerId: saved.providerId,
+    providerId: normalizedConfig.providerId,
     reloadedSessionCount: affectedSessions.length,
   }
 }

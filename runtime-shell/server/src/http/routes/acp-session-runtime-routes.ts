@@ -31,6 +31,7 @@ export function registerAcpSessionRuntimeRoutes(app: Hono) {
       user,
       businessSessionId: body.data.businessSessionId,
     })
+    if (!result.ok && result.reason === "quota_exceeded") return c.json(jsonError("quota exceeded", 429, reqId), 429)
     if (!result.ok) return replyRuntimeSessionError(c, reqId, result.reason)
     return c.json(jsonOk(result.session, reqId))
   })
@@ -48,6 +49,7 @@ export function registerAcpSessionRuntimeRoutes(app: Hono) {
       user,
       businessSessionId: body.data.businessSessionId,
     })
+    if (!result.ok && result.reason === "quota_exceeded") return c.json(jsonError("quota exceeded", 429, reqId), 429)
     if (!result.ok) return replyRuntimeSessionError(c, reqId, result.reason)
     return c.json(jsonOk(result.session, reqId))
   })
@@ -66,6 +68,7 @@ export function registerAcpSessionRuntimeRoutes(app: Hono) {
       businessSessionId: body.data.businessSessionId,
       title: body.data.title,
     })
+    if (!result.ok && result.reason === "quota_exceeded") return c.json(jsonError("quota exceeded", 429, reqId), 429)
     if (!result.ok) return replySharedSessionError(c, reqId, result.reason)
     return c.json(jsonOk(result.session, reqId))
   })

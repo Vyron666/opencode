@@ -43,24 +43,20 @@ export function QuestionInlineBlock({ block }) {
 
   return (
     <div className="flex justify-center px-4">
-      <div className="grid w-full max-w-[620px] gap-3 rounded-[20px] border border-brand/15 bg-[linear-gradient(180deg,#ffffff,#f8fbff)] px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.08)]">
+      <div className="grid w-full max-w-[680px] gap-3 rounded-[18px] border border-[#dce6f8] bg-[#f7f9fe] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-brand/10 text-sm font-bold text-brand">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#e8efff] text-sm font-bold text-[#3566df]">
             问
           </div>
           <div className="min-w-0 grid gap-1">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-brand">交互提问</div>
-            <div className="text-sm font-semibold text-[var(--text)]">{block.data?.message || '需要你的确认'}</div>
-            <div className="text-[12px] leading-relaxed text-[var(--text-muted)]">
-              当前会话正在等待你回答这个问题，提交后会继续运行。
-            </div>
+            <div className="text-[11px] font-bold tracking-[0.12em] text-[#3566df]">交互提问</div>
+            <div className="text-sm font-semibold text-[#24324a]">{block.data?.message || '需要你的确认'}</div>
+            <div className="text-[12px] leading-6 text-[#61718d]">当前会话正在等待你回答这个问题，提交后会继续执行。</div>
           </div>
         </div>
 
         {resolved ? (
-          <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-[11px] text-[var(--text-muted)]">
-            已提交，等待会话继续。
-          </div>
+          <div className="rounded-[12px] border border-[#dce6f8] bg-white px-3 py-2 text-[11px] text-[#61718d]">已提交，等待会话继续。</div>
         ) : hasLegacyPrompts ? (
           <QuestionLegacyForm
             prompts={prompts}
@@ -85,7 +81,7 @@ export function QuestionInlineBlock({ block }) {
         ) : (
           <>
             {schema ? (
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-[12px] border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--text-dim)]">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-[12px] border border-[#dce6f8] bg-white p-3 text-xs text-[#61718d]">
                 {formatData(schema)}
               </pre>
             ) : null}
@@ -93,14 +89,14 @@ export function QuestionInlineBlock({ block }) {
               <button
                 onClick={() => respondQuestion(requestId, 'decline', {})}
                 disabled={submitting}
-                className="rounded-[10px] border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-[10px] border border-[#efc4c4] bg-[#fff3f3] px-3 py-2 text-xs text-[#cf4040] transition-colors hover:bg-[#ffeaea] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? '提交中...' : '拒绝'}
               </button>
               <button
                 onClick={() => respondQuestion(requestId, 'accept', {})}
                 disabled={submitting}
-                className="rounded-[10px] border border-success/20 bg-success/10 px-3 py-2 text-xs text-success transition-colors hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-[10px] border border-[#bce5d6] bg-[#eef9f4] px-3 py-2 text-xs text-[#0f9f6e] transition-colors hover:bg-[#e5f7ef] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? '提交中...' : '提交'}
               </button>

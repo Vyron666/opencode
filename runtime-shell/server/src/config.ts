@@ -80,6 +80,7 @@ export const Config = {
   opencodeUsername: process.env.OPENCODE_SERVER_USERNAME || "opencode",
   opencodePassword: process.env.OPENCODE_SERVER_PASSWORD || "",
   workerAgentToken: process.env.RUNTIME_SHELL_WORKER_AGENT_TOKEN || "change-me-worker-agent",
+  workerAgentRequestTimeoutMs: Number(process.env.RUNTIME_SHELL_WORKER_AGENT_REQUEST_TIMEOUT_MS || "45000"),
   workerExecutionMode: process.env.RUNTIME_SHELL_WORKER_EXECUTION_MODE || "local",
   sandboxBackend: process.env.RUNTIME_SHELL_SANDBOX_BACKEND || "local-process",
   sandboxDockerImage: process.env.RUNTIME_SHELL_SANDBOX_IMAGE || "opencode-local:latest",
@@ -87,7 +88,7 @@ export const Config = {
   sandboxDockerSpawnCwd: process.env.OPENCODE_ACP_SPAWN_CWD || "/workspace",
   // 中文/English: docker sandboxes must reuse the same local models catalog path
   // as the worker runtime when remote catalog fetch is intentionally disabled.
-  sandboxDockerModelsPath: process.env.OPENCODE_MODELS_PATH || "/workspace/runtime-shell/config/models-api.json",
+  sandboxDockerModelsPath: process.env.OPENCODE_MODELS_PATH || "/workspace/runtime-shell/config/models-api.runtime.json",
   sandboxDockerSocketPath: process.env.RUNTIME_SHELL_SANDBOX_DOCKER_SOCKET || "/var/run/docker.sock",
   sandboxDockerNetworkMode: process.env.RUNTIME_SHELL_SANDBOX_NETWORK_MODE || "runtime-shell_default",
   sandboxDockerUser: process.env.RUNTIME_SHELL_SANDBOX_USER || "1000:1000",
@@ -103,6 +104,7 @@ export const Config = {
   sandboxIsolationMode: process.env.RUNTIME_SHELL_SANDBOX_ISOLATION_MODE || "",
   sandboxWorkspacePrepareConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_PREPARE_CONCURRENCY || "4"),
   sandboxRuntimeBootConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_BOOT_CONCURRENCY || "6"),
+  sandboxColdStartConcurrency: Number(process.env.RUNTIME_SHELL_SANDBOX_COLD_START_CONCURRENCY || "4"),
   // 中文/English: keep a small explicit local worker list so scheduler and governance
   // can exercise multi-node behavior before remote execution is fully separated.
   localWorkers: readLocalWorkers(),

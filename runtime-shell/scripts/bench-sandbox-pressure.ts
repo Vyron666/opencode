@@ -12,6 +12,9 @@ const pollIntervalMs = Number(process.env.RUNTIME_SHELL_PRESSURE_POLL_INTERVAL_M
 const governanceWaitMs = Number(process.env.RUNTIME_SHELL_PRESSURE_GOVERNANCE_WAIT_MS || "70000")
 const workerRestartWaitMs = Number(process.env.RUNTIME_SHELL_PRESSURE_WORKER_RESTART_WAIT_MS || "6000")
 const systemLimit = Number(process.env.RUNTIME_SHELL_PRESSURE_SYSTEM_LIMIT || "5000")
+const requestTimeoutMs = Number(process.env.RUNTIME_SHELL_PRESSURE_REQUEST_TIMEOUT_MS || "60000")
+const skipRecoveryProbe = process.env.RUNTIME_SHELL_PRESSURE_SKIP_RECOVERY === "1"
+const requestBodySnippetLimit = 400
 const cookieJar: string[] = []
 
 type ApiEnvelope<T> = {
@@ -79,6 +82,7 @@ type RuntimeOperation = {
   workerId?: string
   operationType: string
   status: string
+  detail?: Record<string, unknown>
   createdAt: string
   startedAt?: string
   completedAt?: string
@@ -170,6 +174,9 @@ console.log(JSON.stringify({
   baseUrl,
   username,
   projectId,
+  skipRecoveryProbe,
+  requestTimeoutMs,
+  openSettleTimeoutMs,
   baseline,
   scenarios,
 }, null, 2))
@@ -219,7 +226,7 @@ async function runPressureScenario(concurrency: number) {
   )
 
   const createdSessions = creationResults.filter((session) => session.sessionId)
-  const openResults = await Promise.all(
+  const openResultsPromise = Promise.all(
     createdSessions.map(async (session) => {
       session.openStartedAt = Date.now()
       try {
@@ -238,15 +245,30 @@ async function runPressureScenario(concurrency: number) {
       return session
     }),
   )
+  const systemSnapshotsPromise = waitForSessionConvergence(createdSessions, openSettleTimeoutMs)
+  const openResults = await openResultsPromise
 
   const openableSessions = openResults.filter((session) => session.sessionId && session.openStatus === 200)
-  const systemSnapshots = await waitForSessionConvergence(openableSessions, openSettleTimeoutMs)
+  const systemSnapshots = await systemSnapshotsPromise
   const queues = await requestJson<ApiEnvelope<SystemQueuesResponse>>(`/api/system/queues?limit=${systemLimit}`)
   const sandboxes = await requestJson<ApiEnvelope<SystemSandboxesResponse>>(`/api/system/sandboxes?limit=${systemLimit}`)
   const workers = await requestJson<ApiEnvelope<WorkerListResponse>>("/api/worker/list")
   const operationMetrics = buildOperationMetrics(openableSessions, queues.body.data.items)
   const sandboxMetrics = buildSandboxMetrics(openableSessions, sandboxes.body.data.items)
-  const recovery = await runRecoveryProbe(concurrency, openableSessions)
+  const recovery = skipRecoveryProbe
+    ? {
+        skipped: true,
+        concurrency,
+        reason: "recovery_probe_disabled",
+      }
+    : await runRecoveryProbe(concurrency, openableSessions).catch((error) => ({
+        skipped: true,
+        concurrency,
+        reason: "probe_failed",
+        // 中文/English: recovery probe should never discard the pressure metrics that
+        // were already collected successfully; record the probe failure separately.
+        error: error instanceof Error ? error.message : String(error),
+      }))
 
   await closeSessionsBestEffort(createdSessions)
 
@@ -280,6 +302,8 @@ async function runPressureScenario(concurrency: number) {
       queueDelayMs: operationMetrics.bySessionId.get(session.sessionId || "")?.queueDelayMs,
       operationRunMs: operationMetrics.bySessionId.get(session.sessionId || "")?.runMs,
       operationTotalMs: operationMetrics.bySessionId.get(session.sessionId || "")?.totalMs,
+      operationStage: operationMetrics.bySessionId.get(session.sessionId || "")?.stage,
+      operationStageTimings: operationMetrics.bySessionId.get(session.sessionId || "")?.stageTimings,
       sandboxCreateToRunningMs: sandboxMetrics.bySessionId.get(session.sessionId || "")?.createToRunningMs,
     })),
     operationMetrics: {
@@ -300,7 +324,12 @@ async function waitForSessionConvergence(sessions: ScenarioSession[], timeoutMs:
   const pending = new Set(sessions.map((session) => session.sessionId).filter(Boolean) as string[])
   const startedAt = Date.now()
   while (pending.size > 0 && Date.now() - startedAt < timeoutMs) {
+    for (const session of sessions) {
+      if (!session.sessionId || session.openStatus === undefined || session.openStatus === 200) continue
+      pending.delete(session.sessionId)
+    }
     const pendingIds = [...pending]
+    if (pendingIds.length === 0) break
     const details = await Promise.all(
       pendingIds.map((sessionId) =>
         requestJson<ApiEnvelope<{ session: SessionDetail }>>(
@@ -533,6 +562,11 @@ function buildOperationMetrics(sessions: ScenarioSession[], items: RuntimeOperat
       sessionId: item.businessSessionId!,
       workerId: item.workerId,
       status: item.status,
+      stage: typeof item.detail?.stage === "string" ? item.detail.stage : undefined,
+      stageTimings:
+        typeof item.detail?.stageTimings === "object" && item.detail.stageTimings
+          ? item.detail.stageTimings as Record<string, unknown>
+          : undefined,
       queueDelayMs: readDuration(item.createdAt, item.startedAt),
       runMs: readDuration(item.startedAt, item.completedAt),
       totalMs: readDuration(item.createdAt, item.completedAt),
@@ -650,19 +684,44 @@ async function runDockerCommand(args: string[], message: string) {
 }
 
 async function requestJson<T>(path: string, init: { method?: string; body?: unknown } = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: init.method || "GET",
-    headers: {
-      ...(cookieJar.length ? { Cookie: cookieJar.join("; ") } : {}),
-      ...(init.body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(`request timeout after ${requestTimeoutMs}ms`), requestTimeoutMs)
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: init.method || "GET",
+      headers: {
+        ...(cookieJar.length ? { Cookie: cookieJar.join("; ") } : {}),
+        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    clearTimeout(timeout)
+    const message = error instanceof Error ? error.message : String(error)
+    if (controller.signal.aborted) {
+      throw new Error(`request timed out: ${path} timeoutMs=${requestTimeoutMs}`)
+    }
+    throw new Error(`request failed: ${path} message=${message}`)
+  }
+  clearTimeout(timeout)
   mergeCookies(response)
   const text = await response.text()
+  if (!text.trim()) {
+    throw new Error(`empty response: ${path} status=${response.status}`)
+  }
+  let body: T
+  try {
+    body = JSON.parse(text) as T
+  } catch (error) {
+    throw new Error(
+      `invalid json response: ${path} status=${response.status} message=${error instanceof Error ? error.message : String(error)} body=${text.slice(0, requestBodySnippetLimit)}`,
+    )
+  }
   return {
     status: response.status,
-    body: JSON.parse(text) as T,
+    body,
   }
 }
 

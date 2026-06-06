@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 ENV OPENCODE_SERVER_USERNAME=opencode
 ENV OPENCODE_SERVER_PASSWORD=
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 RUN apt-get update -o Acquire::Retries=3 \
   && apt-get install -y --no-install-recommends -o Acquire::Retries=3 ca-certificates libstdc++6 ripgrep git bash python3 make g++ \
   && rm -rf /var/lib/apt/lists/*

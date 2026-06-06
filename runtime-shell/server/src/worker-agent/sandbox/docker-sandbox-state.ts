@@ -14,6 +14,7 @@ export type WarmPoolSlot = {
   workerId: string
   containerName: string
   visiblePath: string
+  runtimeHomePath: string
   configFingerprint?: string
   ready: boolean
   leased: boolean
@@ -35,6 +36,14 @@ export const docker = new Docker({
 
 export const warmPoolByWorker = new Map<string, WarmPoolSlot[]>()
 export const warmPoolTargetByWorker = new Map<string, number>()
+export const pendingWarmPoolEnsureByWorker = new Map<string, Promise<unknown>>()
 export const runWithRuntimeBootGate = createConcurrencyGate(Config.sandboxRuntimeBootConcurrency)
-export const runWithWarmPoolBootGate = createConcurrencyGate(1)
+// 中文/English: cold-start heavy stages must share one global gate so workspace copy,
+// runtime-home preparation and first container boot back-pressure the same budget.
+export const runWithColdStartGate = createConcurrencyGate(Config.sandboxColdStartConcurrency)
+// 中文/English: warm slot refill should scale with worker count so one slow slot
+// does not serialize the whole cluster's replenishment window.
+export const runWithWarmPoolBootGate = createConcurrencyGate(
+  Math.max(1, Math.min(Config.localWorkers.length || 1, Config.sandboxRuntimeBootConcurrency)),
+)
 export const runWithWarmPoolCopyGate = createConcurrencyGate(Config.sandboxWorkspacePrepareConcurrency)

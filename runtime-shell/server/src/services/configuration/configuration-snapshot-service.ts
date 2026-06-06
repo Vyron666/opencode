@@ -31,8 +31,12 @@ export async function buildSessionConfigOverride(user: User) {
               provider.providerId,
               {
                 name: provider.name,
-                api: provider.api,
-                ...(provider.npm ? { npm: provider.npm } : {}),
+                // 中文/English: map runtime-shell form fields back to the
+                // opencode provider config shape that ACP actually consumes.
+                api: provider.baseURL,
+                ...(provider.npm?.trim() || provider.api.trim()
+                  ? { npm: provider.npm?.trim() || provider.api.trim() }
+                  : {}),
                 options: {
                   baseURL: provider.baseURL,
                   ...(provider.apiKey?.trim() ? { apiKey: provider.apiKey.trim() } : {}),
@@ -42,7 +46,7 @@ export async function buildSessionConfigOverride(user: User) {
                     model.id,
                     {
                       name: model.name,
-                      ...(model.api ? { api: model.api } : {}),
+                      ...(model.api ? { id: model.api } : {}),
                     },
                   ]),
                 ),

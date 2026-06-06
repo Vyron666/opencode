@@ -3,7 +3,7 @@ import { useStore } from '../../../store'
 import { subscribeAssistantStreamActivity } from '../../../store/sse/assistant-stream-channel'
 import { ConversationTimeline, DebugConversationTimeline } from './ConversationTimeline'
 
-export const ConversationSection = memo(function ConversationSection({ currentSessionId, showDebug }) {
+export const ConversationSection = memo(function ConversationSection({ currentSessionId, showDebug, onOpenSettings }) {
   const conversationVersion = useStore((state) => state.conversationVersion)
   const blocks = useStore((state) => state.conversationBlocks)
   const timelineRef = useRef(null)
@@ -42,14 +42,18 @@ export const ConversationSection = memo(function ConversationSection({ currentSe
   }, [])
 
   return (
-    <section className="flex-1 min-h-0 overflow-hidden rounded-[28px] border border-[var(--line)] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
+    <section className="flex-1 min-h-0 overflow-hidden bg-[#fcfdff]">
       <div
         ref={timelineRef}
         onScroll={handleScroll}
-        className="relative h-full overflow-y-auto overflow-x-hidden px-5 py-5"
-        style={{ background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}
+        className="relative h-full overflow-y-auto overflow-x-hidden px-6 py-5 max-[1024px]:px-4"
+        style={{ background: 'linear-gradient(180deg, #ffffff 0%, #fbfcff 100%)' }}
       >
-        {showDebug ? <DebugConversationTimeline /> : <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} />}
+        {showDebug ? (
+          <DebugConversationTimeline />
+        ) : (
+          <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} onOpenSettings={onOpenSettings} />
+        )}
 
         {!showDebug && !autoScroll && blocks.length > 0 ? (
           <button

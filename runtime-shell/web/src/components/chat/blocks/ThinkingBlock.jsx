@@ -2,29 +2,29 @@ import { useState } from 'react'
 
 export function ThinkingBlock({ block }) {
   const [expanded, setExpanded] = useState(false)
-  const preview = block.message.slice(0, 96)
+  const preview = block.message.slice(0, 120)
 
   return (
-    <div className="max-w-[88%] overflow-hidden rounded-[20px] border border-[var(--line)] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.07)]">
+    <div className="max-w-[760px] overflow-hidden rounded-[18px] border border-[#dce6f8] bg-[#f7f9fe] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
-        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[var(--surface-muted)]"
+        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#f1f5ff]"
       >
-        <div className="w-8 shrink-0 self-stretch rounded-full border border-brand/10 bg-brand/10" aria-hidden="true" />
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#e8efff] text-[#3566df]">💭</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand">Thinking</span>
-            <span className="text-[10px] text-[var(--text-muted)]">{expanded ? '隐藏推理过程' : '显示推理过程'}</span>
+            <span className="text-[11px] font-bold tracking-[0.12em] text-[#3566df]">深度思考中...</span>
+            <span className="text-[11px] text-[#8a96ab]">{expanded ? '收起过程' : '查看过程'}</span>
           </div>
-          <div className="mt-1.5 truncate text-xs text-[var(--text-dim)]">{preview}</div>
+          <div className="mt-1.5 truncate text-[13px] text-[#61718d]">{preview}</div>
         </div>
-        <span className="shrink-0 text-xs font-semibold text-[var(--text-dim)]">{expanded ? '收起' : '展开'}</span>
+        <span className="shrink-0 text-xs font-semibold text-[#61718d]">{expanded ? '收起' : '展开'}</span>
       </button>
 
       {expanded ? (
         <div className="px-4 pb-4">
-          <div className="ml-11 whitespace-pre-wrap break-words rounded-[16px] border border-[var(--line)] bg-[var(--surface-muted)] px-4 py-3.5 text-xs leading-relaxed text-[var(--text-dim)]">
+          <div className="ml-12 whitespace-pre-wrap break-words rounded-[16px] border border-[#dce6f8] bg-white px-4 py-3.5 text-[13px] leading-7 text-[#46546d]">
             {block.message}
           </div>
         </div>

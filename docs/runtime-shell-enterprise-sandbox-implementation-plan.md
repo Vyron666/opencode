@@ -110,6 +110,52 @@
 本实施计划中的 `Phase 0-7` 是对设计文档中 `高层 Phase 1-4` 的细化拆分，用于落地执行、排期和拆 PR。两份文档的阶段编号粒度不同，但目标一致，不构成冲突。
 其中 Phase 1-2 主要用于跑通过渡执行后端，Phase 5-7 才逐步收敛到面向企业规模和消费端规模的目标方案。
 
+### 4.1 实际执行优先级
+
+进入并发与性能治理阶段后，实施顺序固定为：
+
+1. 真正 warm runtime 复用。
+2. 提高 warm runtime 命中容量。
+3. 去掉 cold path `migration/init` 成本。
+4. workspace 复制优化。
+5. plugin/provider 瘦身。
+6. 冷启动全局限速。
+
+这个顺序的含义是：先消除运行时启动链路上的真实冷启动根因，再扩大命中率、缩短 cold path，最后才做全局背压；不能把限速、补池或兜底回收当成首要性能修复。
+
+当前进展补充（2026-06-05）：
+
+1. `真正 warm runtime 复用` 已接通主链路：
+   warm slot 长驻 `AcpProcessClient`；业务会话租用时优先走 `newSession/loadSession/resumeSession`；归还时只 `closeSession`，不销毁 ACP 进程。
+2. `提高 warm runtime 命中容量` 已完成第一轮闭环：
+   `warmPoolTarget=3`、按配置指纹分池、ready slot 回填、generic slot 物化已落地；并额外限制只在当前 ready 预算内做 runtime 物化，避免补池自身放大冷启动压力。
+3. `去掉 cold path migration/init 成本` 已完成第一轮：
+   runtime-home seed 与 fork snapshot 复用已落地，ACP 默认模型目录切到精简版 `models-api.runtime.json`，并补上 `initialize/newSession/loadSession/resumeSession` 阶段耗时观测。
+4. `workspace 复制优化` 已完成第一轮：
+   新建空工作区首开支持跳过首次全量复制；warm slot prepare/back-sync 会跳过空目录无效复制；workspace copy 已纳入全局冷启动门控。
+5. `plugin/provider 瘦身` 已完成第一轮：
+   冷路径默认只挂载运行时必需的 builtin config + slim model catalog；用户 provider / mcp / skill 继续通过会话级 `configContent` 注入，不扩大共享边界。
+6. `冷启动全局限速` 已完成第一轮：
+   workspace copy、runtime-home prepare、warm slot create、cold container boot 已共享同一冷启动并发预算；目标是让高并发表现为受控等待，而不是资源失控。
+7. 上述 2-6 项目前都属于“代码已落地、仍需镜像重建和 10/20 并发复测确认”的状态，不能直接视为最终验收完成。
+
+### 4.2 语义守护项
+
+所有阶段必须同时满足以下约束：
+
+1. `provider` 隔离：
+   `admin` 共享仍然全员可见；用户私有仍然只自己可见；不同 `workspace/session` 继续复用同一份用户设置，不会串用户。
+2. `mcp` 隔离：
+   用户私有 MCP 配置只对本人会话生效；共享配置的可见范围不扩大；warm runtime 复用不会把前一个用户的 MCP 状态带到下一个用户。
+3. `skill` 隔离：
+   用户私有 skill、共享 skill、启用状态、能力面继续按当前权限模型生效，不能因为 runtime 常驻而串会话、串用户。
+4. 会话与工作区语义：
+   仍然保持“一个沙箱对应一个 workspace，不是一个 session 一个沙箱”；`orphaned -> reopen -> active`、关闭、回收、恢复链路不能退化。
+5. 配置指纹边界：
+   warm runtime 必须按配置指纹分池，不能把不同 `provider/mcp/skill` 配置的 runtime 混租。
+6. 验证纪律：
+   设置专项、恢复专项、并发压测必须顺序隔离执行，不能并行抢同一批 worker / warm slot / provider 初始化资源。
+
 ## 5. Phase 0：准备与基线确认
 
 ### 5.1 目标
@@ -554,6 +600,27 @@ sandbox_instance
    预拉镜像、预建空闲 sandbox、高低水位维护、空闲回收。
 
 7. open/load/resume/fork/prompt/diff commit 进入队列或受队列保护。
+
+在 Phase 5 内，具体实施顺序与验证要求如下：
+
+1. 先做真正 warm runtime 复用。
+   目标：warm slot 长驻 `AcpProcessClient`；业务会话租用时只执行 `newSession/loadSession/resumeSession`；归还时只 `closeSession`，不销毁运行时。
+   验证：`provider/mcp/skill` 不串用户、不串配置；`orphaned -> reopen -> active`、关闭、回收、恢复链路不回退。
+2. 再提高 warm runtime 命中容量。
+   目标：扩容命中率，但继续按配置指纹分池，并维持 worker 负载分布合理。
+   验证：不同配置不会混用，不会因为扩容把请求长期热点倾斜到单一 worker。
+3. 再去掉 cold path `migration/init` 成本。
+   目标：缩短未命中 warm runtime 时的首启耗时。
+   验证：不影响自定义 `provider/model` 生效，不影响“前端统一配置一次 -> 不同 workspace/session 直接使用”。
+4. 再做 workspace 复制优化。
+   目标：降低大仓库复制与回写成本。
+   验证：`diff`、关闭回写、`reopen` 语义保持不变。
+5. 再做 plugin/provider 瘦身。
+   目标：减少首启链路中非必要初始化负担。
+   验证：能力面不缺失，权限与可见性不回退。
+6. 最后做冷启动全局限速。
+   目标：为 workspace 复制、容器启动、ACP 启动提供受控背压。
+   验证：高并发下表现为受控等待，而不是资源失控；业务语义、绑定、租约和恢复逻辑不改变。
 
 ### 10.3 涉及文件
 

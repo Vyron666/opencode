@@ -25,8 +25,8 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
       setShowMarkdown(true)
       return
     }
-    // 中文/English: keep the streamed text node visible for one more frame so
-    // the final markdown tree can replace it without a blank transition flash.
+    // 中文/English: keep the streamed text visible for one more frame so
+    // markdown can replace it without a blank flash when streaming ends.
     markdownFrameRef.current = requestAnimationFrame(() => {
       markdownFrameRef.current = 0
       setShowMarkdown(true)
@@ -55,8 +55,6 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
         : block.latestChunk || ''
       : plainText
     if (!nextText) return
-    // 中文/English: append only the latest upstream chunk so the DOM path stays
-    // incremental end-to-end on a single Text node to avoid node explosion.
     textNodeRef.current.nodeValue = nextText
     if (!block.streaming) return
     chunkVersionRef.current = block.chunkVersion
@@ -73,8 +71,6 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
       if (typeof chunkVersion === 'number' && chunkVersion <= chunkVersionRef.current) return
       textNodeRef.current.nodeValue += chunk
       if (typeof chunkVersion === 'number') chunkVersionRef.current = chunkVersion
-      // 中文/English: keep latency measurement on the direct chunk path so we can
-      // verify whether streaming delay still happens before or after DOM append.
       if (window.__RUNTIME_SHELL_STREAM_DEBUG__) {
         console.debug('[runtime-shell stream]', {
           blockKey: block.key,
@@ -104,22 +100,18 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
   }
 
   return (
-    <div className="group flex min-w-0 items-start gap-3">
-      <div className="grid h-[36px] w-[36px] shrink-0 place-items-center rounded-[14px] border border-brand/15 bg-brand/10 text-xs font-bold text-brand">
-        AI
-      </div>
-
-      <div className="relative grid min-w-0 max-w-[88%] gap-2.5">
-        <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-          <span className="text-xs font-bold tracking-[0.04em] text-brand">Assistant</span>
-          {block.streaming ? <span className="text-[10px] opacity-60">流式输出中...</span> : null}
+    <div className="group flex min-w-0">
+      <div className="relative grid min-w-0 max-w-[82%] gap-2">
+        <div className="flex items-center gap-2 text-[11px] text-[#8a96ab]">
+          <span className="text-xs font-bold tracking-[0.04em] text-[#3566df]">Assistant</span>
+          {block.streaming ? <span className="text-[10px] opacity-70">流式输出中...</span> : null}
         </div>
 
         <div className="pointer-events-none absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <button
             type="button"
             onClick={() => void handleCopy()}
-            className="pointer-events-auto rounded-full border border-[var(--line)] bg-white px-2.5 py-1 text-[11px] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-muted)]"
+            className="pointer-events-auto rounded-full border border-[#dbe5f6] bg-white px-2.5 py-1 text-[11px] text-[#61718d] transition-colors hover:bg-[#f6f8fe]"
             aria-label="复制 AI 消息"
             title="复制"
           >
@@ -128,13 +120,13 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
         </div>
 
         <div
-          className="markdown-body min-w-0 max-w-full break-words rounded-[22px] border border-[var(--line)] bg-white px-4.5 py-3.5 text-sm leading-relaxed shadow-[0_14px_34px_rgba(15,23,42,0.08)]"
+          className="markdown-body min-w-0 max-w-full break-words rounded-[18px] border border-[#dce6f8] bg-[#f7f9fe] px-5 py-4 text-sm leading-7 text-[#24324a] shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
           data-assistant-block-key={block.key}
           data-assistant-render-mode={renderPlainText ? 'plain' : 'markdown'}
-          style={{ borderTopLeftRadius: '6px' }}
+          style={{ borderTopLeftRadius: '8px' }}
         >
           {renderPlainText ? (
-            <pre ref={textRef} className="max-w-full overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm leading-relaxed" />
+            <pre ref={textRef} className="max-w-full overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm leading-7 text-[#24324a]" />
           ) : (
             <MarkdownContent content={block.message} />
           )}

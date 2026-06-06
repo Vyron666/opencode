@@ -2,7 +2,8 @@ import { PassThrough } from "node:stream"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { SandboxAttachInput, SandboxHandle } from "./sandbox-types"
 import { connectSandboxBridge, createExitState, followContainerStderr } from "./docker-sandbox-bridge"
-import { docker, runWithRuntimeBootGate } from "./docker-sandbox-state"
+import { docker } from "./docker-sandbox-state"
+import { runColdStartContainerBoot } from "./docker-sandbox-cold-start"
 import { ensureContainer, ensureDockerReady, removeContainer, startContainerIfNeeded, stopDockerSandbox, waitDockerSandboxExit } from "./docker-sandbox-container"
 import { prepareWarmPoolWorkspace } from "./docker-sandbox-warm-pool"
 
@@ -68,7 +69,7 @@ async function bootContainer(input: {
       // of joining the cold-container boot gate again.
       await prepareWarmPoolWorkspace(input.handle)
     } else {
-      await runWithRuntimeBootGate(async () => {
+      await runColdStartContainerBoot(async () => {
         const container = await ensureContainer({
           containerName: input.handle.containerName!,
           cwd: runtimeSessionCwd,

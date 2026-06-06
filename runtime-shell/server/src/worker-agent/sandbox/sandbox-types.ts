@@ -10,7 +10,9 @@ export type SandboxPrepareInput = {
   workerId: string
   workspacePath: string
   sandboxPath?: string
+  sourceRuntimeHomePath?: string
   configFingerprint?: string
+  useWarmPool?: boolean
 }
 
 export type SandboxWorkspaceMountMode = "rw" | "ro"
@@ -23,6 +25,8 @@ export type SandboxHandle = {
   workspacePath?: string
   sandboxPath?: string
   runtimeCwd?: string
+  runtimeHomePath?: string
+  sourceRuntimeHomePath?: string
   poolSlotId?: string
   runtimeSandboxKey?: string
   activeSocket?: Socket

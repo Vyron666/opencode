@@ -1,12 +1,29 @@
-import { createHash } from "node:crypto"
 import { AcpProcessClient } from "../acp/acp-process-client"
+import { computeRuntimeConfigFingerprint } from "../runtime/runtime-config-content"
 import { attachDockerSandboxAcp } from "./sandbox/docker-sandbox-acp"
-import { destroyWarmPoolSlot, getWarmPoolSlotById, prepareWarmPoolWorkspace, releaseWarmPoolSlot, reserveWarmPoolSlot, takeWarmPoolSlot } from "./sandbox/docker-sandbox-warm-pool"
+import {
+  readWarmPool,
+  destroyWarmPoolSlot,
+  getLeasedWarmPoolSlot,
+  getWarmPoolSlotById,
+  prepareWarmPoolWorkspace,
+  releaseWarmPoolSlot,
+  takeWarmPoolSlot,
+} from "./sandbox/docker-sandbox-warm-pool"
 import { WARM_POOL_RUNTIME_CWD, type WarmPoolSlot } from "./sandbox/docker-sandbox-state"
 import type { SandboxHandle } from "./sandbox/sandbox-types"
-import { bindRuntimeEntryClientContext, createRuntimeEntryFromClient } from "./worker-agent-runtime-support"
+import { createBoundRuntimeEntryFromClient } from "./worker-agent-runtime-support"
 
-const pendingWarmRuntimeBySession = new Map<string, Promise<WarmPoolSlot | undefined>>()
+const pendingWarmRuntimeBySession = new Map<string, Promise<void>>()
+const pendingWarmRuntimeBackfillByWorker = new Map<string, Promise<void>>()
+const WARM_RUNTIME_PREWARM_GRACE_MS = 3_000
+const GENERIC_WARM_SLOT_RESERVE = 1
+const warmRuntimeDemandByWorker = new Map<string, Map<string, {
+  configContent?: string
+  hitCount: number
+  lastUsedAt: number
+}>>()
+const WARM_RUNTIME_DEMAND_TTL_MS = 30 * 60 * 1000
 
 type WarmRuntimeRequest = {
   runtimeShellBaseUrl: string
@@ -19,11 +36,12 @@ type WarmRuntimeRequest = {
   configContent?: string
 }
 
-export function computeRuntimeConfigFingerprint(configContent?: string) {
-  return createHash("sha256").update(configContent || "").digest("hex").slice(0, 24)
-}
-
 export async function prewarmSessionRuntimeOnWorker(input: WarmRuntimeRequest) {
+  rememberWarmRuntimeDemand(
+    input.workerId,
+    computeRuntimeConfigFingerprint(input.configContent),
+    input.configContent,
+  )
   const pending = pendingWarmRuntimeBySession.get(input.businessSessionId)
   if (pending) return pending
   const task = doPrewarmSessionRuntime(input)
@@ -40,20 +58,49 @@ export async function prewarmSessionRuntimeOnWorker(input: WarmRuntimeRequest) {
 export async function waitForWarmRuntimePrewarm(businessSessionId: string) {
   const pending = pendingWarmRuntimeBySession.get(businessSessionId)
   if (!pending) return
-  await pending.catch(() => {})
+  await Promise.race([
+    pending.catch(() => {}),
+    Bun.sleep(WARM_RUNTIME_PREWARM_GRACE_MS),
+  ])
+}
+
+export async function backfillReadyWarmRuntimeSlots(workerId: string) {
+  const pending = pendingWarmRuntimeBackfillByWorker.get(workerId)
+  if (pending) return pending
+  const task = doBackfillReadyWarmRuntimeSlots(workerId)
+  pendingWarmRuntimeBackfillByWorker.set(workerId, task)
+  try {
+    await task
+  } finally {
+    if (pendingWarmRuntimeBackfillByWorker.get(workerId) === task) {
+      pendingWarmRuntimeBackfillByWorker.delete(workerId)
+    }
+  }
 }
 
 export async function tryOpenWarmRuntimeEntry(input: WarmRuntimeRequest) {
   await waitForWarmRuntimePrewarm(input.businessSessionId)
+  const configFingerprint = computeRuntimeConfigFingerprint(input.configContent)
+  rememberWarmRuntimeDemand(input.workerId, configFingerprint, input.configContent)
+  const staleLease = getLeasedWarmPoolSlot({
+    workerId: input.workerId,
+    businessSessionId: input.businessSessionId,
+    workspaceId: input.workspaceId,
+  })
+  if (staleLease && staleLease.configFingerprint !== configFingerprint) {
+    // 中文/English: if the visible provider/MCP/skill config changed between
+    // prewarm and open, the old warm runtime must be discarded instead of reused.
+    await destroyWarmPoolSlot(staleLease).catch(() => {})
+  }
   const slot = takeWarmPoolSlot(
     input.workerId,
     input.businessSessionId,
     input.workspaceId,
-    computeRuntimeConfigFingerprint(input.configContent),
+    configFingerprint,
   )
   if (!slot) return
   const { handle, client } = await ensureWarmRuntimeSlotReady(slot, input)
-  const entry = createRuntimeEntryFromClient({
+  return createBoundRuntimeEntryFromClient({
     runtimeShellBaseUrl: input.runtimeShellBaseUrl,
     workerToken: input.workerToken,
     businessSessionId: input.businessSessionId,
@@ -64,38 +111,28 @@ export async function tryOpenWarmRuntimeEntry(input: WarmRuntimeRequest) {
     client,
     sandboxHandle: handle,
     closeSandbox: () => releaseWarmPoolSlot(handle),
-    releaseRuntime: () => client.closeActiveSession(),
-  })
-  bindRuntimeEntryClientContext(entry, {
-    runtimeShellBaseUrl: input.runtimeShellBaseUrl,
-    workerToken: input.workerToken,
-    cwd: WARM_POOL_RUNTIME_CWD,
+    releaseRuntime: () => releaseWarmRuntimeSession(client, handle),
+    runtimeCwd: WARM_POOL_RUNTIME_CWD,
     configContent: input.configContent,
   })
-  return entry
+}
+
+async function releaseWarmRuntimeSession(client: AcpProcessClient, handle: SandboxHandle) {
+  try {
+    await client.closeActiveSession()
+    // 中文/English: drain close-session side effects before returning the long-lived
+    // runtime to the pool, otherwise late events can leak into the next lease.
+    await client.flushPendingEvents()
+  } catch (error) {
+    handle.invalidPoolSlot = true
+    throw error
+  }
 }
 
 async function doPrewarmSessionRuntime(input: WarmRuntimeRequest) {
-  const slot = await ensureReservedWarmPoolSlot({
-    workerId: input.workerId,
-    businessSessionId: input.businessSessionId,
-    workspaceId: input.workspaceId,
-    configFingerprint: computeRuntimeConfigFingerprint(input.configContent),
-  })
-  if (!slot) return
-  await ensureWarmRuntimeSlotReady(slot, input)
-  return slot
-}
-
-async function ensureReservedWarmPoolSlot(input: {
-  workerId: string
-  businessSessionId: string
-  workspaceId: string
-  configFingerprint: string
-}) {
-  // 中文/English: prewarm must stay inside the configured warm-pool target.
-  // If every slot is already leased, the later open path will use controlled cold start.
-  return reserveWarmPoolSlot(input)
+  // 中文/English: session/create warmup should only backfill worker-local warm
+  // capacity. It must not bind a ready slot to this session before open happens.
+  await backfillReadyWarmRuntimeSlots(input.workerId)
 }
 
 async function ensureWarmRuntimeClient(slot: WarmPoolSlot, input: {
@@ -142,6 +179,51 @@ async function ensureWarmRuntimeClient(slot: WarmPoolSlot, input: {
   return client
 }
 
+async function doBackfillReadyWarmRuntimeSlots(workerId: string) {
+  const warmRuntimeBuckets = listWarmRuntimeBuckets(workerId)
+  if (!warmRuntimeBuckets.length) return
+  const genericSlots = readWarmPool(workerId)
+    .filter((slot) =>
+      slot.ready
+      && !slot.leased
+      && !slot.preparingRuntime
+      && !slot.runtimeClient
+      && !slot.configFingerprint,
+    )
+  const genericReserve = warmRuntimeBuckets.length > 1 ? GENERIC_WARM_SLOT_RESERVE : 0
+  const materializableSlots = genericSlots.slice(0, Math.max(0, genericSlots.length - genericReserve))
+  if (!materializableSlots.length) return
+  await Promise.all(materializableSlots.map((slot, index) => {
+    const bucket = warmRuntimeBuckets[index % warmRuntimeBuckets.length]
+    if (!bucket) return Promise.resolve()
+    // 中文/English: materialize multiple warm runtimes in parallel so a single
+    // worker can consume its whole warm budget before concurrent open arrives.
+    return materializeWarmRuntimeSlot(slot, bucket).catch(() => {})
+  }))
+}
+
+async function materializeWarmRuntimeSlot(
+  slot: WarmPoolSlot,
+  bucket: {
+    configFingerprint: string
+    configContent?: string
+  },
+) {
+  if (slot.runtimeClient || slot.preparingRuntime || slot.leased) return
+  slot.configFingerprint = bucket.configFingerprint
+  try {
+    await ensureWarmRuntimeClient(slot, {
+      businessSessionId: `warm_pool_${slot.id}`,
+      workspaceId: `warm_pool_${slot.id}`,
+      workerId: slot.workerId,
+      configContent: bucket.configContent,
+    })
+  } catch (error) {
+    await destroyWarmPoolSlot(slot).catch(() => {})
+    throw error
+  }
+}
+
 async function ensureWarmRuntimeSlotReady(slot: WarmPoolSlot, input: WarmRuntimeRequest) {
   const handle = toWarmSandboxHandle(slot, input)
   try {
@@ -169,14 +251,15 @@ function createWarmRuntimeClientHandle(
     businessSessionId: input.businessSessionId,
     workspaceId: input.workspaceId,
     workerId: input.workerId,
-    sandboxPath: slot.visiblePath,
     workspacePath: slot.visiblePath,
   })
 }
 
 function toWarmSandboxHandle(
   slot: WarmPoolSlot,
-  input: Pick<WarmRuntimeRequest, "businessSessionId" | "workspaceId" | "workerId" | "workspacePath" | "sandboxPath">,
+  input: Pick<WarmRuntimeRequest, "businessSessionId" | "workspaceId" | "workerId" | "workspacePath"> & {
+    sandboxPath?: string
+  },
 ): SandboxHandle {
   return {
     workerId: input.workerId,
@@ -186,6 +269,39 @@ function toWarmSandboxHandle(
     workspacePath: slot.visiblePath,
     sandboxPath: input.sandboxPath,
     runtimeCwd: WARM_POOL_RUNTIME_CWD,
+    runtimeHomePath: slot.runtimeHomePath,
     poolSlotId: slot.id,
   }
+}
+
+function rememberWarmRuntimeDemand(workerId: string, configFingerprint: string, configContent?: string) {
+  const now = Date.now()
+  const buckets = warmRuntimeDemandByWorker.get(workerId) || new Map<string, {
+    configContent?: string
+    hitCount: number
+    lastUsedAt: number
+  }>()
+  buckets.set(configFingerprint, {
+    configContent,
+    hitCount: (buckets.get(configFingerprint)?.hitCount ?? 0) + 1,
+    lastUsedAt: now,
+  })
+  for (const [fingerprint, bucket] of buckets.entries()) {
+    if (now - bucket.lastUsedAt <= WARM_RUNTIME_DEMAND_TTL_MS) continue
+    buckets.delete(fingerprint)
+  }
+  warmRuntimeDemandByWorker.set(workerId, buckets)
+}
+
+function listWarmRuntimeBuckets(workerId: string) {
+  return [...(warmRuntimeDemandByWorker.get(workerId)?.entries() || [])]
+    .map(([configFingerprint, bucket]) => ({
+      configFingerprint,
+      configContent: bucket.configContent,
+      hitCount: bucket.hitCount,
+      lastUsedAt: bucket.lastUsedAt,
+    }))
+    .sort((left, right) =>
+      right.hitCount - left.hitCount || right.lastUsedAt - left.lastUsedAt,
+    )
 }

@@ -9,11 +9,11 @@ export default function MainLayout() {
   const activateSession = useStore((state) => state.activateSession)
   const disconnectSSE = useStore((state) => state.disconnectSSE)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState('overview')
 
   useEffect(() => {
     if (currentSessionId) {
       // 中文/English: reselecting the same session should still re-run activation.
-      // The selection version bumps on explicit reselect/history navigation even when the id is unchanged.
       void activateSession()
       return
     }
@@ -21,13 +21,19 @@ export default function MainLayout() {
     disconnectSSE()
   }, [activateSession, currentSessionId, disconnectSSE, sessionSelectionVersion])
 
+  const openSettings = (section = 'overview') => {
+    setSettingsSection(section)
+    setSettingsOpen(true)
+  }
+
   return (
-    <div className="h-dvh overflow-hidden px-6 py-6 max-[1024px]:h-auto max-[1024px]:overflow-y-auto max-[1024px]:px-4 max-[1024px]:py-4">
-      <div className="mx-auto grid h-full min-h-0 max-w-[1440px] grid-cols-[320px_minmax(0,1fr)] gap-6 rounded-[32px] border border-white/60 bg-[rgba(255,255,255,0.68)] p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl max-[1279px]:grid-cols-[288px_minmax(0,1fr)] max-[1024px]:grid-cols-[1fr] max-[1024px]:rounded-[24px] max-[1024px]:p-4">
-        <LeftSidebar onOpenSettings={() => setSettingsOpen(true)} />
+    <div className="h-dvh w-full overflow-hidden bg-[#eef2f8]">
+      <div className="grid h-full min-h-0 w-full grid-cols-[328px_minmax(0,1fr)] overflow-hidden bg-white max-[1024px]:grid-cols-1">
+        <LeftSidebar onOpenSettings={openSettings} />
         <ChatView
           settingsOpen={settingsOpen}
-          onOpenSettings={() => setSettingsOpen(true)}
+          settingsSection={settingsSection}
+          onOpenSettings={openSettings}
           onCloseSettings={() => setSettingsOpen(false)}
         />
       </div>

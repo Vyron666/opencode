@@ -78,20 +78,31 @@ export async function listVisibleStoredProviderConfigs(user: User) {
   ])
   const platformIds = new Set(platformProviders.map((item) => item.providerId))
   return [
-    ...platformProviders,
     ...privateProviders.filter((item) => !platformIds.has(item.providerId)),
+    ...platformProviders,
   ]
 }
 
 export async function listVisibleProviderConfigs(user: User) {
-  const [platformProviders, privateProviders] = await Promise.all([
-    listReservedPlatformProviderConfigs(user),
+  const [platformProviders, privateProviders, builtinProviders] = await Promise.all([
+    listPlatformProviderConfigs(user),
     listUserPrivateProviderConfigs(user),
+    listProviderConfigs(),
   ])
   const platformIds = new Set(platformProviders.map((item) => item.providerId))
-  return [
+  const visibleConfigured = [
     ...platformProviders,
     ...privateProviders.filter((item) => !platformIds.has(item.providerId)),
+  ]
+  const visibleConfiguredIds = new Set(visibleConfigured.map((item) => item.providerId))
+  return [
+    ...visibleConfigured,
+    ...builtinProviders
+      .filter((item) => !visibleConfiguredIds.has(item.providerId))
+      .map((item) => ({
+        ...item,
+        source: "platform_shared" as const,
+      })),
   ]
 }
 
@@ -155,7 +166,7 @@ export async function saveUserPrivateProviderConfig(input: {
   config: RuntimeShellProviderConfig
   summaryJson: Record<string, unknown>
 }) {
-  const platformProviders = await listReservedPlatformProviderConfigs(input.user)
+  const platformProviders = await listPlatformProviderConfigs(input.user)
   const platformIds = new Set(platformProviders.map((item) => item.providerId))
   if (platformIds.has(input.config.providerId)) {
     return {

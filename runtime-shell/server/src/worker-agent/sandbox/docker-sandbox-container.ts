@@ -1,7 +1,9 @@
 import Docker from "dockerode"
 import path from "node:path"
+import { copyFile, mkdir } from "node:fs/promises"
 import { Config } from "../../config"
 import { createBridgeScript } from "./docker-sandbox-bridge"
+import { ensureForkRuntimeHomePrepared, ensureRuntimeHomePrepared } from "./docker-sandbox-runtime-home"
 import { SANDBOX_BRIDGE_PORT, WARM_POOL_RUNTIME_CWD, docker, log } from "./docker-sandbox-state"
 import type { SandboxHandle, SandboxWorkspaceMountMode } from "./sandbox-types"
 
@@ -10,6 +12,12 @@ const CONTAINER_LABEL_WORKER_ID = "runtime-shell.worker_id"
 const CONTAINER_LABEL_BUSINESS_SESSION_ID = "runtime-shell.business_session_id"
 const CONTAINER_LABEL_WORKSPACE_ID = "runtime-shell.workspace_id"
 const CONTAINER_LABEL_POOL_SLOT_ID = "runtime-shell.pool_slot_id"
+const SANDBOX_SHARED_CONFIG_DIR = path.join(Config.workspaceRootDir, ".runtime-shell-config")
+const SANDBOX_SHARED_CONFIG_TARGET = path.join(Config.sandboxDockerSpawnCwd, "runtime-shell", "config")
+const SANDBOX_SHARED_MODELS_FILE = path.basename(Config.sandboxDockerModelsPath)
+const SANDBOX_SHARED_CONFIG_FILES = ["opencode.example.jsonc", SANDBOX_SHARED_MODELS_FILE] as const
+
+let sharedConfigReadyPromise: Promise<string> | undefined
 
 export async function ensureContainer(input: {
   containerName: string
@@ -17,7 +25,11 @@ export async function ensureContainer(input: {
   cwd: string
 }) {
   const existingContainer = await findReusableContainer(input.containerName)
-  const workspaceMount = await toWorkspaceMount(input.handle, input.cwd)
+  const [workspaceMount, sharedConfigMount, runtimeHomeMount] = await Promise.all([
+    toWorkspaceMount(input.handle, input.cwd),
+    toSharedConfigMount(),
+    toRuntimeHomeMount(input.handle),
+  ])
   log.info("creating docker sandbox container", {
     containerName: input.containerName,
     image: Config.sandboxDockerImage,
@@ -69,9 +81,10 @@ export async function ensureContainer(input: {
       PidsLimit: Config.sandboxDockerPidsLimit,
       Tmpfs: {
         "/tmp": "rw,noexec,nosuid,size=256m",
-        [Config.sandboxRuntimeHomeDir]: "rw,noexec,nosuid,size=256m",
       },
-      Mounts: [workspaceMount],
+      // 中文/English: sandbox ACP must read the same builtin config + model catalog
+      // as the worker runtime; mount them explicitly instead of assuming the sandbox image contains them.
+      Mounts: [workspaceMount, sharedConfigMount, runtimeHomeMount],
     },
   })
 }
@@ -195,8 +208,11 @@ export function readRuntimeContainerIdentity(container: Docker.ContainerInfo, co
 function buildSandboxEnv() {
   return [
     "OPENCODE_CLIENT=acp",
+    "OPENCODE_DB=opencode.db",
     "OPENCODE_DISABLE_MODELS_FETCH=1",
-    `OPENCODE_MODELS_PATH=${Config.sandboxDockerModelsPath}`,
+    "OPENCODE_DISABLE_PROJECT_CONFIG=1",
+    `OPENCODE_CONFIG=${path.join(SANDBOX_SHARED_CONFIG_TARGET, "opencode.example.jsonc")}`,
+    `OPENCODE_MODELS_PATH=${path.join(SANDBOX_SHARED_CONFIG_TARGET, SANDBOX_SHARED_MODELS_FILE)}`,
     `OPENCODE_ENABLE_QUESTION_TOOL=${process.env.OPENCODE_ENABLE_QUESTION_TOOL || "1"}`,
     `OPENCODE_ACP_NEXT=${process.env.OPENCODE_ACP_NEXT || "0"}`,
     `HOME=${Config.sandboxRuntimeHomeDir}`,
@@ -226,6 +242,31 @@ async function toWorkspaceMount(handle: SandboxHandle, cwd: string) {
     Source: await toDockerHostWorkspacePath(workspaceRoot),
     Target: handle.poolSlotId ? WARM_POOL_RUNTIME_CWD : workspaceRoot,
     ReadOnly: mountMode === "ro",
+  }
+}
+
+async function toSharedConfigMount() {
+  const sharedConfigDir = await ensureSharedConfigMirror()
+  return {
+    Type: "bind" as const,
+    Source: await toDockerHostWorkspacePath(sharedConfigDir),
+    Target: SANDBOX_SHARED_CONFIG_TARGET,
+    ReadOnly: true,
+  }
+}
+
+async function toRuntimeHomeMount(handle: SandboxHandle) {
+  if (!handle.runtimeHomePath) {
+    throw new Error("sandbox runtime home path is required")
+  }
+  const runtimeHomePath = handle.sourceRuntimeHomePath
+    ? await ensureForkRuntimeHomePrepared(handle.runtimeHomePath, handle.sourceRuntimeHomePath)
+    : await ensureRuntimeHomePrepared(handle.runtimeHomePath)
+  return {
+    Type: "bind" as const,
+    Source: await toDockerHostWorkspacePath(runtimeHomePath),
+    Target: Config.sandboxRuntimeHomeDir,
+    ReadOnly: false,
   }
 }
 
@@ -279,5 +320,27 @@ async function findReusableContainer(containerName: string) {
     return
   } catch {
     return
+  }
+}
+
+async function ensureSharedConfigMirror() {
+  if (sharedConfigReadyPromise) return sharedConfigReadyPromise
+  const task = (async () => {
+    await mkdir(SANDBOX_SHARED_CONFIG_DIR, { recursive: true })
+    await Promise.all(
+      SANDBOX_SHARED_CONFIG_FILES.map((fileName) =>
+        copyFile(
+          path.join(Config.sandboxDockerSpawnCwd, "runtime-shell", "config", fileName),
+          path.join(SANDBOX_SHARED_CONFIG_DIR, fileName),
+        )),
+    )
+    return SANDBOX_SHARED_CONFIG_DIR
+  })()
+  sharedConfigReadyPromise = task
+  try {
+    return await task
+  } catch (error) {
+    sharedConfigReadyPromise = undefined
+    throw error
   }
 }

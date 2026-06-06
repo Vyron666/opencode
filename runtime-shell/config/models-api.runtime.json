@@ -1,0 +1,60 @@
+{
+  "deepseek": {
+    "id": "deepseek",
+    "env": [
+      "DEEPSEEK_API_KEY"
+    ],
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.deepseek.com/v1",
+    "name": "DeepSeek",
+    "doc": "https://api-docs.deepseek.com/",
+    "models": {
+      "deepseek-v4-flash": {
+        "id": "deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "family": "deepseek-flash",
+        "attachment": false,
+        "reasoning": true,
+        "tool_call": true,
+        "release_date": "2026-04-24",
+        "last_updated": "2026-04-24",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 1048576,
+          "output": 1048576
+        }
+      },
+      "deepseek-v4-pro": {
+        "id": "deepseek-v4-pro",
+        "name": "DeepSeek V4 Pro",
+        "family": "deepseek-thinking",
+        "attachment": false,
+        "reasoning": true,
+        "tool_call": true,
+        "release_date": "2026-04-24",
+        "last_updated": "2026-04-24",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 1048576,
+          "output": 1048576
+        }
+      }
+    }
+  }
+}

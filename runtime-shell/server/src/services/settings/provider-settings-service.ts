@@ -1,5 +1,5 @@
 import { closeRuntime } from "../../acp-runtime-manager"
-import { listProviderConfigs, saveProviderConfig } from "../../provider-config"
+import { listProviderConfigs } from "../../provider-config"
 import type { User } from "../../types"
 import { authorizeSettingsAction } from "../access/authorization-service"
 import { previewPlatformProviderImpact, previewUserPrivateProviderImpact } from "../config-impact/config-impact-service"
@@ -58,11 +58,10 @@ export async function saveProviderConfigForUser(input: {
   }
 
   if (input.user.role === "admin") {
-    const saved = await saveProviderConfig(input.config)
     const affected = await previewPlatformProviderImpact({
       tenantId: input.user.tenantId,
       organizationId: input.user.organizationId,
-      providerId: saved.providerId,
+      providerId: normalizedConfig.providerId,
     })
     await savePlatformProviderConfig({
       user: input.user,
@@ -90,7 +89,7 @@ export async function saveProviderConfigForUser(input: {
       requestId: input.requestId,
       action: "provider.save",
       resourceType: "provider_config",
-      resourceId: saved.providerId,
+      resourceId: normalizedConfig.providerId,
       detail: {
         reloadedSessionCount: affectedSessions.length,
       },
@@ -100,7 +99,7 @@ export async function saveProviderConfigForUser(input: {
       success: true,
       approvalRequired: false,
       approval: undefined,
-      providerId: saved.providerId,
+      providerId: normalizedConfig.providerId,
       reloadedSessionCount: affectedSessions.length,
     }
   }

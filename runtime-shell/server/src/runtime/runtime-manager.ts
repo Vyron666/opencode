@@ -22,6 +22,7 @@ import { stopRuntimeLeaseAutoRenew } from "../services/runtime-governance/runtim
 import { createLogger } from "../log"
 import { closeRemoteRuntimeBinding } from "./remote-runtime-client"
 import { RemoteRuntimeClient } from "./remote-runtime-client"
+import { buildRuntimeConfigContent } from "./runtime-config-content"
 
 export { getRuntime, listPendingPermissions, resolvePendingPermission, listPendingQuestions, subscribeRuntimeEvents }
 
@@ -103,7 +104,9 @@ export async function forkRealRuntime(source: BusinessSession, target: BusinessS
   const sourceSessionId = sourceRuntime?.client.getSessionId() || source.binding?.acpSessionId
   if (!sourceSessionId) throw new Error("source session is not bound")
   const client = await createClientWithConfig(target)
-  const forked = await client.forkSession(target.workspacePath, sourceSessionId)
+  const forked = await client.forkSession(target.workspacePath, sourceSessionId, {
+    sourceBusinessSessionId: source.id,
+  })
   return bindRuntime(target, client, {
     sessionId: forked.sessionId,
     configOptions: forked.configOptions,
@@ -116,7 +119,7 @@ async function createClientWithConfig(session: BusinessSession) {
   const owner = await userService.getUser(session.createdBy)
   if (!owner) return createClient(session)
   const override = await buildSessionConfigOverride(owner)
-  const configContent = JSON.stringify({
+  const configContent = buildRuntimeConfigContent({
     $schema: "https://opencode.ai/config.json",
     ...override,
   })

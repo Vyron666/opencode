@@ -48,6 +48,48 @@
 3. 不过度实现业务无关能力，先把隔离、安全、大并发、审计和恢复的关键边界设计清楚。
 4. 保持后续可迁移到 Kubernetes、gVisor、Kata/Firecracker 等更强隔离后端。
 
+### 实施优先级与语义守护
+
+优化必须按以下顺序推进，避免把补救措施误当作根因修复：
+
+1. 真正 warm runtime 复用。
+2. 提高 warm runtime 命中容量。
+3. 去掉 cold path `migration/init` 成本。
+4. workspace 复制优化。
+5. plugin/provider 瘦身。
+6. 冷启动全局限速。
+
+所有阶段都必须同时守住以下语义边界，任何性能优化都不能回退这些约束：
+
+1. `provider` 隔离：
+   `admin` 共享配置仍然全员可见；用户私有配置仍然只自己可见；不同 `workspace/session` 继续复用同一份用户设置，但绝不能串用户。
+2. `mcp` 隔离：
+   用户私有 MCP 配置只对本人会话生效；共享 MCP 的可见范围不能被 warm runtime 扩大；warm runtime 复用不能把前一个用户的 MCP 进程状态或配置带到下一个用户。
+3. `skill` 隔离：
+   用户私有 skill、共享 skill、启用状态和能力面继续按当前权限模型生效，不能因为 runtime 常驻而串会话、串用户。
+4. 会话与工作区语义：
+   继续保持“一个沙箱对应一个 workspace，不是一个 session 一个沙箱”；`orphaned -> reopen -> active`、关闭、回收、恢复链路不能退化。
+5. runtime 复用边界：
+   warm runtime 必须按配置指纹分池，不能把不同 `provider/mcp/skill` 配置的 runtime 混租。
+6. 验证方式：
+   每个阶段都要隔离验证，不能把压测、设置专项和恢复专项并行运行后再据此判断结果。
+
+当前进展补充（2026-06-05）：
+
+1. `真正 warm runtime 复用` 已从“warm 容器壳”升级为“worker 长驻 warm runtime”：
+   warm slot 长期持有已初始化的 ACP runtime，会话租用时优先只做 `newSession/loadSession/resumeSession`，归还时只 `closeSession`。
+2. `提高 warm runtime 命中容量` 已完成第一轮：
+   warm runtime 继续按配置指纹分池，同时把 generic ready slot 的物化量收敛到当前 ready 预算内，避免补池反向挤占业务 open 的冷启动资源。
+3. `去掉 cold path migration/init 成本` 已完成第一轮：
+   runtime-home seed、fork session DB snapshot、slim model catalog 已接通；ACP `initialize/newSession/loadSession/resumeSession` 现在有阶段级耗时日志。
+4. `workspace 复制优化` 已完成第一轮：
+   brand-new workspace 首次 open 可跳过首次全量复制，warm slot prepare/back-sync 会跳过空目录无效复制；workspace copy 已并入统一冷启动门控。
+5. `plugin/provider 瘦身` 已完成第一轮：
+   容器冷路径只保留运行时必需 builtin config 与 slim models catalog；用户 provider / mcp / skill 继续走会话级配置注入，不改变 `admin` 共享与用户私有边界。
+6. `冷启动全局限速` 已完成第一轮：
+   workspace copy、runtime-home prepare、warm slot create、cold container boot 已共享同一背压预算；50 并发下目标是受控排队，而不是资源打死。
+7. 以上内容目前只表示“代码已经接入该方向”，最终是否达标仍以后续镜像重建、E2E 和 10/20 并发复测结果为准。
+
 ## 3. 现有代码执行链路
 
 ### 2.1 session 到 runtime 的主链路
@@ -316,12 +358,27 @@ sandbox_backend
 为了支持大用户量，不能每次打开 session 都冷启动镜像，也不能让每个逻辑 session 长期占用一个 sandbox。worker-agent 或 sandbox worker pool 应维护预热池：
 
 1. worker 启动时预拉镜像。
-2. 按配置提前创建 N 个 warm sandbox。
-3. session 打开时从 warm pool 绑定 workspace 和配置。
+2. 第一优先级不是继续堆 warm 容器壳，而是把 warm slot 升级为真正的 warm runtime：按配置指纹提前创建并长期持有已 `initialize` 完成的 ACP runtime。
+3. session 打开时优先租用同配置指纹的 warm runtime，并只执行 `newSession/loadSession/resumeSession`；归还时只 `closeSession`，不销毁 ACP 进程。
 4. 高峰期低水位自动补充。
-5. 低峰期释放多余 warm sandbox。
+5. 低峰期释放多余 warm runtime / warm sandbox。
 
 预热池需要计入配额，避免空闲资源占满节点。
+
+预热池优化必须按顺序推进，并且每一步都要带着语义验证一起做：
+
+1. 先做真正 warm runtime 复用。
+   验证：`provider/mcp/skill` 不串用户、不串配置；`orphaned -> reopen -> active` 继续成立。
+2. 再提高 warm runtime 命中容量。
+   验证：按配置指纹分池正确，不同配置不会混用，也不会把流量长期倾斜到单一 worker。
+3. 再去掉 cold path `migration/init` 成本。
+   验证：不影响自定义 `provider/model` 生效，不影响“前端统一配置一次，不同 workspace/session 直接使用”。
+4. 再做 workspace 复制优化。
+   验证：`diff`、关闭回写、`reopen` 语义保持不变。
+5. 再做 plugin/provider 瘦身。
+   验证：能力面不缺失，权限与可见性不回退。
+6. 最后做冷启动全局限速。
+   验证：体现为受控背压，而不是业务语义变化；不会因为限速破坏恢复、绑定和租约逻辑。
 
 ### 6.3 队列与削峰
 

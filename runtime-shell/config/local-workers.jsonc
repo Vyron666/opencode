@@ -5,5 +5,5 @@
   "capacity": 8,
   // 中文/English: keep one warm slot per worker so open latency improves without
   // reserving too much local machine capacity.
-  "warmPoolTarget": 1
+  "warmPoolTarget": 3
 }

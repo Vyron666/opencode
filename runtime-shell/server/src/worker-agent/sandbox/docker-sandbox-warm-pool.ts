@@ -15,17 +15,18 @@ import {
   removeContainer,
   startContainerIfNeeded,
 } from "./docker-sandbox-container"
+import { buildWarmRuntimeHomePath, removeRuntimeHome } from "./docker-sandbox-runtime-home"
 import {
   WARM_POOL_RUNTIME_CWD,
   WARM_SLOT_RUNTIME_MISSING_GRACE_MS,
   docker,
   log,
-  runWithWarmPoolBootGate,
   runWithWarmPoolCopyGate,
   warmPoolByWorker,
   warmPoolTargetByWorker,
   type WarmPoolSlot,
 } from "./docker-sandbox-state"
+import { runColdStartWarmSlotCreate } from "./docker-sandbox-cold-start"
 import type { SandboxHandle } from "./sandbox-types"
 
 export function readWarmPool(workerId: string) {
@@ -41,6 +42,18 @@ export function getWarmPoolSlotById(slotId?: string) {
   return [...warmPoolByWorker.values()].flat().find((item) => item.id === slotId)
 }
 
+export function getLeasedWarmPoolSlot(input: {
+  workerId: string
+  businessSessionId: string
+  workspaceId: string
+}) {
+  return readWarmPool(input.workerId).find((item) =>
+    item.leased
+    && item.leasedSessionId === input.businessSessionId
+    && item.leasedWorkspaceId === input.workspaceId,
+  )
+}
+
 export function takeWarmPoolSlot(workerId: string, businessSessionId: string, workspaceId: string, configFingerprint?: string) {
   const pool = readWarmPool(workerId)
   const leasedSlot = findLeasedWarmPoolSlot(pool, {
@@ -53,7 +66,7 @@ export function takeWarmPoolSlot(workerId: string, businessSessionId: string, wo
     leasedSlot.leaseRefCount = (leasedSlot.leaseRefCount ?? 0) + 1
     return leasedSlot
   }
-  const slot = findReadyWarmPoolSlot(pool, configFingerprint)
+  const slot = findReadyWarmPoolSlot(pool, configFingerprint, { allowGeneric: true })
   if (!slot) return
   slot.leased = true
   slot.ready = false
@@ -62,10 +75,11 @@ export function takeWarmPoolSlot(workerId: string, businessSessionId: string, wo
   slot.leasedWorkspaceId = workspaceId
   slot.leaseRefCount = 1
   slot.workspacePrepared = false
+  slot.configFingerprint = configFingerprint
   return slot
 }
 
-export function reserveWarmPoolSlot(input: {
+export async function reserveWarmPoolSlot(input: {
   workerId: string
   businessSessionId: string
   workspaceId: string
@@ -74,8 +88,11 @@ export function reserveWarmPoolSlot(input: {
   const pool = readWarmPool(input.workerId)
   const existing = findLeasedWarmPoolSlot(pool, input)
   if (existing) return existing
-  const ready = findReadyWarmPoolSlot(pool, input.configFingerprint)
+  const ready = findReadyWarmPoolSlot(pool, input.configFingerprint, { allowGeneric: true })
   if (!ready) return
+  // 中文/English: session prewarm may only borrow an existing ready slot.
+  // Never expand the pool per session, otherwise speculative prewarm turns into
+  // an uncontrolled initialize storm under concurrent open traffic.
   ready.leased = true
   ready.ready = false
   ready.leasedAt = new Date().toISOString()
@@ -83,13 +100,18 @@ export function reserveWarmPoolSlot(input: {
   ready.leasedWorkspaceId = input.workspaceId
   ready.leaseRefCount = 0
   ready.workspacePrepared = false
+  ready.configFingerprint = input.configFingerprint
   return ready
 }
 
-export async function createWarmPoolSlot(workerId: string, configFingerprint = "") {
-  return runWithWarmPoolBootGate(async () => {
+export async function createWarmPoolSlot(
+  workerId: string,
+  configFingerprint?: string,
+): Promise<WarmPoolSlot> {
+  return runColdStartWarmSlotCreate(async () => {
     const slotId = `warm_${crypto.randomUUID().replace(/-/g, "")}`
     const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, slotId)
+    const runtimeHomePath = buildWarmRuntimeHomePath({ workerId, slotId })
     await rm(visiblePath, { recursive: true, force: true }).catch(() => {})
     await mkdir(visiblePath, { recursive: true })
     const containerName = `runtime-shell-warm-${workerId}-${slotId}`.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(-120)
@@ -98,26 +120,40 @@ export async function createWarmPoolSlot(workerId: string, configFingerprint = "
       containerName,
       workspacePath: visiblePath,
       runtimeCwd: WARM_POOL_RUNTIME_CWD,
+      runtimeHomePath,
       poolSlotId: slotId,
     }
-    const container = await ensureContainer({
-      containerName,
-      handle,
-      cwd: visiblePath,
-    })
-    await startContainerIfNeeded(container)
-    return {
+    const slot = {
       id: slotId,
       workerId,
       containerName,
       visiblePath,
+      runtimeHomePath,
       configFingerprint,
       ready: true,
       leased: false,
+      leasedAt: undefined,
+      leasedSessionId: undefined,
+      leasedWorkspaceId: undefined,
       createdAt: new Date().toISOString(),
       leaseRefCount: 0,
       workspacePrepared: false,
+      preparingRuntime: false,
+      runtimeClient: undefined,
     } satisfies WarmPoolSlot
+    readWarmPool(workerId).push(slot)
+    try {
+      const container = await ensureContainer({
+        containerName,
+        handle,
+        cwd: visiblePath,
+      })
+      await startContainerIfNeeded(container)
+      return slot
+    } catch (error) {
+      await destroyWarmPoolSlot(slot).catch(() => {})
+      throw error
+    }
   })
 }
 
@@ -129,6 +165,7 @@ export async function destroyWarmPoolSlot(slot: WarmPoolSlot) {
   slot.runtimeClient = undefined
   await removeContainer(slot.containerName)
   await rm(slot.visiblePath, { recursive: true, force: true }).catch(() => {})
+  await removeRuntimeHome(slot.runtimeHomePath)
 }
 
 export async function cleanupOrphanWarmPoolContainers(workerId: string) {
@@ -140,13 +177,16 @@ export async function cleanupOrphanWarmPoolContainers(workerId: string) {
     if (!matchedName || !identity || identity.workerId !== workerId) continue
     if (readWarmPool(workerId).some((slot) => slot.containerName === matchedName)) continue
     const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, identity.slotId)
+    const runtimeHomePath = buildWarmRuntimeHomePath({ workerId, slotId: identity.slotId })
     log.info("cleaning orphan warm pool container", {
       workerId,
       containerName: matchedName,
       visiblePath,
+      runtimeHomePath,
     })
     await removeContainer(matchedName)
     await rm(visiblePath, { recursive: true, force: true }).catch(() => {})
+    await removeRuntimeHome(runtimeHomePath)
     cleaned += 1
   }
   return cleaned
@@ -188,11 +228,13 @@ export async function prepareWarmPoolWorkspace(handle: SandboxHandle) {
     // 中文/English: keep the bind-mounted slot root stable while the warm ACP
     // process stays alive, otherwise deleting the mount source can invalidate reuse.
     await resetDirectoryContents(slot.visiblePath)
-    await cp(sandboxPath, slot.visiblePath, {
-      recursive: true,
-      force: true,
-      filter: (source) => !isInnerSandboxPath(source),
-    })
+    if (!await isDirectoryEmpty(sandboxPath)) {
+      await cp(sandboxPath, slot.visiblePath, {
+        recursive: true,
+        force: true,
+        filter: (source) => !isInnerSandboxPath(source),
+      })
+    }
     slot.workspacePrepared = true
   })
 }
@@ -244,6 +286,7 @@ export function toWarmPoolSnapshot(workerId: string, slots: WarmPoolSlot[]) {
       slotId: slot.id,
       containerName: slot.containerName,
       visiblePath: slot.visiblePath,
+      runtimeHomePath: slot.runtimeHomePath,
       status: slot.leased ? "leased" : slot.ready ? "warm" : "preparing",
       configFingerprint: slot.configFingerprint,
       createdAt: slot.createdAt,
@@ -253,7 +296,6 @@ export function toWarmPoolSnapshot(workerId: string, slots: WarmPoolSlot[]) {
     })),
   }
 }
-
 export async function reclaimStaleLeasedWarmPoolSlots(workerId: string) {
   let reclaimed = 0
   for (const slot of [...readWarmPool(workerId)].filter((item) => item.leased)) {
@@ -283,11 +325,13 @@ async function syncWarmPoolWorkspaceBack(handle: SandboxHandle, slot: WarmPoolSl
   await runWithWarmPoolCopyGate(async () => {
     await rm(sandboxPath, { recursive: true, force: true }).catch(() => {})
     await mkdir(sandboxPath, { recursive: true })
-    await cp(slot.visiblePath, sandboxPath, {
-      recursive: true,
-      force: true,
-      filter: (source) => !isInnerSandboxPath(source),
-    })
+    if (!await isDirectoryEmpty(slot.visiblePath)) {
+      await cp(slot.visiblePath, sandboxPath, {
+        recursive: true,
+        force: true,
+        filter: (source) => !isInnerSandboxPath(source),
+      })
+    }
   })
 }
 
@@ -318,6 +362,12 @@ async function resetDirectoryContents(targetDir: string) {
   ))
 }
 
+async function isDirectoryEmpty(targetDir: string) {
+  await mkdir(targetDir, { recursive: true })
+  const entries = await readdir(targetDir)
+  return entries.length === 0
+}
+
 function findLeasedWarmPoolSlot(
   pool: WarmPoolSlot[],
   input: {
@@ -334,10 +384,27 @@ function findLeasedWarmPoolSlot(
   )
 }
 
-function findReadyWarmPoolSlot(pool: WarmPoolSlot[], configFingerprint?: string) {
-  return pool.find((item) =>
+function findReadyWarmPoolSlot(
+  pool: WarmPoolSlot[],
+  configFingerprint?: string,
+  input?: {
+    allowGeneric?: boolean
+  },
+) {
+  const matched = pool.find((item) =>
     item.ready
     && !item.leased
     && item.configFingerprint === configFingerprint,
+  )
+  if (matched) return matched
+  if (!input?.allowGeneric) return
+  return pool.find((item) =>
+    item.ready
+    && !item.leased
+    // 中文/English: heartbeat-created warm slots start as generic warm shells.
+    // The first real session with a concrete config fingerprint can claim one and
+    // turn it into a long-lived warm runtime for that config bucket.
+    && !item.runtimeClient
+    && !item.configFingerprint,
   )
 }

@@ -1,15 +1,22 @@
 import { PassThrough } from "node:stream"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { Config } from "../../config"
+import { backfillReadyWarmRuntimeSlots } from "../worker-agent-warm-runtime"
 import { hasRuntimeActivityByWorkspaceId } from "../worker-agent-store"
 import type { SandboxManager } from "./sandbox-manager"
 import type { SandboxHandle } from "./sandbox-types"
-import { warmPoolByWorker, warmPoolTargetByWorker, WARM_POOL_RUNTIME_CWD } from "./docker-sandbox-state"
+import {
+  pendingWarmPoolEnsureByWorker,
+  warmPoolByWorker,
+  warmPoolTargetByWorker,
+  WARM_POOL_RUNTIME_CWD,
+} from "./docker-sandbox-state"
 import { attachDockerSandboxAcp } from "./docker-sandbox-acp"
 import {
   ensureDockerReady,
   removeContainer,
 } from "./docker-sandbox-container"
+import { buildColdRuntimeHomePath } from "./docker-sandbox-runtime-home"
 import {
   cleanupOrphanRuntimeContainers,
   cleanupOrphanWarmPoolContainers,
@@ -27,7 +34,9 @@ import {
 export function createDockerSandboxManager(): SandboxManager {
   return {
     prepare(input) {
-      const warmSlot = takeWarmPoolSlot(input.workerId, input.businessSessionId, input.workspaceId, input.configFingerprint)
+      const warmSlot = input.useWarmPool
+        ? takeWarmPoolSlot(input.workerId, input.businessSessionId, input.workspaceId, input.configFingerprint)
+        : undefined
       if (warmSlot) {
         return {
           workerId: input.workerId,
@@ -37,6 +46,7 @@ export function createDockerSandboxManager(): SandboxManager {
           workspacePath: warmSlot.visiblePath,
           sandboxPath: input.sandboxPath,
           runtimeCwd: WARM_POOL_RUNTIME_CWD,
+          runtimeHomePath: warmSlot.runtimeHomePath,
           poolSlotId: warmSlot.id,
         }
       }
@@ -48,6 +58,13 @@ export function createDockerSandboxManager(): SandboxManager {
         workspacePath: input.workspacePath,
         sandboxPath: input.sandboxPath,
         runtimeCwd: input.sandboxPath || input.workspacePath,
+        // 中文/English: cold runtime state belongs to the workspace, not to an
+        // individual ACP session, so reopen can reuse the same runtime home.
+        runtimeHomePath: buildColdRuntimeHomePath({
+          workerId: input.workerId,
+          workspaceId: input.workspaceId,
+        }),
+        sourceRuntimeHomePath: input.sourceRuntimeHomePath,
       }
     },
     attachAcp(input) {
@@ -60,6 +77,27 @@ export function createDockerSandboxManager(): SandboxManager {
 }
 
 export async function ensureDockerWarmPool(input: {
+  workerId: string
+  target: number
+}) {
+  const pending = pendingWarmPoolEnsureByWorker.get(input.workerId)
+  if (pending) {
+    await pending
+    return toWarmPoolSnapshot(input.workerId, readWarmPool(input.workerId))
+  }
+  const task = doEnsureDockerWarmPool(input)
+  pendingWarmPoolEnsureByWorker.set(input.workerId, task)
+  try {
+    await task
+  } finally {
+    if (pendingWarmPoolEnsureByWorker.get(input.workerId) === task) {
+      pendingWarmPoolEnsureByWorker.delete(input.workerId)
+    }
+  }
+  return toWarmPoolSnapshot(input.workerId, readWarmPool(input.workerId))
+}
+
+async function doEnsureDockerWarmPool(input: {
   workerId: string
   target: number
 }) {
@@ -82,16 +120,20 @@ export async function ensureDockerWarmPool(input: {
   const workerPool = readWarmPool(input.workerId)
   await reclaimStaleLeasedWarmPoolSlots(input.workerId)
   await pruneMissingWarmPoolSlots(workerPool)
-  while (workerPool.length < input.target) {
-    workerPool.push(await createWarmPoolSlot(input.workerId))
+  while (countReadyWarmPoolSlots(workerPool) < input.target) {
+    await createWarmPoolSlot(input.workerId)
   }
+  await backfillReadyWarmRuntimeSlots(input.workerId).catch(() => {})
   const removable = workerPool.filter((slot) => slot.ready && !slot.leased)
   while (removable.length > input.target) {
     const slot = removable.pop()
     if (!slot) break
     await destroyWarmPoolSlot(slot)
   }
-  return toWarmPoolSnapshot(input.workerId, readWarmPool(input.workerId))
+}
+
+function countReadyWarmPoolSlots(slots: Array<{ ready: boolean; leased: boolean }>) {
+  return slots.filter((slot) => slot.ready && !slot.leased).length
 }
 
 export async function cleanupDockerWarmPool(input: {
@@ -141,6 +183,7 @@ export async function cleanupDockerWarmPoolProcessExit() {
       await destroyWarmPoolSlot(slot)
     }
     warmPoolByWorker.delete(workerId)
+    pendingWarmPoolEnsureByWorker.delete(workerId)
     warmPoolTargetByWorker.delete(workerId)
   }
 }

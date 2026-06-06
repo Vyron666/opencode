@@ -4,7 +4,7 @@ import { createLogger } from "../../log"
 import type { User } from "../../types"
 import { buildAccessContext } from "../access/access-context-service"
 import { requireQuotaForRuntimeOperation, requireQuotaForSessionCreate } from "../sandbox/sandbox-quota-service"
-import { markRuntimeOperationCompleted, markRuntimeOperationFailed, markRuntimeOperationRunning, startRuntimeOperation } from "../sandbox/sandbox-queue-service"
+import { markRuntimeOperationCompleted, markRuntimeOperationFailed, markRuntimeOperationRunning, markRuntimeOperationStage, startRuntimeOperation } from "../sandbox/sandbox-queue-service"
 import { createRuntimeBinding } from "../runtime-governance/runtime-binding-service"
 import { auditService, sessionService } from "../store/store-singleton"
 import { isSessionWorkspaceReady, requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
@@ -274,6 +274,14 @@ async function openSessionForUserInner(input: {
   // converge on one runtime bootstrap instead of racing duplicate binding records.
   const recoverableSession = await prepareSessionForOpen(input.session)
   try {
+    await markRuntimeOperationStage({
+      operationId: operation.id,
+      stage: "workspace_prepare",
+      workerId: recoverableSession.workerId || undefined,
+      detail: {
+        workspaceId: recoverableSession.workspaceId,
+      },
+    })
     const sandboxWorkspace = await ensureSandboxWorkspace(recoverableSession)
     log.info("session sandbox workspace prepared", {
       businessSessionId: recoverableSession.id,
@@ -291,6 +299,11 @@ async function openSessionForUserInner(input: {
     return { ok: false as const, reason: "open_failed" }
   }
   await markSessionOpening(recoverableSession.id)
+  await markRuntimeOperationStage({
+    operationId: operation.id,
+    stage: "worker_assign",
+    workerId: recoverableSession.workerId || undefined,
+  })
   const worker = await ensureWorkerForSessionOpen({
     user: input.user,
     session: recoverableSession,
@@ -318,13 +331,23 @@ async function openSessionForUserInner(input: {
   await markRuntimeOperationRunning(operation.id, worker.id)
 
   const reopenedSession = (await sessionService.getSession(recoverableSession.id)) || recoverableSession
-  await ensureSessionRuntimePrewarmed(reopenedSession).catch((error) => {
+  await markRuntimeOperationStage({
+    operationId: operation.id,
+    stage: "runtime_prewarm",
+    workerId: reopenedSession.workerId || worker.id,
+  })
+  void ensureSessionRuntimePrewarmed(reopenedSession).catch((error) => {
     log.warn("session runtime prewarm before open failed", {
       businessSessionId: reopenedSession.id,
       workerId: reopenedSession.workerId,
       workspacePath: reopenedSession.workspacePath,
       message: error instanceof Error ? error.message : String(error),
     })
+  })
+  await markRuntimeOperationStage({
+    operationId: operation.id,
+    stage: "runtime_open",
+    workerId: reopenedSession.workerId || worker.id,
   })
   const firstOpenAttempt = await openSessionWithFallback(reopenedSession).catch(async (error) => {
     log.warn("session runtime open failed", {

@@ -101,6 +101,16 @@ const ownerOpenAgain = await requestJson<ApiEnvelope<{ id: string; status: strin
 })
 assert(ownerOpenAgain.status === 200 && ownerOpenAgain.body.data.status === "active", "owner reopen after rebind failed")
 
+const ownerFork = await requestJson<ApiEnvelope<{ id: string; status: string }>>(developerJar, "/api/acp/session/fork", {
+  method: "POST",
+  body: {
+    businessSessionId: ownerBusinessSessionId,
+    title: `Owner Fork ${Date.now()}`,
+  },
+})
+assert(ownerFork.status === 200 && ownerFork.body.data.status === "active", "owner fork should succeed")
+const ownerForkBusinessSessionId = ownerFork.body.data.id
+
 const sharedWorkspace = await requestJson<ApiEnvelope<{ id: string; projectId: string }>>(adminJar, "/api/workspace/create", {
   method: "POST",
   body: {
@@ -234,6 +244,14 @@ const ownerFinalClose = await requestJson<ApiEnvelope<{ id: string; status: stri
 })
 assert(ownerFinalClose.status === 200, "owner final close failed")
 
+const ownerForkClose = await requestJson<ApiEnvelope<{ id: string; status: string }>>(developerJar, "/api/session/close", {
+  method: "POST",
+  body: {
+    businessSessionId: ownerForkBusinessSessionId,
+  },
+})
+assert(ownerForkClose.status === 200, "owner fork close failed")
+
 const sharedFinalClose = await requestJson<ApiEnvelope<{ id: string; status: string }>>(adminJar, "/api/session/close", {
   method: "POST",
   body: {
@@ -251,7 +269,9 @@ console.log(
     ownerRecoverStatus: ownerRecover.status,
     ownerRebindForbiddenStatus: ownerRebindForbidden.status,
     adminRebindStatus: adminRebind.status,
+    ownerForkStatus: ownerFork.status,
     ownerFinalCloseStatus: ownerFinalClose.status,
+    ownerForkCloseStatus: ownerForkClose.status,
     sharedFinalCloseStatus: sharedFinalClose.status,
     sharedForbiddenStatuses: sharedForbiddenStatuses.map((item) => item.status),
     outsiderForbiddenStatuses: outsiderForbiddenStatuses.map((item) => item.status),

@@ -9,6 +9,7 @@ const DEFAULT_WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../..")
 export type RuntimeShellProviderModel = {
   id: string
   name: string
+  // 中文/English: user-facing "model api" means the upstream provider model id.
   api?: string
 }
 
@@ -49,38 +50,13 @@ type SaveProviderInput = {
 }
 
 export async function listProviderConfigs() {
-  const config = await readRuntimeConfig()
-  const providerEntries = Object.entries(config.provider || {})
-  const enabled = Array.isArray(config.enabled_providers) ? config.enabled_providers : []
+  const builtin = await listStoredProviderConfigs()
+  return builtin.map((item) => toVisibleProviderConfig(item))
+}
 
-  return providerEntries.map(([providerId, raw]) => {
-    const options = isRecord(raw.options) ? raw.options : {}
-    const models = isRecord(raw.models) ? raw.models : {}
-    const apiKey = typeof options.apiKey === "string" ? options.apiKey : ""
-    const defaultModel = typeof config.model === "string" && config.model.startsWith(`${providerId}/`)
-      ? config.model
-      : enabled.includes(providerId) && Object.keys(models)[0]
-        ? `${providerId}/${Object.keys(models)[0]}`
-        : ""
-
-    return {
-      providerId,
-      name: typeof raw.name === "string" ? raw.name : providerId,
-      npm: typeof raw.npm === "string" ? raw.npm : undefined,
-      api: typeof raw.api === "string" ? raw.api : "",
-      baseURL: typeof options.baseURL === "string" ? options.baseURL : "",
-      apiKeyMasked: maskSecret(apiKey),
-      apiKeyConfigured: Boolean(apiKey),
-      defaultModel,
-      models: Object.entries(models)
-        .map(([modelId, modelRaw]) => ({
-          id: modelId,
-          name: isRecord(modelRaw) && typeof modelRaw.name === "string" ? modelRaw.name : modelId,
-          api: isRecord(modelRaw) && typeof modelRaw.api === "string" ? modelRaw.api : undefined,
-        }))
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    } satisfies RuntimeShellProviderConfig
-  })
+export async function listStoredProviderConfigs() {
+  const text = await readBuiltinProviderConfigText()
+  return parseProviderConfigs(text)
 }
 
 export async function saveProviderConfig(input: SaveProviderInput) {
@@ -89,6 +65,8 @@ export async function saveProviderConfig(input: SaveProviderInput) {
   const config = parseRuntimeConfig(text)
   const currentProvider = isRecord(config.provider?.[input.providerId]) ? config.provider?.[input.providerId] : {}
   const currentOptions = isRecord(currentProvider?.options) ? currentProvider.options : {}
+  const nextBaseUrl = input.baseURL.trim()
+  const nextAdapter = (input.npm?.trim() || input.api.trim())
 
   const nextApiKey =
     typeof input.apiKey === "string" && input.apiKey.trim()
@@ -100,11 +78,13 @@ export async function saveProviderConfig(input: SaveProviderInput) {
   const nextProvider = {
     ...currentProvider,
     name: input.name.trim() || input.providerId,
-    api: input.api.trim(),
-    ...(input.npm?.trim() ? { npm: input.npm.trim() } : { npm: undefined }),
+    // 中文/English: opencode config uses `provider.npm` for the SDK adapter and
+    // `provider.api` / `options.baseURL` for the actual upstream endpoint.
+    api: nextBaseUrl,
+    ...(nextAdapter ? { npm: nextAdapter } : { npm: undefined }),
     options: {
       ...currentOptions,
-      baseURL: input.baseURL.trim(),
+      baseURL: nextBaseUrl,
       ...(nextApiKey ? { apiKey: nextApiKey } : { apiKey: undefined }),
     },
     models: Object.fromEntries(
@@ -114,7 +94,7 @@ export async function saveProviderConfig(input: SaveProviderInput) {
           item.id.trim(),
           {
             name: item.name.trim() || item.id.trim(),
-            ...(item.api?.trim() ? { api: item.api.trim() } : {}),
+            ...(item.api?.trim() ? { id: item.api.trim() } : {}),
           },
         ]),
     ),
@@ -187,6 +167,12 @@ async function readRuntimeConfig() {
   return parseRuntimeConfig(text)
 }
 
+async function readBuiltinProviderConfigText() {
+  const template = Bun.file(CONFIG_TEMPLATE_FILE)
+  if (!(await template.exists())) return DEFAULT_RUNTIME_CONFIG
+  return template.text()
+}
+
 async function readRuntimeConfigText(filePath: string) {
   const file = Bun.file(filePath)
   if (!(await file.exists())) {
@@ -209,6 +195,45 @@ function parseRuntimeConfig(text: string): WritableConfig {
   return parsed as WritableConfig
 }
 
+function parseProviderConfigs(text: string) {
+  const config = parseRuntimeConfig(text)
+  const providerEntries = Object.entries(config.provider || {})
+  const enabled = Array.isArray(config.enabled_providers) ? config.enabled_providers : []
+
+  return providerEntries.map(([providerId, raw]) => {
+    const options = isRecord(raw.options) ? raw.options : {}
+    const models = isRecord(raw.models) ? raw.models : {}
+    const apiKey = typeof options.apiKey === "string" ? options.apiKey : ""
+    const baseURL = readProviderBaseUrl(raw, options)
+    const adapter = readProviderAdapter(raw)
+    const defaultModel = typeof config.model === "string" && config.model.startsWith(`${providerId}/`)
+      ? config.model
+      : enabled.includes(providerId) && Object.keys(models)[0]
+        ? `${providerId}/${Object.keys(models)[0]}`
+        : ""
+
+    const npm = typeof raw.npm === "string" && raw.npm.trim() ? raw.npm.trim() : undefined
+    return {
+      providerId,
+      name: typeof raw.name === "string" ? raw.name : providerId,
+      ...(npm ? { npm } : {}),
+      api: adapter,
+      baseURL,
+      apiKeyMasked: maskSecret(apiKey),
+      apiKeyConfigured: Boolean(apiKey),
+      ...(apiKey ? { apiKey } : {}),
+      defaultModel,
+      models: Object.entries(models)
+        .map(([modelId, modelRaw]) => ({
+          id: modelId,
+          name: isRecord(modelRaw) && typeof modelRaw.name === "string" ? modelRaw.name : modelId,
+          api: readProviderModelApiId(modelRaw),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    } satisfies RuntimeShellStoredProviderConfig
+  })
+}
+
 function patchJsonc(input: string, patch: unknown, currentPath: string[] = []): string {
   if (!isRecord(patch)) {
     const edits = modify(input, currentPath, patch, {
@@ -228,4 +253,41 @@ function patchJsonc(input: string, patch: unknown, currentPath: string[] = []): 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function toVisibleProviderConfig(value: RuntimeShellStoredProviderConfig): RuntimeShellProviderConfig {
+  return {
+    providerId: value.providerId,
+    name: value.name,
+    ...(value.npm ? { npm: value.npm } : {}),
+    api: value.api,
+    baseURL: value.baseURL,
+    apiKeyMasked: value.apiKeyMasked,
+    apiKeyConfigured: value.apiKeyConfigured,
+    defaultModel: value.defaultModel,
+    models: value.models,
+  }
+}
+
+function readProviderAdapter(raw: Record<string, unknown>) {
+  if (typeof raw.npm === "string" && raw.npm.trim()) return raw.npm.trim()
+  if (typeof raw.api === "string" && !looksLikeUrl(raw.api)) return raw.api.trim()
+  return ""
+}
+
+function readProviderBaseUrl(raw: Record<string, unknown>, options: Record<string, unknown>) {
+  if (typeof options.baseURL === "string" && options.baseURL.trim()) return options.baseURL.trim()
+  if (typeof raw.api === "string" && looksLikeUrl(raw.api)) return raw.api.trim()
+  return ""
+}
+
+function readProviderModelApiId(value: unknown) {
+  if (!isRecord(value)) return undefined
+  if (typeof value.id === "string" && value.id.trim()) return value.id.trim()
+  if (typeof value.api === "string" && value.api.trim()) return value.api.trim()
+  return undefined
+}
+
+function looksLikeUrl(value: string) {
+  return value.includes("://")
 }

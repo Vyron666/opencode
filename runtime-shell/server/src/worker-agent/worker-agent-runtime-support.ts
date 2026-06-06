@@ -21,6 +21,7 @@ export function createRuntimeEntry(input: {
   workspaceId: string
   workspacePath: string
   sandboxPath?: string
+  sourceRuntimeHomePath?: string
   workerId: string
   configContent?: string
   configFingerprint?: string
@@ -33,7 +34,11 @@ export function createRuntimeEntry(input: {
     workerId: input.workerId,
     workspacePath: input.workspacePath,
     sandboxPath: input.sandboxPath,
+    sourceRuntimeHomePath: input.sourceRuntimeHomePath,
     configFingerprint: input.configFingerprint,
+    // 中文/English: cold runtime creation must never steal a warm slot.
+    // Warm runtime reuse is owned exclusively by the dedicated warm path.
+    useWarmPool: false,
   })
   const runtimeCwd = sandboxHandle.runtimeCwd || input.sandboxPath || input.workspacePath
   const client = new AcpProcessClient(
@@ -55,7 +60,7 @@ export function createRuntimeEntry(input: {
         runtimeClientOptions: options,
       }),
   )
-  const entry = createRuntimeEntryFromClient({
+  return createBoundRuntimeEntryFromClient({
     remoteRuntimeId,
     runtimeShellBaseUrl: input.runtimeShellBaseUrl,
     workerToken: input.workerToken,
@@ -67,14 +72,9 @@ export function createRuntimeEntry(input: {
     client,
     sandboxHandle,
     closeSandbox: () => sandboxManager.close({ handle: sandboxHandle }),
-  })
-  bindRuntimeEntryClientContext(entry, {
-    runtimeShellBaseUrl: input.runtimeShellBaseUrl,
-    workerToken: input.workerToken,
-    cwd: runtimeCwd,
+    runtimeCwd,
     configContent: input.configContent,
   })
-  return entry
 }
 
 export function createRuntimeEntryFromClient(input: {
@@ -141,6 +141,32 @@ export function createRuntimeEntryFromClient(input: {
         },
       },
     })
+  })
+  return entry
+}
+
+export function createBoundRuntimeEntryFromClient(input: {
+  remoteRuntimeId?: string
+  runtimeShellBaseUrl: string
+  workerToken: string
+  businessSessionId: string
+  workspaceId: string
+  workspacePath: string
+  sandboxPath?: string
+  workerId: string
+  client: AcpProcessClient
+  sandboxHandle?: SandboxHandle
+  closeSandbox?: () => Promise<void>
+  releaseRuntime?: () => Promise<void>
+  runtimeCwd: string
+  configContent?: string
+}) {
+  const entry = createRuntimeEntryFromClient(input)
+  bindRuntimeEntryClientContext(entry, {
+    runtimeShellBaseUrl: input.runtimeShellBaseUrl,
+    workerToken: input.workerToken,
+    cwd: input.runtimeCwd,
+    configContent: input.configContent,
   })
   return entry
 }

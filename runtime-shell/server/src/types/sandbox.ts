@@ -9,6 +9,9 @@ export type SandboxBackend = "local-process" | "docker" | "gvisor" | "kata"
 export type RuntimeOperationType =
   | "session_warmup"
   | "session_open"
+  | "session_load"
+  | "session_resume"
+  | "session_fork"
   | "session_prompt"
   | "session_diff_create"
   | "session_diff_apply"
@@ -101,6 +104,14 @@ export type RuntimeOperationQueueItem = {
   startedAt?: string
   completedAt?: string
 }
+
+export type RuntimeOperationStage =
+  | "queued"
+  | "workspace_prepare"
+  | "worker_assign"
+  | "runtime_prewarm"
+  | "runtime_open"
+  | "completed"
 
 export type QuotaPolicy = {
   id: string

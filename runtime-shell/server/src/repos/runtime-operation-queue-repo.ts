@@ -1,5 +1,5 @@
 import { getRuntimeDatabaseClient } from "../db/runtime-db"
-import type { RuntimeOperationQueueItem, RuntimeOperationStatus, RuntimeOperationType } from "../types"
+import type { RuntimeOperationQueueItem, RuntimeOperationStage, RuntimeOperationStatus, RuntimeOperationType } from "../types"
 
 type RuntimeOperationQueueRow = {
   id: string
@@ -93,7 +93,20 @@ export async function updateRuntimeOperation(input: {
   completedAt?: string
   workerId?: string
   errorMessage?: string
+  detail?: Record<string, unknown>
 }) {
+  const existing = await getRuntimeDatabaseClient().queryFirst<{ detail_json: string }>(
+    `
+      SELECT detail_json
+      FROM runtime_operation_queue
+      WHERE id = ?
+    `,
+    [input.id],
+  )
+  const nextDetail = JSON.stringify({
+    ...(existing?.detail_json ? JSON.parse(existing.detail_json) as Record<string, unknown> : {}),
+    ...(input.detail || {}),
+  })
   await getRuntimeDatabaseClient().execute(
     `
       UPDATE runtime_operation_queue
@@ -103,7 +116,8 @@ export async function updateRuntimeOperation(input: {
         started_at = COALESCE(?, started_at),
         completed_at = ?,
         worker_node_id = COALESCE(?, worker_node_id),
-        error_message = ?
+        error_message = ?,
+        detail_json = ?
       WHERE id = ?
     `,
     [
@@ -113,6 +127,7 @@ export async function updateRuntimeOperation(input: {
       input.completedAt || null,
       input.workerId || null,
       input.errorMessage || null,
+      nextDetail,
       input.id,
     ],
   )
@@ -126,6 +141,26 @@ export async function listRuntimeOperations(limit = 100) {
       LIMIT ?
     `,
     [limit],
+  )
+  return rows.map(toRuntimeOperation)
+}
+
+export async function listStaleRuntimeOperations(input: {
+  limit: number
+  queuedBefore: string
+  runningBefore: string
+}) {
+  const rows = await getRuntimeDatabaseClient().queryRows<RuntimeOperationQueueRow>(
+    `
+      ${RUNTIME_OPERATION_SELECT}
+      WHERE
+        (status = 'queued' AND updated_at < ?)
+        OR
+        (status = 'running' AND COALESCE(started_at, updated_at) < ?)
+      ORDER BY updated_at ASC
+      LIMIT ?
+    `,
+    [input.queuedBefore, input.runningBefore, input.limit],
   )
   return rows.map(toRuntimeOperation)
 }
@@ -164,6 +199,105 @@ export async function countRuntimeOperationsByScope(input: {
     params,
   )
   return Number(row?.count || 0)
+}
+
+export async function updateRuntimeOperationStage(input: {
+  id: string
+  stage: RuntimeOperationStage
+  updatedAt: string
+  stageStartedAt?: string
+  workerId?: string
+  detail?: Record<string, unknown>
+}) {
+  const existing = await getRuntimeDatabaseClient().queryFirst<{ detail_json: string }>(
+    `
+      SELECT detail_json
+      FROM runtime_operation_queue
+      WHERE id = ?
+    `,
+    [input.id],
+  )
+  const currentDetail = existing?.detail_json
+    ? JSON.parse(existing.detail_json) as Record<string, unknown>
+    : {}
+  const stageTimings = typeof currentDetail.stageTimings === "object" && currentDetail.stageTimings
+    ? currentDetail.stageTimings as Record<string, unknown>
+    : {}
+  const nextDetail = JSON.stringify({
+    ...currentDetail,
+    ...(input.detail || {}),
+    stage: input.stage,
+    stageTimings: {
+      ...stageTimings,
+      [input.stage]: input.stageStartedAt || input.updatedAt,
+    },
+  })
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE runtime_operation_queue
+      SET
+        updated_at = ?,
+        worker_node_id = COALESCE(?, worker_node_id),
+        detail_json = ?
+      WHERE id = ?
+    `,
+    [
+      input.updatedAt,
+      input.workerId || null,
+      nextDetail,
+      input.id,
+    ],
+  )
+}
+
+export async function failRuntimeOperationIfStatusMatches(input: {
+  id: string
+  statuses: RuntimeOperationStatus[]
+  updatedAt: string
+  errorMessage: string
+  detail?: Record<string, unknown>
+}) {
+  if (!input.statuses.length) return false
+  const existing = await getRuntimeDatabaseClient().queryFirst<{
+    detail_json: string
+    status: RuntimeOperationStatus
+  }>(
+    `
+      SELECT detail_json, status
+      FROM runtime_operation_queue
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [input.id],
+  )
+  if (!existing || !input.statuses.includes(existing.status)) return false
+  const nextDetail = JSON.stringify({
+    ...(existing.detail_json ? JSON.parse(existing.detail_json) as Record<string, unknown> : {}),
+    ...(input.detail || {}),
+    failedAt: input.updatedAt,
+  })
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE runtime_operation_queue
+      SET
+        status = 'failed',
+        updated_at = ?,
+        completed_at = ?,
+        error_message = ?,
+        detail_json = ?
+      WHERE id = ?
+        AND status IN (${input.statuses.map(() => "?").join(", ")})
+    `,
+    [
+      input.updatedAt,
+      input.updatedAt,
+      input.errorMessage,
+      nextDetail,
+      input.id,
+      ...input.statuses,
+    ],
+  )
+  return true
 }
 
 function toRuntimeOperation(row: RuntimeOperationQueueRow): RuntimeOperationQueueItem {

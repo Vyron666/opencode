@@ -10,6 +10,10 @@ type LocalWorkerComposeConfig = {
 const runtimeShellDir = path.resolve(import.meta.dir, "..")
 const configPath = path.join(runtimeShellDir, "config", "local-workers.jsonc")
 const composePath = path.join(runtimeShellDir, "docker-compose.yml")
+const composeWorkspaceDir = "../docker-data/runtime-shell-workspaces"
+const composeRuntimeDataDir = "../docker-data/runtime-shell-data"
+const containerWorkspaceDir = "/workspace/workspaces"
+const containerRuntimeDataDir = "/runtime-shell-data"
 
 const config = await readConfig()
 const composeText = buildCompose(config)
@@ -114,19 +118,25 @@ ${dependsOn}
       RUNTIME_SHELL_ADMIN_PASSWORD: change-me
       RUNTIME_SHELL_SESSION_COOKIE: runtime_shell_session
       RUNTIME_SHELL_SESSION_SECRET: change-me
-      RUNTIME_SHELL_DATA_FILE: /app/data/runtime-shell.json
+      RUNTIME_SHELL_DATA_FILE: ${containerRuntimeDataDir}/runtime-shell.json
+      RUNTIME_SHELL_STORAGE_DIR: ${containerRuntimeDataDir}/storage
       RUNTIME_SHELL_DB_DIALECT: postgres
       RUNTIME_SHELL_DB_URL: postgresql://postgres:change-me@postgres:5432/runtime_shell
       RUNTIME_SHELL_DB_SSL_MODE: disable
       OPENCODE_BASE_URL: http://${readWorkerServiceName(1)}:4096
       RUNTIME_SHELL_WORKER_EXECUTION_MODE: remote
       RUNTIME_SHELL_WORKER_AGENT_TOKEN: change-me-worker-agent
+      # 中文/English: runtime-shell must observe the same sandbox backend as workers,
+      # otherwise system sandbox records fall back to local-process on the server side.
+      RUNTIME_SHELL_SANDBOX_BACKEND: docker
       RUNTIME_SHELL_LOCAL_WORKERS: >-
         ${localWorkers}
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
       OPENCODE_DISABLE_MODELS_FETCH: "1"
-      OPENCODE_MODELS_PATH: /app/config/models-api.json
+      OPENCODE_MODELS_PATH: /app/config/models-api.runtime.json
+      OPENCODE_CONFIG: /app/config/opencode.example.jsonc
+      OPENCODE_DISABLE_PROJECT_CONFIG: "1"
       # 中文/English: ACP subprocesses still need the runtime-shell config file to load custom providers and models.
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
       OPENCODE_ACP_SPAWN_CWD: /workspace
@@ -137,9 +147,9 @@ ${dependsOn}
     ports:
       - "3100:3000"
     volumes:
-      - ./data:/app/data
+      - ${composeRuntimeDataDir}:${containerRuntimeDataDir}
       - ../.opencode:/workspace/.opencode
-      - ../workspaces:/workspace/workspaces
+      - ${composeWorkspaceDir}:${containerWorkspaceDir}
       # 中文/English: runtime-shell spawned ACP uses its own local OpenCode data directory.
       # Do not share db/auth state with opencode-worker, otherwise two local instances can conflict.
       - ../docker-data/runtime-shell-opencode:/root/.local/share/opencode
@@ -159,7 +169,9 @@ function buildWorkerService(workerIndex: number) {
       OPENCODE_SERVER_USERNAME: opencode
       OPENCODE_SERVER_PASSWORD: change-me
       OPENCODE_DISABLE_MODELS_FETCH: "1"
-      OPENCODE_MODELS_PATH: /workspace/runtime-shell/config/models-api.json
+      OPENCODE_MODELS_PATH: /workspace/runtime-shell/config/models-api.runtime.json
+      OPENCODE_CONFIG: /workspace/runtime-shell/config/opencode.example.jsonc
+      OPENCODE_DISABLE_PROJECT_CONFIG: "1"
       # 中文/English: keep QuestionTool enabled on every worker node so runtime-shell sees the same interaction surface.
       OPENCODE_ENABLE_QUESTION_TOOL: "1"
       OPENCODE_ACP_ENTRY: /workspace/packages/opencode/src/index.ts
@@ -184,7 +196,7 @@ function buildWorkerService(workerIndex: number) {
     volumes:
       - ${readWorkerDataDir(workerIndex)}:/root/.local/share/opencode
       - ../.opencode:/workspace/.opencode
-      - ../workspaces:/workspace/workspaces
+      - ${composeWorkspaceDir}:${containerWorkspaceDir}
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /workspace
     entrypoint: ["bash", "/workspace/runtime-shell/server/src/worker-agent/start-worker.sh"]`

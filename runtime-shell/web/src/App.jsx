@@ -25,7 +25,11 @@ export default function App() {
         return null
       })
       .catch((error) => {
-        setFlash(error instanceof Error ? error.message : String(error))
+        // 中文/English: a cold anonymous visit should fall back to the login
+        // screen quietly instead of leaving a stale auth error on the home UI.
+        if (error?.status !== 401) {
+          setFlash(error instanceof Error ? error.message : String(error))
+        }
         return null
       })
       .finally(() => {

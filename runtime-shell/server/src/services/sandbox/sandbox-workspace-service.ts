@@ -1,4 +1,4 @@
-import { cp, mkdir, rm } from "node:fs/promises"
+import { cp, mkdir, readdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { Config } from "../../config"
 import { createConcurrencyGate } from "../../lib/concurrency-gate"
@@ -15,8 +15,11 @@ import {
   listSandboxWorkspacesForCleanup,
   upsertSandboxWorkspace,
 } from "../../repos/sandbox-workspace-repo"
-import type { BusinessSession, SandboxBackend, SandboxWorkspace } from "../../types"
+import type { BusinessSession, SandboxWorkspace } from "../../types"
+import { runColdStartWorkspacePrepare } from "../../worker-agent/sandbox/docker-sandbox-cold-start"
+import { removeColdRuntimeHomesByWorkspace } from "../../worker-agent/sandbox/docker-sandbox-runtime-home"
 import { auditService, sessionService } from "../store/store-singleton"
+import { readSandboxBackend } from "./sandbox-backend"
 
 const sandboxWorkspacePreparations = new Map<string, Promise<SandboxWorkspace>>()
 const runWithSandboxWorkspaceGate = createConcurrencyGate(Config.sandboxWorkspacePrepareConcurrency)
@@ -42,18 +45,24 @@ export async function ensureSandboxWorkspace(session: BusinessSession) {
 }
 
 async function prepareSandboxWorkspace(session: BusinessSession) {
-  return runWithSandboxWorkspaceGate(async () => {
+  return runWithSandboxWorkspaceGate(async () => runColdStartWorkspacePrepare(async () => {
     const existing = await findSandboxWorkspaceByWorkspaceId(session.workspaceId)
     if (existing && existing.status !== "closed") return existing
     const sandboxPath = path.join(Config.workspaceRootDir, ".sandbox", session.workspaceId)
     await rm(sandboxPath, { recursive: true, force: true }).catch(() => {})
     await mkdir(path.dirname(sandboxPath), { recursive: true })
-    await cp(session.workspacePath, sandboxPath, {
-      recursive: true,
-      force: true,
-      // 中文/English: never nest the managed sandbox work layer into itself.
-      filter: (source) => !isSandboxWorkLayerPath(source),
-    })
+    if (await isDirectoryEmpty(session.workspacePath)) {
+      // 中文/English: a brand-new workspace can skip the first full copy; the
+      // managed sandbox root only needs to exist before the first write.
+      await mkdir(sandboxPath, { recursive: true })
+    } else {
+      await cp(session.workspacePath, sandboxPath, {
+        recursive: true,
+        force: true,
+        // 中文/English: never nest the managed sandbox work layer into itself.
+        filter: (source) => !isSandboxWorkLayerPath(source),
+      })
+    }
     const now = new Date().toISOString()
     const workspace: SandboxWorkspace = {
       // 中文/English: one workspace owns one sandbox copy; sessions only reference it.
@@ -104,7 +113,7 @@ async function prepareSandboxWorkspace(session: BusinessSession) {
       },
     })
     return workspace
-  })
+  }))
 }
 
 export async function markSandboxWorkspaceClosing(sessionId: string) {
@@ -395,6 +404,7 @@ async function cleanupSandboxWorkspaceRecord(workspace: SandboxWorkspace) {
   // 中文/English: cleanup touches only a workspace sandbox that is already closed
   // and no longer referenced by any resumable session.
   await rm(workspace.sandboxPath, { recursive: true, force: true }).catch(() => {})
+  await removeColdRuntimeHomesByWorkspace(workspace.workspaceId)
   await deleteSandboxInstanceByWorkspaceId(workspace.workspaceId)
   await deleteSandboxWorkspaceByWorkspaceId(workspace.workspaceId)
 }
@@ -421,9 +431,7 @@ function isSandboxWorkLayerPath(source: string) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
-function readSandboxBackend(): SandboxBackend {
-  if (Config.sandboxBackend === "gvisor") return "gvisor"
-  if (Config.sandboxBackend === "kata") return "kata"
-  if (Config.sandboxBackend === "docker") return "docker"
-  return "local-process"
+async function isDirectoryEmpty(targetDir: string) {
+  const entries = await Bun.file(targetDir).exists() ? await readdir(targetDir) : []
+  return entries.length === 0
 }

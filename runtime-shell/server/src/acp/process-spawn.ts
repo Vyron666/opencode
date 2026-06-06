@@ -6,6 +6,8 @@ import { createLogger } from "../log"
 import type { RuntimeClientOptions } from "./types"
 
 const log = createLogger("acp")
+const DEFAULT_ACP_CONFIG_PATH = path.resolve(import.meta.dir, "../../../config/opencode.example.jsonc")
+const DEFAULT_ACP_MODELS_PATH = path.resolve(import.meta.dir, "../../../config/models-api.runtime.json")
 
 export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWithoutNullStreams {
   ensureLocalOpencodeDbMarker()
@@ -21,6 +23,15 @@ export function spawnAcpProcess(options: RuntimeClientOptions): ChildProcessWith
     // 中文/English: runtime-shell now defaults to ACP-next so future upstream ACP
     // updates land on the primary path first; allow explicit env override.
     OPENCODE_ACP_NEXT: process.env.OPENCODE_ACP_NEXT || "0",
+    // 中文/English: keep a stable base config for builtin provider defaults, but
+    // stop auto-scanning the shared repo `.opencode` directory for user-specific provider state.
+    OPENCODE_CONFIG: process.env.OPENCODE_CONFIG || DEFAULT_ACP_CONFIG_PATH,
+    // 中文/English: runtime-shell injects session-scoped config explicitly and
+    // must not silently merge the repo root `.opencode` provider settings into every user session.
+    OPENCODE_DISABLE_PROJECT_CONFIG: process.env.OPENCODE_DISABLE_PROJECT_CONFIG || "1",
+    // 中文/English: runtime-shell keeps a slim built-in model catalog on the ACP
+    // cold path; user-defined providers/models still arrive through configContent.
+    OPENCODE_MODELS_PATH: process.env.OPENCODE_MODELS_PATH || DEFAULT_ACP_MODELS_PATH,
     // 中文/English: 必须在子进程启动前声明 ACP 身份，避免误走 cli 分支。
     OPENCODE_CLIENT: "acp",
     ...(options.configContent ? { OPENCODE_CONFIG_CONTENT: options.configContent } : {}),

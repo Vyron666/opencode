@@ -2,9 +2,15 @@ import { useMemo, useState } from 'react'
 import { ToolData } from './ToolData'
 
 export function ToolBlock({ block }) {
-  const statusColor = block.status === 'completed' ? '#059669' : block.status === 'failed' ? '#dc2626' : '#2563eb'
   const [expanded, setExpanded] = useState(block.status === 'pending' || block.status === 'failed')
   const hasDetails = Boolean(block.input || block.output || (block.content?.length > 0) || (block.locations?.length > 0))
+  const statusMap = {
+    completed: { label: '已完成', color: '#0f9f6e', background: '#eef9f4' },
+    failed: { label: '失败', color: '#cf4040', background: '#fff3f3' },
+    pending: { label: '进行中', color: '#3566df', background: '#eef3ff' },
+  }
+  const statusMeta = statusMap[block.status] || statusMap.pending
+
   const summary = useMemo(() => {
     if (block.locations?.length) return `涉及 ${block.locations.length} 个位置`
     if (block.output) return '已返回工具输出'
@@ -14,34 +20,25 @@ export function ToolBlock({ block }) {
   }, [block.content, block.input, block.locations, block.output])
 
   return (
-    <div
-      className="grid min-w-0 w-full max-w-[700px] gap-2.5 rounded-[20px] border px-4 py-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.07)]"
-      style={{
-        background: block.status === 'failed' ? 'rgba(220,38,38,0.05)' : '#ffffff',
-        borderColor: block.status === 'failed' ? 'rgba(220,38,38,0.16)' : 'var(--line)',
-      }}
-    >
+    <div className="grid w-full max-w-[760px] gap-2.5 rounded-[18px] border border-[#dce6f8] bg-[#f7f9fe] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: statusColor }} />
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest" style={{ color: statusColor }}>
-          {block.status}
+        <span className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ color: statusMeta.color, background: statusMeta.background }}>
+          {statusMeta.label}
         </span>
-        {block.kind ? <span className="min-w-0 truncate text-[10px] uppercase text-[var(--text-muted)]">{block.kind}</span> : null}
+        {block.kind ? <span className="truncate text-[11px] text-[#8a96ab]">{block.kind}</span> : null}
         {hasDetails ? (
           <button
             type="button"
             onClick={() => setExpanded((current) => !current)}
-            className="ml-auto rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-2.5 py-1 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-strong)]"
-            aria-label={expanded ? '收起工具结果' : '展开工具结果'}
+            className="ml-auto rounded-full border border-[#dbe5f6] bg-white px-2.5 py-1 text-[11px] text-[#61718d] transition-colors hover:bg-[#f6f8fe]"
           >
             {expanded ? '收起' : '展开'}
           </button>
         ) : null}
       </div>
 
-      <div className="min-w-0 break-words text-[13px] font-semibold text-[var(--text-dim)] line-clamp-2">{block.title}</div>
-
-      {!expanded && summary ? <div className="truncate text-[11px] text-[var(--text-muted)]">{summary}</div> : null}
+      <div className="min-w-0 break-words text-[14px] font-semibold text-[#24324a]">{block.title}</div>
+      {!expanded && summary ? <div className="truncate text-[12px] text-[#7c8aa5]">{summary}</div> : null}
 
       {expanded ? (
         <div className="grid max-h-[400px] gap-2.5 overflow-y-auto pr-1">
@@ -50,7 +47,7 @@ export function ToolBlock({ block }) {
               {block.locations.map((location, index) => (
                 <span
                   key={`${location.path}-${index}`}
-                  className="rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-2.5 py-1 text-[10px] text-[var(--text-muted)]"
+                  className="rounded-full border border-[#dbe5f6] bg-white px-2.5 py-1 text-[10px] text-[#7c8aa5]"
                 >
                   {location.path}
                   {location.line ? `:${location.line}` : ''}

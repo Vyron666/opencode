@@ -5,6 +5,7 @@ FROM oven/bun:1.3.14
 WORKDIR /workspace
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 
 RUN apt-get update \
   -o Acquire::Retries=3 \

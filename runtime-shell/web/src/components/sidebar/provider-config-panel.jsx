@@ -73,7 +73,7 @@ export function ProviderConfigPanel() {
       if (!preferred) return
       setProviderId(preferred.providerId || 'deepseek')
       setProviderName(preferred.name || preferred.providerId || 'Provider')
-      setProviderApi(preferred.api || '@ai-sdk/openai-compatible')
+      setProviderApi(preferred.api || preferred.npm || '@ai-sdk/openai-compatible')
       setProviderNpm(preferred.npm || '')
       setBaseURL(preferred.baseURL || '')
       setApiKey('')
@@ -235,11 +235,11 @@ export function ProviderConfigPanel() {
         <Field label="Provider 名称">
           <input value={providerName} onChange={(event) => setProviderName(event.target.value)} placeholder="例如 DeepSeek" className={inputClassName} />
         </Field>
-        <Field label="Provider API">
+        <Field label="Provider 适配器">
           <input value={providerApi} onChange={(event) => setProviderApi(event.target.value)} placeholder="例如 @ai-sdk/openai-compatible" className={inputClassName} />
         </Field>
-        <Field label="Provider NPM（可选）">
-          <input value={providerNpm} onChange={(event) => setProviderNpm(event.target.value)} placeholder="例如 @ai-sdk/openai-compatible" className={inputClassName} />
+        <Field label="自定义 NPM 包（可选）">
+          <input value={providerNpm} onChange={(event) => setProviderNpm(event.target.value)} placeholder="留空则使用上面的 Provider 适配器" className={inputClassName} />
         </Field>
         <Field label="Base URL">
           <input value={baseURL} onChange={(event) => setBaseURL(event.target.value)} placeholder="例如 https://api.deepseek.com/v1" className={inputClassName} />
@@ -279,7 +279,7 @@ export function ProviderConfigPanel() {
               <input
                 value={model.api}
                 onChange={(event) => setModels((current) => current.map((item, currentIndex) => (currentIndex === index ? { ...item, api: event.target.value } : item)))}
-                placeholder="Provider 模型 API 名称（可选）"
+                placeholder="实际模型 ID（可选，例如 deepseek-v4-flash）"
                 className={inputClassName}
               />
               <button
