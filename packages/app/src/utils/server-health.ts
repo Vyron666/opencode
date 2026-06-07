@@ -13,7 +13,7 @@ interface CheckServerHealthOptions {
   retryDelayMs?: number
 }
 
-const defaultTimeoutMs = 30_000
+const defaultTimeoutMs = 3000
 const defaultRetryCount = 2
 const defaultRetryDelayMs = 100
 const cacheMs = 750
@@ -132,10 +132,7 @@ export const useServerHealth = (servers: Accessor<ServerConnection.Any[]>, enabl
       const results: Record<string, ServerHealth> = {}
       await Promise.all(
         list.map(async (conn) => {
-          const key = ServerConnection.key(conn)
-          const result = await checkServerHealth(conn.http)
-          results[key] = result
-          if (!dead) setStatus(key, result)
+          results[ServerConnection.key(conn)] = await checkServerHealth(conn.http)
         }),
       )
       if (dead) return

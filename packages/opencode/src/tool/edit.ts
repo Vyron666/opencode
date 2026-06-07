@@ -9,14 +9,14 @@ import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
-import { FileSystem } from "@opencode-ai/core/filesystem"
-import { Watcher } from "@opencode-ai/core/filesystem/watcher"
-import { EventV2Bridge } from "@/event-v2-bridge"
+import { File } from "../file"
+import { FileWatcher } from "../file/watcher"
+import { Bus } from "../bus"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import * as Bom from "@/util/bom"
 
 function normalizeLineEndings(text: string): string {
@@ -35,7 +35,7 @@ function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
 const locks = new Map<string, Semaphore.Semaphore>()
 
 function lock(filePath: string) {
-  const resolvedFilePath = FSUtil.resolve(filePath)
+  const resolvedFilePath = AppFileSystem.resolve(filePath)
   const hit = locks.get(resolvedFilePath)
   if (hit) return hit
 
@@ -59,9 +59,9 @@ export const EditTool = Tool.define(
   "edit",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
-    const afs = yield* FSUtil.Service
+    const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
-    const events = yield* EventV2Bridge.Service
+    const bus = yield* Bus.Service
 
     return {
       description: DESCRIPTION,
@@ -89,14 +89,10 @@ export const EditTool = Tool.define(
             Effect.gen(function* () {
               if (params.oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
-                if (existed) {
-                  throw new Error(
-                    "oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement.",
-                  )
-                }
+                const source = existed ? yield* Bom.readFile(afs, filePath) : { bom: false, text: "" }
                 const next = Bom.split(params.newString)
-                const desiredBom = next.bom
-                contentOld = ""
+                const desiredBom = source.bom || next.bom
+                contentOld = source.text
                 contentNew = next.text
                 diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
                 yield* ctx.ask({
@@ -112,10 +108,10 @@ export const EditTool = Tool.define(
                 if (yield* format.file(filePath)) {
                   contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
                 }
-                yield* events.publish(FileSystem.Event.Edited, { file: filePath })
-                yield* events.publish(Watcher.Event.Updated, {
+                yield* bus.publish(File.Event.Edited, { file: filePath })
+                yield* bus.publish(FileWatcher.Event.Updated, {
                   file: filePath,
-                  event: "add",
+                  event: existed ? "change" : "add",
                 })
                 return
               }
@@ -156,8 +152,8 @@ export const EditTool = Tool.define(
               if (yield* format.file(filePath)) {
                 contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
               }
-              yield* events.publish(FileSystem.Event.Edited, { file: filePath })
-              yield* events.publish(Watcher.Event.Updated, {
+              yield* bus.publish(File.Event.Edited, { file: filePath })
+              yield* bus.publish(FileWatcher.Event.Updated, {
                 file: filePath,
                 event: "change",
               })
@@ -196,7 +192,7 @@ export const EditTool = Tool.define(
           let output = "Edit applied successfully."
           yield* lsp.touchFile(filePath, "document")
           const diagnostics = yield* lsp.diagnostics()
-          const normalizedFilePath = FSUtil.normalizePath(filePath)
+          const normalizedFilePath = AppFileSystem.normalizePath(filePath)
           const block = LSP.Diagnostic.report(filePath, diagnostics[normalizedFilePath] ?? [])
           if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
 
@@ -217,8 +213,8 @@ export const EditTool = Tool.define(
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
 
 // Similarity thresholds for block anchor fallback matching
-const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.65
-const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.65
+const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.0
+const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.3
 
 /**
  * Levenshtein distance algorithm implementation
@@ -300,7 +296,6 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const firstLineSearch = searchLines[0].trim()
   const lastLineSearch = searchLines[searchLines.length - 1].trim()
   const searchBlockSize = searchLines.length
-  const maxLineDelta = Math.max(1, Math.floor(searchBlockSize * 0.25))
 
   // Collect all candidate positions where both anchors match
   const candidates: Array<{ startLine: number; endLine: number }> = []
@@ -312,10 +307,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     // Look for the matching last line after this first line
     for (let j = i + 2; j < originalLines.length; j++) {
       if (originalLines[j].trim() === lastLineSearch) {
-        const actualBlockSize = j - i + 1
-        if (Math.abs(actualBlockSize - searchBlockSize) <= maxLineDelta) {
-          candidates.push({ startLine: i, endLine: j })
-        }
+        candidates.push({ startLine: i, endLine: j })
         break // Only match the first occurrence of the last line
       }
     }
@@ -332,7 +324,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     const actualBlockSize = endLine - startLine + 1
 
     let similarity = 0
-    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
+    let linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
 
     if (linesToCheck > 0) {
       for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
@@ -381,7 +373,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     const actualBlockSize = endLine - startLine + 1
 
     let similarity = 0
-    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
+    let linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
 
     if (linesToCheck > 0) {
       for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
@@ -683,11 +675,6 @@ export function replace(content: string, oldString: string, newString: string, r
   if (oldString === newString) {
     throw new Error("No changes to apply: oldString and newString are identical.")
   }
-  if (oldString === "") {
-    throw new Error(
-      "oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement.",
-    )
-  }
 
   let notFound = true
 
@@ -706,11 +693,6 @@ export function replace(content: string, oldString: string, newString: string, r
       const index = content.indexOf(search)
       if (index === -1) continue
       notFound = false
-      if (isDisproportionateMatch(search, oldString)) {
-        throw new Error(
-          "Refusing replacement because the matched span is much larger than oldString. Re-read the file and provide the full exact oldString for the intended replacement.",
-        )
-      }
       if (replaceAll) {
         return content.replaceAll(search, newString)
       }
@@ -726,12 +708,4 @@ export function replace(content: string, oldString: string, newString: string, r
     )
   }
   throw new Error("Found multiple matches for oldString. Provide more surrounding context to make the match unique.")
-}
-
-function isDisproportionateMatch(search: string, oldString: string) {
-  const oldLines = oldString.split("\n").length
-  const searchLines = search.split("\n").length
-  if (searchLines >= Math.max(oldLines + 3, oldLines * 2)) return true
-  if (oldLines === 1) return false
-  return search.trim().length > Math.max(oldString.trim().length + 500, oldString.trim().length * 4)
 }

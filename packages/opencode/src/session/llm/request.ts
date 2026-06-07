@@ -1,6 +1,4 @@
-import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import type { Auth } from "@/auth"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"
@@ -18,12 +16,12 @@ import { mergeDeep } from "remeda"
 const USER_AGENT = `opencode/${InstallationVersion}`
 
 type PrepareInput = {
-  readonly user: SessionV1.User
+  readonly user: MessageV2.User
   readonly sessionID: string
   readonly parentSessionID?: string
   readonly model: Provider.Model
   readonly agent: Agent.Info
-  readonly permission?: PermissionV1.Ruleset
+  readonly permission?: Permission.Ruleset
   readonly system: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
@@ -89,13 +87,6 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         providerOptions: input.provider.options,
       })
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
-  if (
-    input.model.api.npm === "@ai-sdk/azure" &&
-    (input.provider.options.useCompletionUrls || input.model.options.useCompletionUrls || options.useCompletionUrls)
-  ) {
-    delete options.reasoningSummary
-    delete options.include
-  }
   if (isOpenaiOauth) options.instructions = system.join("\n")
 
   const messages =

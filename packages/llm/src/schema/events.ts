@@ -1,8 +1,7 @@
 import { Schema } from "effect"
 import { ContentBlockID, FinishReason, ProtocolID, ProviderMetadata, RouteID, ToolCallID } from "./ids"
 import { ModelSchema } from "./options"
-import { ToolOutput, ToolResultValue } from "./messages"
-import { ProviderFailureClassification } from "./errors"
+import { ToolResultValue } from "./messages"
 
 /**
  * Token usage reported by an LLM provider.
@@ -164,7 +163,6 @@ export const ToolResult = Schema.Struct({
   id: ToolCallID,
   name: Schema.String,
   result: ToolResultValue,
-  output: Schema.optional(ToolOutput),
   providerExecuted: Schema.optional(Schema.Boolean),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.ToolResult" })
@@ -200,7 +198,6 @@ export type Finish = Schema.Schema.Type<typeof Finish>
 export const ProviderErrorEvent = Schema.Struct({
   type: Schema.tag("provider-error"),
   message: Schema.String,
-  classification: Schema.optional(ProviderFailureClassification),
   retryable: Schema.optional(Schema.Boolean),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.ProviderError" })
@@ -255,12 +252,7 @@ export const LLMEvent = Object.assign(llmEventTagged, {
     ToolInputDelta.make({ ...input, id: toolCallID(input.id) }),
   toolInputEnd: (input: WithID<ToolInputEnd, ToolCallID>) => ToolInputEnd.make({ ...input, id: toolCallID(input.id) }),
   toolCall: (input: WithID<ToolCall, ToolCallID>) => ToolCall.make({ ...input, id: toolCallID(input.id) }),
-  toolResult: (input: WithID<ToolResult, ToolCallID>) =>
-    ToolResult.make({
-      ...input,
-      id: toolCallID(input.id),
-      output: input.output === undefined ? undefined : ToolOutput.make(input.output.structured, input.output.content),
-    }),
+  toolResult: (input: WithID<ToolResult, ToolCallID>) => ToolResult.make({ ...input, id: toolCallID(input.id) }),
   toolError: (input: WithID<ToolError, ToolCallID>) => ToolError.make({ ...input, id: toolCallID(input.id) }),
   stepFinish: (input: WithUsage<StepFinish>) =>
     StepFinish.make({

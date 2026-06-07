@@ -34,16 +34,18 @@ export const GitLabPlugin = PluginV2.define({
         if (evt.model.providerID !== ProviderV2.ID.gitlab) return
         const featureFlags =
           typeof evt.options.featureFlags === "object" && evt.options.featureFlags ? evt.options.featureFlags : {}
-        if (evt.model.api.id.startsWith("duo-workflow-")) {
+        if (evt.model.apiID.startsWith("duo-workflow-")) {
           const gitlab = yield* Effect.promise(() => import("gitlab-ai-provider")).pipe(Effect.orDie)
           const workflowRef =
-            typeof evt.model.request.body.workflowRef === "string" ? evt.model.request.body.workflowRef : undefined
+            typeof evt.model.options.aisdk.request.workflowRef === "string"
+              ? evt.model.options.aisdk.request.workflowRef
+              : undefined
           const workflowDefinition =
-            typeof evt.model.request.body.workflowDefinition === "string"
-              ? evt.model.request.body.workflowDefinition
+            typeof evt.model.options.aisdk.request.workflowDefinition === "string"
+              ? evt.model.options.aisdk.request.workflowDefinition
               : undefined
           const language = evt.sdk.workflowChat(
-            gitlab.isWorkflowModel(evt.model.api.id) ? evt.model.api.id : "duo-workflow",
+            gitlab.isWorkflowModel(evt.model.apiID) ? evt.model.apiID : "duo-workflow",
             {
               featureFlags,
               workflowDefinition,
@@ -53,7 +55,7 @@ export const GitLabPlugin = PluginV2.define({
           evt.language = language
           return
         }
-        evt.language = evt.sdk.agenticChat(evt.model.api.id, {
+        evt.language = evt.sdk.agenticChat(evt.model.apiID, {
           aiGatewayHeaders: evt.options.aiGatewayHeaders,
           featureFlags,
         })

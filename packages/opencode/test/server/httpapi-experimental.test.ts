@@ -1,36 +1,41 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Layer } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { eq } from "drizzle-orm"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
+import { Server } from "../../src/server/server"
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { Session } from "@/session/session"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Database } from "@opencode-ai/core/database/database"
-import { AccountV2 } from "@opencode-ai/core/account"
-import { AccountTable } from "@opencode-ai/core/account/sql"
+import { SessionTable } from "@/session/session.sql"
+import { Database } from "@/storage/db"
 import * as Log from "@opencode-ai/core/util/log"
 import { Worktree } from "../../src/worktree"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 void Log.init({ print: false })
 
-const it = testEffect(Layer.mergeAll(Session.defaultLayer, Database.defaultLayer, httpApiLayer))
+const it = testEffect(Layer.mergeAll(Session.defaultLayer))
 const testWorktreeMutations = process.platform === "win32" ? it.instance.skip : it.instance
 
+function app() {
+  return Server.Default().app
+}
+
 function request(path: string, directory: string, init: RequestInit = {}) {
-  return requestInDirectory(path, directory, init)
+  return Effect.promise(() => {
+    const headers = new Headers(init.headers)
+    headers.set("x-opencode-directory", directory)
+    return Promise.resolve(app().request(path, { ...init, headers }))
+  })
 }
 
 function createSession(input?: Session.CreateInput) {
   return Session.use.create(input)
 }
 
-function json<T>(response: HttpClientResponse.HttpClientResponse) {
-  return response.json.pipe(Effect.map((value) => value as T))
+function json<T>(response: Response) {
+  return Effect.promise(() => response.json() as Promise<T>)
 }
 
 function waitReady(input: { directory?: string; name?: string }) {
@@ -57,50 +62,38 @@ function waitReady(input: { directory?: string; name?: string }) {
 
 function insertAccount() {
   return Effect.acquireRelease(
-    Effect.gen(function* () {
-      const { db } = yield* Database.Service
-      yield* db
-        .insert(AccountTable)
-        .values({
-          id: AccountV2.ID.make("account-test"),
-          email: "test@example.com",
-          url: "https://console.example.com",
-          access_token: AccountV2.AccessToken.make("access"),
-          refresh_token: AccountV2.RefreshToken.make("refresh"),
-          time_created: Date.now(),
-          time_updated: Date.now(),
-        })
-        .run()
-        .pipe(Effect.orDie)
+    Effect.sync(() => {
+      Database.Client()
+        .$client.prepare(
+          "INSERT INTO account (id, email, url, access_token, refresh_token, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "account-test",
+          "test@example.com",
+          "https://console.example.com",
+          "access",
+          "refresh",
+          Date.now(),
+          Date.now(),
+        )
       return "account-test"
     }),
     (id) =>
-      Database.Service.use(({ db }) =>
-        db
-          .delete(AccountTable)
-          .where(eq(AccountTable.id, AccountV2.ID.make(id)))
-          .run()
-          .pipe(Effect.orDie),
-      ),
+      Effect.sync(() => {
+        Database.Client().$client.prepare("DELETE FROM account WHERE id = ?").run(id)
+      }),
   )
 }
 
 function setSessionUpdated(session: Session.Info, updated: number) {
-  return Effect.gen(function* () {
-    const { db } = yield* Database.Service
-    yield* db
-      .update(SessionTable)
-      .set({ time_updated: updated })
-      .where(eq(SessionTable.id, session.id))
-      .run()
-      .pipe(Effect.orDie)
+  return Effect.sync(() => {
+    Database.use((db) =>
+      db.update(SessionTable).set({ time_updated: updated }).where(eq(SessionTable.id, session.id)).run(),
+    )
   })
 }
 
-function withCreatedWorktree(
-  directory: string,
-  use: (info: Worktree.Info) => Effect.Effect<void, unknown, HttpClient.HttpClient>,
-) {
+function withCreatedWorktree(directory: string, use: (info: Worktree.Info) => Effect.Effect<void, unknown, never>) {
   const name = "api-test"
   const headers = { "content-type": "application/json" }
   return Effect.acquireUseRelease(
@@ -249,7 +242,7 @@ describe("experimental HttpApi", () => {
           tmp.directory,
         )
         expect(page.status).toBe(200)
-        expect(page.headers["x-next-cursor"]).toBeTruthy()
+        expect(page.headers.get("x-next-cursor")).toBeTruthy()
 
         const body = yield* json<Session.GlobalInfo[]>(page)
         expect(body.map((session) => session.id)).toEqual([second.id])

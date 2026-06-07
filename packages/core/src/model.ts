@@ -1,7 +1,6 @@
 import { DateTime, Schema } from "effect"
 import { DateTimeUtcFromMillis } from "effect/Schema"
 import { ProviderV2 } from "./provider"
-import { ModelRequest } from "./model-request"
 
 export const ID = Schema.String.pipe(Schema.brand("ModelV2.ID"))
 export type ID = typeof ID.Type
@@ -37,36 +36,25 @@ export const Cost = Schema.Struct({
 export const Ref = Schema.Struct({
   id: ID,
   providerID: ProviderV2.ID,
-  variant: VariantID.pipe(Schema.optional),
+  variant: VariantID,
 })
 export type Ref = typeof Ref.Type
 
-export const Api = Schema.Union([
-  Schema.Struct({
-    id: ID,
-    ...ProviderV2.AISDK.fields,
-  }),
-  Schema.Struct({
-    id: ID,
-    ...ProviderV2.Native.fields,
-  }),
-]).pipe(Schema.toTaggedUnion("type"))
-export type Api = typeof Api.Type
-
 export class Info extends Schema.Class<Info>("ModelV2.Info")({
   id: ID,
+  apiID: ID,
   providerID: ProviderV2.ID,
   family: Family.pipe(Schema.optional),
   name: Schema.String,
-  api: Api,
+  endpoint: ProviderV2.Endpoint,
   capabilities: Capabilities,
-  request: Schema.Struct({
-    ...ModelRequest.Request.fields,
+  options: Schema.Struct({
+    ...ProviderV2.Options.fields,
     variant: Schema.String.pipe(Schema.optional),
   }),
   variants: Schema.Struct({
     id: VariantID,
-    ...ModelRequest.Request.fields,
+    ...ProviderV2.Options.fields,
   }).pipe(Schema.Array),
   time: Schema.Struct({
     released: DateTimeUtcFromMillis,
@@ -80,26 +68,27 @@ export class Info extends Schema.Class<Info>("ModelV2.Info")({
     output: Schema.Int,
   }),
 }) {
-  static empty(providerID: ProviderV2.ID, modelID: ID): Info {
+  static empty(providerID: ProviderV2.ID, modelID: ID) {
     return new Info({
       id: modelID,
+      apiID: modelID,
       providerID,
       name: modelID,
-      api: {
-        id: modelID,
-        type: "native",
-        settings: {},
+      endpoint: {
+        type: "unknown",
       },
       capabilities: {
         tools: false,
         input: [],
         output: [],
       },
-      request: {
+      options: {
         headers: {},
         body: {},
-        generation: {},
-        options: {},
+        aisdk: {
+          provider: {},
+          request: {},
+        },
       },
       variants: [],
       time: {

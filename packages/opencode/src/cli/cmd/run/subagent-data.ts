@@ -83,7 +83,6 @@ export function sameSubagentTab(a: FooterSubagentTab | undefined, b: FooterSubag
     a.label === b.label &&
     a.description === b.description &&
     a.status === b.status &&
-    a.background === b.background &&
     a.title === b.title &&
     a.toolCalls === b.toolCalls &&
     a.lastUpdatedAt === b.lastUpdatedAt
@@ -304,7 +303,6 @@ function taskTab(part: ToolPart, sessionID: string): FooterSubagentTab {
     label,
     description,
     status,
-    background: metadata(part, "background") === true,
     title: stateTitle(part),
     toolCalls: num(metadata(part, "toolcalls")) ?? num(metadata(part, "toolCalls")) ?? num(metadata(part, "calls")),
     lastUpdatedAt: stateUpdatedAt(part),

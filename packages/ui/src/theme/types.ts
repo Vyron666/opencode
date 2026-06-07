@@ -34,7 +34,6 @@ export interface ThemePaletteColors {
 
 type ThemeVariantBase = {
   overrides?: Record<string, ColorValue>
-  v2Overrides?: Record<string, V2ColorValue>
 }
 
 export type ThemeVariant =
@@ -68,8 +67,4 @@ export type CssVarRef = `var(--${string})`
 
 export type ColorValue = HexColor | CssVarRef
 
-export type V2ColorValue = HexColor | CssVarRef | string
-
 export type ResolvedTheme = Record<ThemeToken, ColorValue>
-
-export type ResolvedV2Theme = Record<string, V2ColorValue>

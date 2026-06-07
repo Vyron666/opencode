@@ -46,9 +46,7 @@ describe("OpenAIPlugin", () => {
       const result = yield* plugin.trigger(
         "aisdk.language",
         {
-          model: model("openai", "alias", {
-            api: { id: ModelV2.ID.make("gpt-5"), type: "aisdk", package: "test-provider" },
-          }),
+          model: model("openai", "alias", { apiID: ModelV2.ID.make("gpt-5") }),
           sdk: fakeSelectorSdk(calls),
           options: {},
         },
@@ -79,11 +77,11 @@ describe("OpenAIPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(OpenAIPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
-        const item = provider("openai", { api: { type: "aisdk", package: "@ai-sdk/openai" } })
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
+        const item = provider("openai", { endpoint: { type: "aisdk", package: "@ai-sdk/openai" } })
         catalog.provider.update(item.id, (draft) => {
-          draft.api = item.api
+          draft.endpoint = item.endpoint
         })
         catalog.model.update(item.id, ModelV2.ID.make("gpt-5"), () => {})
         catalog.model.update(item.id, ModelV2.ID.make("gpt-5-chat-latest"), () => {})
@@ -98,8 +96,8 @@ describe("OpenAIPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(OpenAIPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("custom-openai")
         catalog.provider.update(item.id, () => {})
         catalog.model.update(item.id, ModelV2.ID.make("gpt-5-chat-latest"), () => {})

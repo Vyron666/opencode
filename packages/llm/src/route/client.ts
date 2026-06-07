@@ -10,6 +10,8 @@ import { WebSocketExecutor } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
 import * as ProviderShared from "../protocols/shared"
+import * as ToolRuntime from "../tool-runtime"
+import type { Tools } from "../tool"
 import type { LLMError, LLMEvent, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
 import {
   GenerationOptions,
@@ -156,10 +158,12 @@ export interface Interface {
 
 export interface StreamMethod {
   (request: LLMRequest): Stream.Stream<LLMEvent, LLMError>
+  <T extends Tools>(options: ToolRuntime.RunOptions<T>): Stream.Stream<LLMEvent, LLMError>
 }
 
 export interface GenerateMethod {
   (request: LLMRequest): Effect.Effect<LLMResponse, LLMError>
+  <T extends Tools>(options: ToolRuntime.RunOptions<T>): Effect.Effect<LLMResponse, LLMError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/LLMClient") {}
@@ -372,10 +376,19 @@ const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest) =
     }),
   )
 
+const isToolRunOptions = (input: LLMRequest | ToolRuntime.RunOptions<Tools>): input is ToolRuntime.RunOptions<Tools> =>
+  "request" in input && "tools" in input
+
+const streamWith = (streamRequest: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>): StreamMethod =>
+  ((input: LLMRequest | ToolRuntime.RunOptions<Tools>) => {
+    if (isToolRunOptions(input)) return ToolRuntime.stream({ ...input, stream: streamRequest })
+    return streamRequest(input)
+  }) as StreamMethod
+
 const generateWith = (stream: Interface["stream"]) =>
-  Effect.fn("LLM.generate")(function* (request: LLMRequest) {
+  Effect.fn("LLM.generate")(function* (input: LLMRequest | ToolRuntime.RunOptions<Tools>) {
     return new LLMResponse(
-      yield* stream(request).pipe(
+      yield* stream(input as never).pipe(
         Stream.runFold(
           () => ({ events: [] as LLMEvent[], usage: undefined as LLMResponse["usage"] }),
           (acc, event) => {
@@ -391,18 +404,22 @@ const generateWith = (stream: Interface["stream"]) =>
 export const prepare = <Body = unknown>(request: LLMRequest) =>
   prepareWith(request) as Effect.Effect<PreparedRequestOf<Body>, LLMError>
 
-export function stream(request: LLMRequest): Stream.Stream<LLMEvent, LLMError> {
+export function stream(request: LLMRequest): Stream.Stream<LLMEvent, LLMError>
+export function stream<T extends Tools>(options: ToolRuntime.RunOptions<T>): Stream.Stream<LLMEvent, LLMError>
+export function stream(input: LLMRequest | ToolRuntime.RunOptions<Tools>) {
   return Stream.unwrap(
     Effect.gen(function* () {
-      return (yield* Service).stream(request)
+      return (yield* Service).stream(input as never)
     }),
-  ) as Stream.Stream<LLMEvent, LLMError>
+  )
 }
 
-export function generate(request: LLMRequest): Effect.Effect<LLMResponse, LLMError> {
+export function generate(request: LLMRequest): Effect.Effect<LLMResponse, LLMError>
+export function generate<T extends Tools>(options: ToolRuntime.RunOptions<T>): Effect.Effect<LLMResponse, LLMError>
+export function generate(input: LLMRequest | ToolRuntime.RunOptions<Tools>) {
   return Effect.gen(function* () {
-    return yield* (yield* Service).generate(request)
-  }) as Effect.Effect<LLMResponse, LLMError>
+    return yield* (yield* Service).generate(input as never)
+  })
 }
 
 export const streamRequest = (request: LLMRequest) =>
@@ -415,10 +432,12 @@ export const streamRequest = (request: LLMRequest) =>
 export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const stream = streamRequestWith({
-      http: yield* RequestExecutor.Service,
-      webSocket: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketExecutor.Service)),
-    })
+    const stream = streamWith(
+      streamRequestWith({
+        http: yield* RequestExecutor.Service,
+        webSocket: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketExecutor.Service)),
+      }),
+    )
     return Service.of({ prepare: prepareWith as Interface["prepare"], stream, generate: generateWith(stream) })
   }),
 )
@@ -431,4 +450,5 @@ export const LLMClient = {
   prepare,
   stream,
   generate,
+  stepCountIs: ToolRuntime.stepCountIs,
 } as const

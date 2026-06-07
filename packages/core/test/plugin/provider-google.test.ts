@@ -1,16 +1,13 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AISDK } from "@opencode-ai/core/aisdk"
-import { EventV2 } from "@opencode-ai/core/event"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { GooglePlugin } from "@opencode-ai/core/plugin/provider/google"
 import { testEffect } from "../lib/effect"
 import { it, model } from "./provider-helper"
 
-const itWithAISDK = testEffect(
-  AISDK.layer.pipe(Layer.provideMerge(PluginV2.locationLayer.pipe(Layer.provide(EventV2.defaultLayer)))),
-)
+const itWithAISDK = testEffect(AISDK.layer.pipe(Layer.provideMerge(PluginV2.defaultLayer)))
 
 describe("GooglePlugin", () => {
   it.effect("creates a Google Generative AI SDK for @ai-sdk/google using the provider ID as SDK name", () =>
@@ -51,14 +48,18 @@ describe("GooglePlugin", () => {
       yield* plugin.add(GooglePlugin)
       const language = yield* aisdk.language(
         model("custom-google", "alias", {
-          api: {
-            id: ModelV2.ID.make("gemini-api"),
+          apiID: ModelV2.ID.make("gemini-api"),
+          endpoint: {
             type: "aisdk",
             package: "@ai-sdk/google",
           },
-          request: {
+          options: {
             headers: {},
-            body: { apiKey: "test" },
+            body: {},
+            aisdk: {
+              provider: { apiKey: "test" },
+              request: {},
+            },
           },
         }),
       )

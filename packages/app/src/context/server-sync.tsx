@@ -1,11 +1,11 @@
 import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, Todo } from "@opencode-ai/sdk/v2/client"
-import { showToast } from "@/utils/toast"
+import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { batch, getOwner, onCleanup, onMount, untrack } from "solid-js"
+import { batch, createContext, getOwner, onCleanup, onMount, type ParentProps, untrack, useContext } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import type { InitError } from "../pages/error"
-import { ServerSDK, useServerSDK } from "./server-sdk"
+import { useServerSDK } from "./server-sdk"
 import {
   bootstrapDirectory,
   bootstrapGlobal,
@@ -31,11 +31,6 @@ import { PathKey } from "@/utils/path-key"
 import { createDirSyncContext } from "./directory-sync"
 import { createSimpleContext, NormalizedProviderListResponse } from "@opencode-ai/ui/context"
 import { createRefCountMap } from "@/utils/refcount"
-import { useGlobal } from "./global"
-import { ServerConnection, useServer } from "./server"
-import { retry } from "@opencode-ai/core/util/retry"
-import type { ServerScope } from "@/utils/server-scope"
-import { persisted } from "@/utils/persist"
 
 type GlobalStore = {
   ready: boolean
@@ -51,40 +46,35 @@ type GlobalStore = {
   reload: undefined | "pending" | "complete"
 }
 
-export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: OpencodeClient) =>
+export const loadMcpQuery = (directory: string, sdk: OpencodeClient) =>
   queryOptions({
-    queryKey: [scope, directory, "mcp"] as const,
+    queryKey: [directory, "mcp"] as const,
     queryFn: () => sdk.mcp.status().then((r) => r.data ?? {}),
   })
 
-export const loadLspQuery = (scope: ServerScope, directory: string, sdk: OpencodeClient) =>
+export const loadLspQuery = (directory: string, sdk: OpencodeClient) =>
   queryOptions({
-    queryKey: [scope, directory, "lsp"] as const,
+    queryKey: [directory, "lsp"] as const,
     queryFn: () => sdk.lsp.status().then((r) => r.data ?? []),
   })
 
-function makeQueryOptionsApi(
-  scope: ServerScope,
-  serverSDK: () => OpencodeClient,
-  sdkFor: (dir: PathKey) => OpencodeClient,
-) {
+function makeQueryOptionsApi(serverSDK: () => OpencodeClient, sdkFor: (dir: PathKey) => OpencodeClient) {
   return {
-    globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
-    projects: () => loadProjectsQuery(scope, serverSDK()),
+    globalConfig: () => loadGlobalConfigQuery(serverSDK()),
+    projects: () => loadProjectsQuery(serverSDK()),
     providers: (directory: PathKey | null) =>
-      loadProvidersQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
-    path: (directory: PathKey | null) =>
-      loadPathQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
-    agents: (directory: PathKey) => loadAgentsQuery(scope, directory, sdkFor(directory)),
-    mcp: (directory: PathKey) => loadMcpQuery(scope, directory, sdkFor(directory)),
-    lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
-    sessions: (directory: PathKey) => ({ queryKey: [scope, directory, "loadSessions"] as const }),
+      loadProvidersQuery(directory, directory === null ? serverSDK() : sdkFor(directory)),
+    path: (directory: PathKey | null) => loadPathQuery(directory, directory === null ? serverSDK() : sdkFor(directory)),
+    agents: (directory: PathKey) => loadAgentsQuery(directory, sdkFor(directory)),
+    mcp: (directory: PathKey) => loadMcpQuery(directory, sdkFor(directory)),
+    lsp: (directory: PathKey) => loadLspQuery(directory, sdkFor(directory)),
+    sessions: (directory: PathKey) => ({ queryKey: [directory, "loadSessions"] as const }),
   }
 }
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>
 
-export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
-  const serverSDK: ServerSDK = _serverSDK ?? useServerSDK()
+export function createServerSyncContext() {
+  const serverSDK = useServerSDK()
   const language = useLanguage()
   const owner = getOwner()
   if (!owner) throw new Error("ServerSync must be created within owner")
@@ -106,7 +96,7 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
     return sdk
   }
 
-  const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, () => serverSDK.client, sdkFor)
+  const queryOptionsApi = makeQueryOptionsApi(() => serverSDK.client, sdkFor)
 
   const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
     queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
@@ -114,7 +104,7 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     get ready() {
-      return !bootstrap.isPending
+      return bootstrap.isPending
     },
     project: [],
     session_todo: {},
@@ -137,7 +127,6 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
       return updateConfigMutation.isPending ? "pending" : undefined
     },
   })
-
   const queryClient = useQueryClient()
 
   let bootedAt = 0
@@ -163,11 +152,10 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
   }) as typeof setGlobalStore
 
   const bootstrap = useQuery(() => ({
-    queryKey: [serverSDK.scope, "bootstrap"],
+    queryKey: ["bootstrap"],
     queryFn: async () => {
       await bootstrapGlobal({
         serverSDK: serverSDK.client,
-        scope: serverSDK.scope,
         requestFailedTitle: language.t("common.requestFailed"),
         translate: language.t,
         formatMoreCount: (count) => language.t("common.moreCountSuffix", { count }),
@@ -206,39 +194,24 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
   const queue = createRefreshQueue({
     paused,
     key: directoryKey,
-    bootstrap: () => queryClient.fetchQuery({ queryKey: [serverSDK.scope, "bootstrap"] }),
+    bootstrap: () => queryClient.fetchQuery({ queryKey: ["bootstrap"] }),
     bootstrapInstance,
   })
 
   const children = createChildStoreManager({
     owner,
-    scope: serverSDK.scope,
-    persist: persisted,
     isBooting: (directory) => booting.has(directory),
     isLoadingSessions: (directory) => sessionLoads.has(directory),
     onBootstrap: (directory) => {
       void bootstrapInstance(directory)
-    },
-    onMcp: (directory, setStore) => {
-      void retry(() =>
-        sdkFor(directory)
-          .command.list()
-          .then((x) => setStore("command", x.data ?? [])),
-      ).catch((err) => {
-        showToast({
-          variant: "error",
-          title: language.t("toast.project.reloadFailed.title", { project: getFilename(directory) }),
-          description: formatServerError(err, language.t),
-        })
-      })
     },
     onDispose: (directory) => {
       const key = directoryKey(directory)
       queue.clear(key)
       sessionMeta.delete(key)
       sdkCache.delete(key)
-      clearProviderRev(serverSDK.scope, key)
-      clearSessionPrefetchDirectory(serverSDK.scope, key)
+      clearProviderRev(key)
+      clearSessionPrefetchDirectory(key)
     },
     translate: language.t,
     queryOptions: queryOptionsApi,
@@ -247,21 +220,17 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
     },
   })
 
-  async function loadSessions(directory: string, options?: { limit?: number }) {
+  async function loadSessions(directory: string) {
     const key = directoryKey(directory)
     const pending = sessionLoads.get(key)
-    if (pending) {
-      await pending
-      return loadSessions(directory, options)
-    }
+    if (pending) return pending
 
     children.pin(key)
     const [store, setStore] = children.child(directory, { bootstrap: false })
     const meta = sessionMeta.get(key)
-    const retainedLimit = Math.max(store.limit, options?.limit ?? 0, meta?.limit ?? 0)
-    if (meta && meta.limit >= retainedLimit) {
+    if (meta && meta.limit >= store.limit) {
       const next = trimSessions(store.session, {
-        limit: retainedLimit,
+        limit: store.limit,
         permission: store.permission,
       })
       if (next.length !== store.session.length) {
@@ -272,7 +241,7 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
       return
     }
 
-    const limit = Math.max(retainedLimit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
+    const limit = Math.max(store.limit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
     const promise = queryClient
       .fetchQuery({
         ...queryOptionsApi.sessions(key),
@@ -287,7 +256,7 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
                 .filter((s) => !!s?.id)
                 .filter((s) => !s.time?.archived)
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              const limit = Math.max(store.limit, options?.limit ?? 0, sessionMeta.get(key)?.limit ?? 0)
+              const limit = store.limit
               const childSessions = store.session.filter((s) => !!s.parentID)
               const sessions = trimSessions([...nonArchived, ...childSessions], {
                 limit,
@@ -342,8 +311,6 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
       const sdk = sdkFor(directory)
       await bootstrapDirectory({
         directory,
-        scope: serverSDK.scope,
-        mcp: children.mcp(key),
         global: {
           config: globalStore.config,
           path: globalStore.path,
@@ -404,7 +371,6 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
       setStore,
       push: queue.push,
       setSessionTodo,
-      retainedLimit: sessionMeta.get(key)?.limit,
       vcsCache: children.vcsCache.get(key),
       loadLsp: () => {
         void queryClient.fetchQuery(queryOptionsApi.lsp(key))
@@ -455,10 +421,8 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
       bootstrap.refetch()
       // Invalidate all provider queries so newly configured custom providers
       // appear immediately in the available provider list across all directories.
-      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
-      queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === serverSDK.scope && query.queryKey[2] === "providers",
-      })
+      queryClient.invalidateQueries({ queryKey: [null, "providers"] })
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === "providers" })
     },
   }))
 
@@ -473,7 +437,6 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
     },
     child: children.child,
     peek: children.peek,
-    disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
     // bootstrap,
     updateConfig: updateConfigMutation.mutateAsync,
@@ -484,30 +447,15 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
   }
 }
 
-export function createServerSyncContext(_serverSDK?: ServerSDK) {
-  const inner = createServerSyncContextInner(_serverSDK)
-  return Object.assign(inner, {
-    createDirSyncContext: createRefCountMap(
-      (dir) => createDirSyncContext(dir, inner, _serverSDK),
-      (dir) => inner.disableMcp(dir),
-      directoryKey,
-    ),
-  })
-}
-
 export const { use: useServerSync, provider: ServerSyncProvider } = createSimpleContext({
   name: "ServerSync",
-  gate: false,
-  init: (props: { server?: ServerConnection.Any }) => {
-    const global = useGlobal()
-    const language = useLanguage()
-    const server = useServer()
+  init: () => {
+    const sync = createServerSyncContext()
 
-    const conn = props.server ?? server.current
-    if (!conn) throw new Error(language.t("error.serverSDK.noServerAvailable"))
-    const ctx = global.createServerCtx(conn)
-
-    return ctx.sync
+    return {
+      ...sync,
+      createDirSyncContext: createRefCountMap((dir) => createDirSyncContext(dir, sync)),
+    }
   },
 })
 

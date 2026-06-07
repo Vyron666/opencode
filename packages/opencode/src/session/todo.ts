@@ -1,11 +1,11 @@
+import { BusEvent } from "@/bus/bus-event"
+import { Bus } from "@/bus"
 import { SessionID } from "./schema"
 import { Effect, Layer, Context, Schema } from "effect"
-import { Database } from "@opencode-ai/core/database/database"
+import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
 import { asc } from "drizzle-orm"
-import { TodoTable } from "@opencode-ai/core/session/sql"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { EventV2 } from "@opencode-ai/core/event"
+import { TodoTable } from "./session.sql"
 
 export const Info = Schema.Struct({
   content: Schema.String.annotate({ description: "Brief description of the task" }),
@@ -17,13 +17,13 @@ export const Info = Schema.Struct({
 export type Info = Schema.Schema.Type<typeof Info>
 
 export const Event = {
-  Updated: EventV2.define({
-    type: "todo.updated",
-    schema: {
+  Updated: BusEvent.define(
+    "todo.updated",
+    Schema.Struct({
       sessionID: SessionID,
       todos: Schema.Array(Info),
-    },
-  }),
+    }),
+  ),
 }
 
 export interface Interface {
@@ -36,41 +36,35 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2Bridge.Service
-    const { db } = yield* Database.Service
+    const bus = yield* Bus.Service
 
     const update = Effect.fn("Todo.update")(function* (input: { sessionID: SessionID; todos: Info[] }) {
-      yield* db
-        .transaction((tx) =>
-          Effect.gen(function* () {
-            yield* tx.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
-            if (input.todos.length === 0) return
-            yield* tx
-              .insert(TodoTable)
-              .values(
-                input.todos.map((todo, position) => ({
-                  session_id: input.sessionID,
-                  content: todo.content,
-                  status: todo.status,
-                  priority: todo.priority,
-                  position,
-                })),
-              )
-              .run()
-          }),
-        )
-        .pipe(Effect.orDie)
-      yield* events.publish(Event.Updated, input)
+      yield* Effect.sync(() =>
+        Database.transaction((db) => {
+          db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
+          if (input.todos.length === 0) return
+          db.insert(TodoTable)
+            .values(
+              input.todos.map((todo, position) => ({
+                session_id: input.sessionID,
+                content: todo.content,
+                status: todo.status,
+                priority: todo.priority,
+                position,
+              })),
+            )
+            .run()
+        }),
+      )
+      yield* bus.publish(Event.Updated, input)
     })
 
     const get = Effect.fn("Todo.get")(function* (sessionID: SessionID) {
-      const rows = yield* db
-        .select()
-        .from(TodoTable)
-        .where(eq(TodoTable.session_id, sessionID))
-        .orderBy(asc(TodoTable.position))
-        .all()
-        .pipe(Effect.orDie)
+      const rows = yield* Effect.sync(() =>
+        Database.use((db) =>
+          db.select().from(TodoTable).where(eq(TodoTable.session_id, sessionID)).orderBy(asc(TodoTable.position)).all(),
+        ),
+      )
       return rows.map((row) => ({
         content: row.content,
         status: row.status,
@@ -82,6 +76,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(EventV2Bridge.defaultLayer), Layer.provide(Database.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(Bus.layer))
 
 export * as Todo from "./todo"

@@ -2,7 +2,7 @@ import { Effect, Option, Schema, Scope, Stream } from "effect"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as path from "path"
 import * as Tool from "./tool"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { LSP } from "@/lsp/lsp"
 import DESCRIPTION from "./read.txt"
 import { InstanceState } from "@/effect/instance-state"
@@ -36,40 +36,10 @@ export const Parameters = Schema.Struct({
   }),
 })
 
-type Display =
-  | {
-      type: "directory"
-      path: string
-      entries: string[]
-      offset: number
-      totalEntries: number
-      truncated: boolean
-    }
-  | {
-      type: "file"
-      path: string
-      text: string
-      lineStart: number
-      lineEnd: number
-      totalLines: number
-      truncated: boolean
-    }
-
-type Metadata = {
-  preview: string
-  truncated: boolean
-  loaded: string[]
-  display?: Display
-}
-
-export const ReadTool = Tool.define<
-  typeof Parameters,
-  Metadata,
-  FSUtil.Service | Instruction.Service | LSP.Service | Reference.Service | Scope.Scope
->(
+export const ReadTool = Tool.define(
   "read",
   Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
+    const fs = yield* AppFileSystem.Service
     const instruction = yield* Instruction.Service
     const lsp = yield* LSP.Service
     const reference = yield* Reference.Service
@@ -117,8 +87,7 @@ export const ReadTool = Tool.define<
     })
 
     const warm = Effect.fn("ReadTool.warm")(function* (filepath: string) {
-      // LSP warm-up is optional; do not let a background defect fail an otherwise successful read.
-      yield* lsp.touchFile(filepath).pipe(Effect.ignoreCause, Effect.forkIn(scope))
+      yield* lsp.touchFile(filepath).pipe(Effect.ignore, Effect.forkIn(scope))
     })
 
     const readSample = Effect.fn("ReadTool.readSample")(function* (
@@ -230,7 +199,7 @@ export const ReadTool = Tool.define<
 
     const run = Effect.fn("ReadTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
-      ctx: Tool.Context<Metadata>,
+      ctx: Tool.Context,
     ) {
       const instance = yield* InstanceState.context
       let filepath = params.filePath
@@ -238,7 +207,7 @@ export const ReadTool = Tool.define<
         filepath = path.resolve(instance.directory, filepath)
       }
       if (process.platform === "win32") {
-        filepath = FSUtil.normalizePath(filepath)
+        filepath = AppFileSystem.normalizePath(filepath)
       }
       yield* reference.ensure(filepath)
       const title = path.relative(instance.worktree, filepath)
@@ -288,14 +257,6 @@ export const ReadTool = Tool.define<
             preview: sliced.slice(0, 20).join("\n"),
             truncated,
             loaded: [] as string[],
-            display: {
-              type: "directory" as const,
-              path: filepath,
-              entries: sliced,
-              offset,
-              totalEntries: items.length,
-              truncated,
-            },
           },
         }
       }
@@ -303,7 +264,7 @@ export const ReadTool = Tool.define<
       const loaded = yield* instruction.resolve(ctx.messages, filepath, ctx.messageID)
       const sample = yield* readSample(filepath, Number(stat.size), SAMPLE_BYTES)
 
-      const mime = sniffAttachmentMime(sample, FSUtil.mimeType(filepath))
+      const mime = sniffAttachmentMime(sample, AppFileSystem.mimeType(filepath))
       const isImage = SUPPORTED_IMAGE_MIMES.has(mime)
 
       if (isImage || isPdfAttachment(mime)) {
@@ -366,15 +327,6 @@ export const ReadTool = Tool.define<
           preview: file.raw.slice(0, 20).join("\n"),
           truncated,
           loaded: loaded.map((item) => item.filepath),
-          display: {
-            type: "file" as const,
-            path: filepath,
-            text: file.raw.join("\n"),
-            lineStart: file.offset,
-            lineEnd: last,
-            totalLines: file.count,
-            truncated,
-          },
         },
       }
     })
@@ -382,7 +334,7 @@ export const ReadTool = Tool.define<
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         run(params, ctx).pipe(Effect.orDie),
     }
   }),

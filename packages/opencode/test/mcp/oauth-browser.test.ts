@@ -106,19 +106,19 @@ beforeEach(() => {
 
 // Import modules after mocking
 const { MCP } = await import("../../src/mcp/index")
-const { EventV2Bridge } = await import("../../src/event-v2-bridge")
+const { Bus } = await import("../../src/bus")
 const { Config } = await import("../../src/config/config")
 const { McpAuth } = await import("../../src/mcp/auth")
 const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
-const { FSUtil } = await import("@opencode-ai/core/fs-util")
+const { AppFileSystem } = await import("@opencode-ai/core/filesystem")
 const { CrossSpawnSpawner } = await import("@opencode-ai/core/cross-spawn-spawner")
 const mcpTest = testEffect(
   MCP.layer.pipe(
     Layer.provide(McpAuth.defaultLayer),
-    Layer.provideMerge(EventV2Bridge.defaultLayer),
+    Layer.provideMerge(Bus.layer),
     Layer.provide(Config.defaultLayer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),
-    Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(AppFileSystem.defaultLayer),
   ),
 )
 const service = MCP.Service as unknown as Effect.Effect<MCPNS.Interface, never, never>
@@ -142,14 +142,12 @@ const trackBrowserOpen = Effect.gen(function* () {
 })
 
 const trackBrowserOpenFailed = Effect.gen(function* () {
-  const events = yield* EventV2Bridge.Service
+  const bus = yield* Bus.Service
   const event = yield* Deferred.make<{ mcpName: string; url: string }>()
-  const unsubscribe = yield* events.listen((evt) => {
-    if (evt.type === MCP.BrowserOpenFailed.type)
-      Deferred.doneUnsafe(event, Effect.succeed(evt.data as { mcpName: string; url: string }))
-    return Effect.void
+  const unsubscribe = yield* bus.subscribeCallback(MCP.BrowserOpenFailed, (evt) => {
+    Effect.runSync(Deferred.succeed(event, evt.properties).pipe(Effect.ignore))
   })
-  yield* Effect.addFinalizer(() => unsubscribe)
+  yield* Effect.addFinalizer(() => Effect.sync(unsubscribe))
   return event
 })
 

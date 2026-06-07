@@ -41,11 +41,6 @@ describe("getWorkspaceRouteSessionID", () => {
     expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_xyz"))
   })
 
-  test("extracts session ID from experimental background path", () => {
-    const url = new URL("http://localhost/experimental/session/ses_bg/background")
-    expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_bg"))
-  })
-
   test("returns null for /session/status", () => {
     const url = new URL("http://localhost/session/status")
     expect(getWorkspaceRouteSessionID(url)).toBeNull()

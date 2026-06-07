@@ -24,9 +24,6 @@
   },
   "model": "deepseek/deepseek-v4-flash",
   "permission": {},
-  "reference": {
-    "effect": "github.com/Effect-TS/effect-smol",
-  },
   "mcp": {},
   "tools": {
     "github-triage": false,

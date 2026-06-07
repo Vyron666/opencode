@@ -88,6 +88,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",
+          loading: "src/renderer/loading.html",
         },
       },
     },

@@ -40,15 +40,7 @@ export function callAuthProbe(scenario: ActiveScenario, credentials: "missing" |
   })
 }
 
-type CachedApp = BackendApp & { readonly dispose: () => Promise<void> }
-
-const appCache: Partial<Record<string, CachedApp>> = {}
-
-export async function disposeApps() {
-  const apps = Object.values(appCache)
-  for (const key of Object.keys(appCache)) delete appCache[key]
-  await Promise.all(apps.flatMap((app) => (app === undefined ? [] : [app.dispose()])))
-}
+const appCache: Partial<Record<string, BackendApp>> = {}
 
 function app(modules: Runtime, options: CallOptions) {
   const username = options.auth?.username
@@ -56,7 +48,7 @@ function app(modules: Runtime, options: CallOptions) {
   const cacheKey = `${username ?? ""}:${password ?? ""}`
   if (appCache[cacheKey]) return appCache[cacheKey]
 
-  const web = HttpRouter.toWebHandler(
+  const handler = HttpRouter.toWebHandler(
     modules.HttpApiApp.routes.pipe(
       Layer.provide(
         ConfigProvider.layer(
@@ -64,12 +56,11 @@ function app(modules: Runtime, options: CallOptions) {
         ),
       ),
     ),
-    { disableLogger: true, memoMap: modules.memoMap },
-  )
+    { disableLogger: true },
+  ).handler
   return (appCache[cacheKey] = {
-    dispose: web.dispose,
     request(input: string | URL | Request, init?: RequestInit) {
-      return web.handler(
+      return handler(
         input instanceof Request ? input : new Request(new URL(input, "http://localhost"), init),
         modules.HttpApiApp.context,
       )

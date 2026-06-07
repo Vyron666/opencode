@@ -53,13 +53,13 @@ describe("AlibabaPlugin", () => {
     }),
   )
 
-  it.effect("uses the old default languageModel(api.id) behavior", () =>
+  it.effect("uses the old default languageModel(apiID) behavior", () =>
     Effect.gen(function* () {
       const plugin = yield* PluginV2.Service
       yield* plugin.add(AlibabaPlugin)
-      const item = model("alibaba", "alias", { api: { id: ModelV2.ID.make("qwen-plus") } })
+      const item = model("alibaba", "alias", { apiID: ModelV2.ID.make("qwen-plus") })
       const result = yield* plugin.trigger("aisdk.sdk", { model: item, package: "@ai-sdk/alibaba", options: {} }, {})
-      const language = result.sdk?.languageModel(item.api.id)
+      const language = result.sdk?.languageModel(item.apiID)
       expect(language?.modelId).toBe("qwen-plus")
       expect(language?.provider).toBe("alibaba.chat")
     }),

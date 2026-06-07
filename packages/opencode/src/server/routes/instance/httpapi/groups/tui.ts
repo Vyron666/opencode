@@ -12,19 +12,19 @@ const root = "/tui"
 export const CommandPayload = Schema.Struct({ command: Schema.String })
 const EventTuiPromptAppend = Schema.Struct({
   type: Schema.Literal(TuiEvent.PromptAppend.type),
-  properties: TuiEvent.PromptAppend.data,
+  properties: TuiEvent.PromptAppend.properties,
 }).annotate({ identifier: "EventTuiPromptAppend" })
 const EventTuiCommandExecute = Schema.Struct({
   type: Schema.Literal(TuiEvent.CommandExecute.type),
-  properties: TuiEvent.CommandExecute.data,
+  properties: TuiEvent.CommandExecute.properties,
 }).annotate({ identifier: "EventTuiCommandExecute" })
 const EventTuiToastShow = Schema.Struct({
   type: Schema.Literal(TuiEvent.ToastShow.type),
-  properties: TuiEvent.ToastShow.data,
+  properties: TuiEvent.ToastShow.properties,
 }).annotate({ identifier: "EventTuiToastShow" })
 const EventTuiSessionSelect = Schema.Struct({
   type: Schema.Literal(TuiEvent.SessionSelect.type),
-  properties: TuiEvent.SessionSelect.data,
+  properties: TuiEvent.SessionSelect.properties,
 }).annotate({ identifier: "EventTuiSessionSelect" })
 export const TuiPublishPayload = Schema.Union([
   EventTuiPromptAppend,
@@ -55,7 +55,7 @@ export const TuiApi = HttpApi.make("tui")
       .add(
         HttpApiEndpoint.post("appendPrompt", TuiPaths.appendPrompt, {
           query: WorkspaceRoutingQuery,
-          payload: TuiEvent.PromptAppend.data,
+          payload: TuiEvent.PromptAppend.properties,
           success: described(Schema.Boolean, "Prompt processed successfully"),
           error: HttpApiError.BadRequest,
         }).annotateMerge(
@@ -139,7 +139,7 @@ export const TuiApi = HttpApi.make("tui")
         ),
         HttpApiEndpoint.post("showToast", TuiPaths.showToast, {
           query: WorkspaceRoutingQuery,
-          payload: TuiEvent.ToastShow.data,
+          payload: TuiEvent.ToastShow.properties,
           success: described(Schema.Boolean, "Toast notification shown successfully"),
         }).annotateMerge(
           OpenApi.annotations({
@@ -162,7 +162,7 @@ export const TuiApi = HttpApi.make("tui")
         ),
         HttpApiEndpoint.post("selectSession", TuiPaths.selectSession, {
           query: WorkspaceRoutingQuery,
-          payload: TuiEvent.SessionSelect.data,
+          payload: TuiEvent.SessionSelect.properties,
           success: described(Schema.Boolean, "Session selected successfully"),
           error: [HttpApiError.BadRequest, ApiNotFoundError],
         }).annotateMerge(

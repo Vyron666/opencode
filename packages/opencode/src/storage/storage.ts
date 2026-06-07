@@ -1,14 +1,18 @@
 import * as Log from "@opencode-ai/core/util/log"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { Git } from "@/git"
 
 const log = Log.create({ service: "storage" })
 
-type Migration = (dir: string, fs: FSUtil.Interface, git: Git.Interface) => Effect.Effect<void, FSUtil.Error>
+type Migration = (
+  dir: string,
+  fs: AppFileSystem.Interface,
+  git: Git.Interface,
+) => Effect.Effect<void, AppFileSystem.Error>
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("NotFoundError", {
   message: Schema.String,
@@ -18,7 +22,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Not
   }
 }
 
-export type Error = FSUtil.Error | NotFoundError
+export type Error = AppFileSystem.Error | NotFoundError
 
 const RootFile = Schema.Struct({
   path: Schema.optional(
@@ -53,11 +57,11 @@ const decodeMessage = Schema.decodeUnknownOption(MessageFile)
 const decodeSummary = Schema.decodeUnknownOption(SummaryFile)
 
 export interface Interface {
-  readonly remove: (key: string[]) => Effect.Effect<void, FSUtil.Error>
+  readonly remove: (key: string[]) => Effect.Effect<void, AppFileSystem.Error>
   readonly read: <T>(key: string[]) => Effect.Effect<T, Error>
   readonly update: <T>(key: string[], fn: (draft: T) => void) => Effect.Effect<T, Error>
-  readonly write: <T>(key: string[], content: T) => Effect.Effect<void, FSUtil.Error>
-  readonly list: (prefix: string[]) => Effect.Effect<string[][], FSUtil.Error>
+  readonly write: <T>(key: string[], content: T) => Effect.Effect<void, AppFileSystem.Error>
+  readonly list: (prefix: string[]) => Effect.Effect<string[][], AppFileSystem.Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Storage") {}
@@ -81,7 +85,7 @@ function parseMigration(text: string) {
 }
 
 const MIGRATIONS: Migration[] = [
-  Effect.fn("Storage.migration.1")(function* (dir: string, fs: FSUtil.Interface, git: Git.Interface) {
+  Effect.fn("Storage.migration.1")(function* (dir: string, fs: AppFileSystem.Interface, git: Git.Interface) {
     const project = path.resolve(dir, "../project")
     if (!(yield* fs.isDir(project))) return
     const projectDirs = yield* fs.glob("*", {
@@ -181,7 +185,7 @@ const MIGRATIONS: Migration[] = [
       }
     }
   }),
-  Effect.fn("Storage.migration.2")(function* (dir: string, fs: FSUtil.Interface) {
+  Effect.fn("Storage.migration.2")(function* (dir: string, fs: AppFileSystem.Interface) {
     for (const item of yield* fs.glob("session/*/*.json", {
       cwd: dir,
       absolute: true,
@@ -215,7 +219,7 @@ const MIGRATIONS: Migration[] = [
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
+    const fs = yield* AppFileSystem.Service
     const git = yield* Git.Service
     const locks = yield* RcMap.make({
       lookup: () => TxReentrantLock.make(),
@@ -247,7 +251,7 @@ export const layer = Layer.effect(
     const fail = (target: string): Effect.Effect<never, NotFoundError> =>
       Effect.fail(new NotFoundError({ message: `Resource not found: ${target}` }))
 
-    const wrap = <A>(target: string, body: Effect.Effect<A, FSUtil.Error>) =>
+    const wrap = <A>(target: string, body: Effect.Effect<A, AppFileSystem.Error>) =>
       body.pipe(Effect.catchIf(missing, () => fail(target)))
 
     const writeJson = Effect.fnUntraced(function* (target: string, content: unknown) {
@@ -257,7 +261,7 @@ export const layer = Layer.effect(
     const withResolved = <A, E>(
       key: string[],
       fn: (target: string, rw: TxReentrantLock.TxReentrantLock) => Effect.Effect<A, E>,
-    ): Effect.Effect<A, E | FSUtil.Error> =>
+    ): Effect.Effect<A, E | AppFileSystem.Error> =>
       Effect.scoped(
         Effect.gen(function* () {
           const target = file((yield* state).dir, key)
@@ -324,6 +328,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer), Layer.provide(Git.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(AppFileSystem.defaultLayer), Layer.provide(Git.defaultLayer))
 
 export * as Storage from "./storage"

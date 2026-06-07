@@ -75,7 +75,7 @@ export const redactUrl = (
   if (url.username) url.username = REDACTED
   if (url.password) url.password = REDACTED
   const redacted = redactionSet(query, DEFAULT_REDACT_QUERY)
-  for (const key of url.searchParams.keys()) {
+  for (const key of [...url.searchParams.keys()]) {
     if (redacted.has(key.toLowerCase())) url.searchParams.set(key, REDACTED)
   }
   return urlRedactor?.(url.toString()) ?? url.toString()
@@ -103,15 +103,13 @@ export const SecretFindingSchema = Schema.Struct({
 })
 export type SecretFinding = Schema.Schema.Type<typeof SecretFindingSchema>
 
-export const secretFindings = (value: unknown): ReadonlyArray<SecretFinding> => {
-  const environment = envSecrets()
-  return stringEntries(value).flatMap((entry) => [
+export const secretFindings = (value: unknown): ReadonlyArray<SecretFinding> =>
+  stringEntries(value).flatMap((entry) => [
     ...SECRET_PATTERNS.filter((item) => item.pattern.test(entry.value)).map((item) => ({
       path: entry.path,
       reason: item.label,
     })),
-    ...environment
+    ...envSecrets()
       .filter((item) => entry.value.includes(item.value))
       .map((item) => ({ path: entry.path, reason: `environment secret ${item.name}` })),
   ])
-}

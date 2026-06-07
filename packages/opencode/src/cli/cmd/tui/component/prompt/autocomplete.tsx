@@ -271,6 +271,47 @@ export function Autocomplete(props: {
     }
   }
 
+  function createReferenceFilePart(input: {
+    alias: string
+    root: string
+    item: string
+    lineRange?: { startLine: number; endLine?: number }
+  }) {
+    const filename = `${input.alias}/${
+      input.lineRange && !input.item.endsWith("/")
+        ? `${input.item}#${input.lineRange.startLine}${input.lineRange.endLine ? `-${input.lineRange.endLine}` : ""}`
+        : input.item
+    }`
+    const urlObj = pathToFileURL(path.join(input.root, input.item))
+
+    if (input.lineRange && !input.item.endsWith("/")) {
+      urlObj.searchParams.set("start", String(input.lineRange.startLine))
+      if (input.lineRange.endLine !== undefined) {
+        urlObj.searchParams.set("end", String(input.lineRange.endLine))
+      }
+    }
+
+    return {
+      filename,
+      url: urlObj.href,
+      part: {
+        type: "file" as const,
+        mime: input.item.endsWith("/") ? "application/x-directory" : "text/plain",
+        filename,
+        url: urlObj.href,
+        source: {
+          type: "file" as const,
+          text: {
+            start: 0,
+            end: 0,
+            value: "",
+          },
+          path: filename,
+        },
+      },
+    }
+  }
+
   function referencePromptText(reference: Reference.Resolved) {
     const problem = reference.kind === "invalid" ? reference.message : undefined
     return [
@@ -283,7 +324,9 @@ export function Autocomplete(props: {
       ...(reference.kind === "invalid" ? [] : [`Reference root: ${reference.path}`]),
       ...(problem
         ? [`Problem: ${problem}`]
-        : ["Inspect the configured reference with Read, Glob, and Grep when useful."]),
+        : [
+            "For targeted context, inspect the reference path directly with Read, Glob, and Grep. For broader research, call the task tool with subagent scout and include this reference path.",
+          ]),
     ].join("\n")
   }
 
@@ -295,12 +338,18 @@ export function Autocomplete(props: {
     }),
   )
 
-  const referenceMatch = createMemo(() => {
+  const referenceSearch = createMemo(() => {
     if (!store.visible || store.visible === "/") return
-    const { baseQuery } = extractLineRange(search())
+    const { lineRange, baseQuery } = extractLineRange(search())
     const slash = baseQuery.indexOf("/")
-    const alias = slash === -1 ? baseQuery : baseQuery.slice(0, slash)
-    return references().find((item) => item.name === alias)
+    if (slash === -1) return
+    const reference = references().find((item) => item.name === baseQuery.slice(0, slash))
+    if (!reference || reference.kind === "invalid") return
+    return {
+      reference,
+      query: baseQuery.slice(slash + 1),
+      lineRange,
+    }
   })
 
   function normalizeMentionPath(filePath: string) {
@@ -333,7 +382,7 @@ export function Autocomplete(props: {
     () => search(),
     async (query) => {
       if (!store.visible || store.visible === "/") return []
-      if (referenceMatch()) return []
+      if (referenceSearch()) return []
 
       const { lineRange, baseQuery } = extractLineRange(query ?? "")
 
@@ -377,6 +426,43 @@ export function Autocomplete(props: {
       }
 
       return options
+    },
+    {
+      initialValue: [],
+    },
+  )
+
+  const [referenceFiles] = createResource(
+    () => referenceSearch(),
+    async (match) => {
+      if (!match) return []
+
+      const result = await sdk.client.find.files({
+        directory: match.reference.path,
+        query: match.query,
+        limit: 50,
+      })
+
+      if (result.error || !result.data) return []
+
+      const width = props.anchor().width - 4
+      return result.data.map((item): AutocompleteOption => {
+        const { filename, part } = createReferenceFilePart({
+          alias: match.reference.name,
+          root: match.reference.path,
+          item,
+          lineRange: match.lineRange,
+        })
+        return {
+          display: Locale.truncateMiddle(filename, width),
+          value: filename,
+          isDirectory: item.endsWith("/"),
+          path: filename,
+          onSelect: () => {
+            insertPart(filename, part)
+          },
+        }
+      })
     },
     {
       initialValue: [],
@@ -445,22 +531,8 @@ export function Autocomplete(props: {
     references().map(
       (reference): AutocompleteOption => ({
         display: "@" + reference.name,
-        description: reference.kind === "invalid" ? reference.message : " dir",
+        description: reference.kind === "invalid" ? reference.message : " configured reference",
         onSelect: () => {
-          if (reference.kind !== "invalid") {
-            insertPart(reference.name, {
-              type: "file",
-              mime: "application/x-directory",
-              filename: reference.name,
-              url: pathToFileURL(reference.path).href,
-              source: {
-                type: "file",
-                text: { start: 0, end: 0, value: "" },
-                path: reference.name,
-              },
-            })
-            return
-          }
           insertPart(reference.name, {
             type: "text",
             text: referencePromptText(reference),
@@ -502,15 +574,16 @@ export function Autocomplete(props: {
 
   const options = createMemo((prev: AutocompleteOption[] | undefined) => {
     const filesValue = files()
-    const referenceMatchValue = referenceMatch()
+    const referenceFilesValue = referenceFiles()
+    const referenceSearchValue = referenceSearch()
     const agentsValue = agents()
     const referenceAliasesValue = referenceAliases()
     const commandsValue = commands()
 
     const mixed: AutocompleteOption[] =
       store.visible === "@"
-        ? referenceMatchValue
-          ? referenceAliasesValue.filter((item) => item.display === `@${referenceMatchValue.name}`)
+        ? referenceSearchValue
+          ? referenceFilesValue || []
           : [...referenceAliasesValue, ...agentsValue, ...(filesValue || []), ...mcpResources()]
         : [...commandsValue]
 
@@ -520,11 +593,9 @@ export function Autocomplete(props: {
       return mixed
     }
 
-    if (files.loading && prev && prev.length > 0) {
+    if ((files.loading || referenceFiles.loading) && prev && prev.length > 0) {
       return prev
     }
-
-    if (referenceMatchValue) return mixed
 
     const result = fuzzysort.go(removeLineRange(searchValue), mixed, {
       keys: [

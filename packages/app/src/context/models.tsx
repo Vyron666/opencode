@@ -24,7 +24,6 @@ function modelKey(model: ModelKey) {
 
 export const { use: useModels, provider: ModelsProvider } = createSimpleContext({
   name: "Models",
-  gate: false,
   init: () => {
     const providers = useProviders()
 

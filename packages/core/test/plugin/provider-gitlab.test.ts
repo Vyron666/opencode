@@ -1,6 +1,6 @@
 import { describe, expect, mock } from "bun:test"
 import { Effect, Layer } from "effect"
-import { Auth } from "@opencode-ai/core/auth"
+import { AccountV2 } from "@opencode-ai/core/account"
 import { Catalog } from "@opencode-ai/core/catalog"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Location } from "@opencode-ai/core/location"
@@ -8,8 +8,6 @@ import { PluginV2 } from "@opencode-ai/core/plugin"
 import { AccountPlugin } from "@opencode-ai/core/plugin/account"
 import { GitLabPlugin } from "@opencode-ai/core/plugin/provider/gitlab"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 import { it, model, npmLayer, withEnv } from "./provider-helper"
 
@@ -29,12 +27,11 @@ void mock.module("gitlab-ai-provider", () => ({
 }))
 
 const itWithAccount = testEffect(
-  Catalog.locationLayer.pipe(
-    Layer.provideMerge(Auth.defaultLayer),
+  Catalog.layer.pipe(
+    Layer.provideMerge(PluginV2.defaultLayer),
+    Layer.provideMerge(AccountV2.defaultLayer),
     Layer.provideMerge(EventV2.defaultLayer),
-    Layer.provideMerge(
-      Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make("/") }))),
-    ),
+    Layer.provideMerge(Layer.succeed(Location.Service, Location.Service.of({ directory: "test" }))),
     Layer.provideMerge(npmLayer),
   ),
 )
@@ -165,32 +162,32 @@ describe("GitLabPlugin", () => {
         Effect.gen(function* () {
           gitlabSDKOptions.length = 0
           const plugin = yield* PluginV2.Service
-          const accounts = yield* Auth.Service
+          const accounts = yield* AccountV2.Service
           const catalog = yield* Catalog.Service
           const events = yield* EventV2.Service
           yield* accounts.create({
-            serviceID: Auth.ServiceID.make("gitlab"),
-            credential: new Auth.ApiKeyCredential({ type: "api", key: "account-token" }),
+            serviceID: AccountV2.ServiceID.make("gitlab"),
+            credential: new AccountV2.ApiKeyCredential({ type: "api", key: "account-token" }),
           })
           yield* plugin.add({
             ...AccountPlugin,
             effect: AccountPlugin.effect.pipe(
-              Effect.provideService(Auth.Service, accounts),
+              Effect.provideService(AccountV2.Service, accounts),
               Effect.provideService(Catalog.Service, catalog),
               Effect.provideService(EventV2.Service, events),
               Effect.provideService(PluginV2.Service, plugin),
             ),
           })
           yield* plugin.add(GitLabPlugin)
-          const transform = yield* catalog.transform()
-          yield* transform((catalog) => catalog.provider.update(ProviderV2.ID.make("gitlab"), () => {}))
+          const load = yield* catalog.loader()
+          yield* load((catalog) => catalog.provider.update(ProviderV2.ID.make("gitlab"), () => {}))
           const provider = yield* catalog.provider.get(ProviderV2.ID.make("gitlab"))
           yield* plugin.trigger(
             "aisdk.sdk",
             {
               model: model("gitlab", "claude"),
               package: "gitlab-ai-provider",
-              options: provider.request.body,
+              options: provider.options.aisdk.provider,
             },
             {},
           )
@@ -208,12 +205,12 @@ describe("GitLabPlugin", () => {
         Effect.gen(function* () {
           gitlabSDKOptions.length = 0
           const plugin = yield* PluginV2.Service
-          const accounts = yield* Auth.Service
+          const accounts = yield* AccountV2.Service
           const catalog = yield* Catalog.Service
           const events = yield* EventV2.Service
           yield* accounts.create({
-            serviceID: Auth.ServiceID.make("gitlab"),
-            credential: new Auth.OAuthCredential({
+            serviceID: AccountV2.ServiceID.make("gitlab"),
+            credential: new AccountV2.OAuthCredential({
               type: "oauth",
               refresh: "refresh-token",
               access: "account-oauth-token",
@@ -223,22 +220,22 @@ describe("GitLabPlugin", () => {
           yield* plugin.add({
             ...AccountPlugin,
             effect: AccountPlugin.effect.pipe(
-              Effect.provideService(Auth.Service, accounts),
+              Effect.provideService(AccountV2.Service, accounts),
               Effect.provideService(Catalog.Service, catalog),
               Effect.provideService(EventV2.Service, events),
               Effect.provideService(PluginV2.Service, plugin),
             ),
           })
           yield* plugin.add(GitLabPlugin)
-          const transform = yield* catalog.transform()
-          yield* transform((catalog) => catalog.provider.update(ProviderV2.ID.make("gitlab"), () => {}))
+          const load = yield* catalog.loader()
+          yield* load((catalog) => catalog.provider.update(ProviderV2.ID.make("gitlab"), () => {}))
           const provider = yield* catalog.provider.get(ProviderV2.ID.make("gitlab"))
           yield* plugin.trigger(
             "aisdk.sdk",
             {
               model: model("gitlab", "claude"),
               package: "gitlab-ai-provider",
-              options: provider.request.body,
+              options: provider.options.aisdk.provider,
             },
             {},
           )
@@ -256,9 +253,10 @@ describe("GitLabPlugin", () => {
         "aisdk.language",
         {
           model: model("gitlab", "duo-workflow-custom", {
-            request: {
+            options: {
               headers: {},
-              body: { workflowRef: "ref", workflowDefinition: "definition" },
+              body: {},
+              aisdk: { provider: {}, request: { workflowRef: "ref", workflowDefinition: "definition" } },
             },
           }),
           sdk: {
@@ -319,9 +317,10 @@ describe("GitLabPlugin", () => {
         "aisdk.language",
         {
           model: model("gitlab", "duo-workflow-custom", {
-            request: {
+            options: {
               headers: {},
-              body: { featureFlags: { request_flag: true } },
+              body: {},
+              aisdk: { provider: {}, request: { featureFlags: { request_flag: true } } },
             },
           }),
           sdk: {
@@ -348,7 +347,7 @@ describe("GitLabPlugin", () => {
         "aisdk.language",
         {
           model: model("gitlab", "claude", {
-            request: { headers: { h: "v" }, body: {} },
+            options: { headers: { h: "v" }, body: {}, aisdk: { provider: {}, request: {} } },
           }),
           sdk: {
             workflowChat: () => undefined,

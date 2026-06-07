@@ -2,23 +2,16 @@ import { afterEach, expect } from "bun:test"
 import { Cause, Effect, Exit, Fiber, Layer, Queue } from "effect"
 import { Question } from "../../src/question"
 import { InstanceRef } from "../../src/effect/instance-ref"
-import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { QuestionID } from "../../src/question/schema"
-import { disposeAllInstances, provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
+import { disposeAllInstances, provideInstance, reloadTestInstance, tmpdirScoped } from "../fixture/fixture"
 import { SessionID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { EventV2Bridge } from "../../src/event-v2-bridge"
+import { Bus } from "../../src/bus"
 
 const it = testEffect(
-  Layer.mergeAll(Question.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer)), CrossSpawnSpawner.defaultLayer),
-)
-const lifecycle = testEffect(
-  Layer.mergeAll(
-    Question.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer)),
-    CrossSpawnSpawner.defaultLayer,
-    testInstanceStoreLayer,
-  ),
+  Layer.mergeAll(Question.layer.pipe(Layer.provideMerge(Bus.layer)), CrossSpawnSpawner.defaultLayer),
 )
 
 const askEffect = Effect.fn("QuestionTest.ask")(function* (input: {
@@ -56,13 +49,10 @@ const rejectAll = Effect.gen(function* () {
 
 const waitForPending = Effect.fn("QuestionTest.waitForPending")(function* (count: number) {
   const question = yield* Question.Service
-  const events = yield* EventV2Bridge.Service
+  const bus = yield* Bus.Service
   const asked = yield* Queue.unbounded<void>()
-  const off = yield* events.listen((event) => {
-    if (event.type === Question.Event.Asked.type) Queue.offerUnsafe(asked, undefined)
-    return Effect.void
-  })
-  yield* Effect.addFinalizer(() => off)
+  const off = yield* bus.subscribeCallback(Question.Event.Asked, () => Queue.offerUnsafe(asked, undefined))
+  yield* Effect.addFinalizer(() => Effect.sync(off))
 
   for (;;) {
     const pending = yield* question.list()
@@ -371,7 +361,7 @@ it.instance(
   { git: true },
 )
 
-lifecycle.live("questions stay isolated by directory", () =>
+it.live("questions stay isolated by directory", () =>
   Effect.gen(function* () {
     const one = yield* tmpdirScoped({ git: true })
     const two = yield* tmpdirScoped({ git: true })
@@ -414,7 +404,7 @@ lifecycle.live("questions stay isolated by directory", () =>
   }),
 )
 
-lifecycle.live("pending question rejects on instance dispose", () =>
+it.live("pending question rejects on instance dispose", () =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped({ git: true })
     const fiber = yield* askEffect({
@@ -433,7 +423,7 @@ lifecycle.live("pending question rejects on instance dispose", () =>
       return yield* InstanceRef
     }).pipe(provideInstance(dir))
     if (!ctx) return yield* Effect.die(new Error("missing test instance"))
-    yield* InstanceStore.Service.use((store) => store.dispose(ctx))
+    yield* Effect.promise(() => InstanceRuntime.disposeInstance(ctx))
 
     const exit = yield* Fiber.await(fiber)
     expect(Exit.isFailure(exit)).toBe(true)
@@ -441,7 +431,7 @@ lifecycle.live("pending question rejects on instance dispose", () =>
   }),
 )
 
-lifecycle.live("pending question rejects on instance reload", () =>
+it.live("pending question rejects on instance reload", () =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped({ git: true })
     const fiber = yield* askEffect({
@@ -456,7 +446,7 @@ lifecycle.live("pending question rejects on instance reload", () =>
     }).pipe(provideInstance(dir), Effect.forkScoped)
 
     expect(yield* waitForPending(1).pipe(provideInstance(dir))).toHaveLength(1)
-    yield* InstanceStore.Service.use((store) => store.reload({ directory: dir }))
+    yield* Effect.promise(() => reloadTestInstance({ directory: dir }))
 
     const exit = yield* Fiber.await(fiber)
     expect(Exit.isFailure(exit)).toBe(true)

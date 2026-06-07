@@ -1,5 +1,4 @@
 import { Option, Schema } from "effect"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { MessageV2 } from "../message-v2"
 import { Reference } from "@/reference/reference"
 
@@ -34,7 +33,7 @@ export function referenceTextPart(input: {
   target?: string
   targetPath?: string
   problem?: string
-}): SessionV1.TextPartInput {
+}): MessageV2.TextPartInput {
   const metadata: ReferencePromptMetadata = {
     name: input.reference.name,
     kind: input.reference.kind,
@@ -63,7 +62,9 @@ export function referenceTextPart(input: {
       ...(metadata.targetPath ? [`Resolved path: ${metadata.targetPath}`] : []),
       ...(metadata.problem
         ? [`Problem: ${metadata.problem}`]
-        : ["Inspect the configured reference with Read, Glob, and Grep when useful."]),
+        : [
+            "For targeted context, inspect the reference path directly with Read, Glob, and Grep. For broader research, call the task tool with subagent scout and include this reference path.",
+          ]),
     ].join("\n"),
     metadata: { reference: metadata },
   }

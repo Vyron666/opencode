@@ -1,7 +1,4 @@
-import { ScopedKey, type ServerScope } from "@/utils/server-scope"
-
 const normalize = (directory: string) => directory.replace(/[\\/]+$/, "")
-const key = (scope: ServerScope, directory: string) => ScopedKey.from(scope, normalize(directory))
 
 type State =
   | {
@@ -33,44 +30,44 @@ function deferred() {
 }
 
 export const Worktree = {
-  get(scope: ServerScope, directory: string) {
-    return state.get(key(scope, directory))
+  get(directory: string) {
+    return state.get(normalize(directory))
   },
-  pending(scope: ServerScope, directory: string) {
-    const id = key(scope, directory)
-    const current = state.get(id)
+  pending(directory: string) {
+    const key = normalize(directory)
+    const current = state.get(key)
     if (current && current.status !== "pending") return
-    state.set(id, { status: "pending" })
+    state.set(key, { status: "pending" })
   },
-  ready(scope: ServerScope, directory: string) {
-    const id = key(scope, directory)
+  ready(directory: string) {
+    const key = normalize(directory)
     const next = { status: "ready" } as const
-    state.set(id, next)
-    const waiter = waiters.get(id)
+    state.set(key, next)
+    const waiter = waiters.get(key)
     if (!waiter) return
-    waiters.delete(id)
+    waiters.delete(key)
     waiter.resolve(next)
   },
-  failed(scope: ServerScope, directory: string, message: string) {
-    const id = key(scope, directory)
+  failed(directory: string, message: string) {
+    const key = normalize(directory)
     const next = { status: "failed", message } as const
-    state.set(id, next)
-    const waiter = waiters.get(id)
+    state.set(key, next)
+    const waiter = waiters.get(key)
     if (!waiter) return
-    waiters.delete(id)
+    waiters.delete(key)
     waiter.resolve(next)
   },
-  wait(scope: ServerScope, directory: string) {
-    const id = key(scope, directory)
-    const current = state.get(id)
+  wait(directory: string) {
+    const key = normalize(directory)
+    const current = state.get(key)
     if (current && current.status !== "pending") return Promise.resolve(current)
 
-    const existing = waiters.get(id)
+    const existing = waiters.get(key)
     if (existing) return existing.promise
 
     const waiter = deferred()
 
-    waiters.set(id, waiter)
+    waiters.set(key, waiter)
     return waiter.promise
   },
 }

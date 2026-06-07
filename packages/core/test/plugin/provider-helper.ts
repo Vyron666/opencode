@@ -8,15 +8,10 @@ import { Location } from "@opencode-ai/core/location"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 
 export const fixtureProvider = new URL("./fixtures/provider-factory.ts", import.meta.url).href
-const locationLayer = Layer.succeed(
-  Location.Service,
-  Location.Service.of(location({ directory: AbsolutePath.make("test") })),
-)
+const locationLayer = Layer.succeed(Location.Service, Location.Service.of({ directory: "test" }))
 
 export const npmLayer = Layer.succeed(
   Npm.Service,
@@ -30,7 +25,7 @@ export const npmLayer = Layer.succeed(
 export const catalogLayer = Layer.succeed(
   Catalog.Service,
   Catalog.Service.of({
-    transform: () => Effect.die("unexpected catalog.transform"),
+    loader: () => Effect.die("unexpected catalog.loader"),
     provider: {
       get: () => Effect.die("unexpected provider.get"),
       all: () => Effect.succeed([]),
@@ -41,62 +36,58 @@ export const catalogLayer = Layer.succeed(
       all: () => Effect.succeed([]),
       available: () => Effect.succeed([]),
       default: () => Effect.succeed(Option.none<ModelV2.Info>()),
+      setDefault: () => Effect.die("unexpected model.setDefault"),
       small: () => Effect.succeed(Option.none<ModelV2.Info>()),
     },
   }),
 )
 
 export const it = testEffect(
-  Catalog.locationLayer.pipe(
+  Catalog.layer.pipe(
+    Layer.provideMerge(PluginV2.defaultLayer),
     Layer.provideMerge(EventV2.defaultLayer),
     Layer.provideMerge(locationLayer),
     Layer.provideMerge(npmLayer),
   ),
 )
 
-type ProviderInput = Partial<Omit<ProviderV2.Info, "api" | "request">> & {
-  api?: ProviderV2.Api
-  request?: ProviderV2.Request
-}
-
-type ModelInput = Partial<Omit<ModelV2.Info, "api" | "request">> & {
-  api?: (ProviderV2.Api & { id?: ModelV2.ID }) | { id: ModelV2.ID }
-  request?: ModelV2.Info["request"]
-}
-
-export function provider(providerID: string, options?: ProviderInput) {
+export function provider(providerID: string, options?: Partial<ProviderV2.Info>) {
   return new ProviderV2.Info({
     ...ProviderV2.Info.empty(ProviderV2.ID.make(providerID)),
-    api: options?.api ?? {
+    endpoint: {
       type: "aisdk",
       package: "test-provider",
     },
     ...options,
-    request: {
+    options: {
       headers: {},
       body: {},
-      ...options?.request,
+      aisdk: {
+        provider: {},
+        request: {},
+      },
+      ...options?.options,
     },
   })
 }
 
-export function model(providerID: string, modelID: string, options?: ModelInput) {
+export function model(providerID: string, modelID: string, options?: Partial<ModelV2.Info>) {
   return new ModelV2.Info({
     ...ModelV2.Info.empty(ProviderV2.ID.make(providerID), ModelV2.ID.make(modelID)),
+    apiID: ModelV2.ID.make(modelID),
+    endpoint: {
+      type: "aisdk",
+      package: "test-provider",
+    },
     ...options,
-    api:
-      options?.api && "type" in options.api
-        ? { id: ModelV2.ID.make(modelID), ...options.api }
-        : {
-            id: ModelV2.ID.make(modelID),
-            ...options?.api,
-            type: "aisdk",
-            package: "test-provider",
-          },
-    request: {
+    options: {
       headers: {},
       body: {},
-      ...options?.request,
+      aisdk: {
+        provider: {},
+        request: {},
+      },
+      ...options?.options,
     },
   })
 }

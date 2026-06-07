@@ -29,7 +29,7 @@ type TargetInput = {
   readonly prefix?: string
   readonly tags?: ReadonlyArray<string>
   readonly metadata?: Record<string, unknown>
-  readonly options?: HttpRecorder.RecorderOptions
+  readonly options?: HttpRecorder.RecordReplayOptions
   readonly scenarios: ReadonlyArray<ScenarioInput>
 }
 

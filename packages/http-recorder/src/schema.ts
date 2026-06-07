@@ -1,21 +1,4 @@
 import { Schema } from "effect"
-import type {
-  CassetteMetadata,
-  HttpInteraction,
-  RequestSnapshot,
-  ResponseSnapshot,
-  WebSocketEvent,
-  WebSocketInteraction,
-} from "./types.js"
-
-export type {
-  CassetteMetadata,
-  HttpInteraction,
-  RequestSnapshot,
-  ResponseSnapshot,
-  WebSocketEvent,
-  WebSocketInteraction,
-} from "./types.js"
 
 export const RequestSnapshotSchema = Schema.Struct({
   method: Schema.String,
@@ -23,6 +6,7 @@ export const RequestSnapshotSchema = Schema.Struct({
   headers: Schema.Record(Schema.String, Schema.String),
   body: Schema.String,
 })
+export type RequestSnapshot = Schema.Schema.Type<typeof RequestSnapshotSchema>
 
 export const ResponseSnapshotSchema = Schema.Struct({
   status: Schema.Number,
@@ -30,28 +14,23 @@ export const ResponseSnapshotSchema = Schema.Struct({
   body: Schema.String,
   bodyEncoding: Schema.optional(Schema.Literals(["text", "base64"])),
 })
+export type ResponseSnapshot = Schema.Schema.Type<typeof ResponseSnapshotSchema>
 
 export const CassetteMetadataSchema = Schema.Record(Schema.String, Schema.Unknown)
+export type CassetteMetadata = Schema.Schema.Type<typeof CassetteMetadataSchema>
 
 export const HttpInteractionSchema = Schema.Struct({
   transport: Schema.tag("http"),
   request: RequestSnapshotSchema,
   response: ResponseSnapshotSchema,
 })
+export type HttpInteraction = Schema.Schema.Type<typeof HttpInteractionSchema>
 
-export const WebSocketEventSchema = Schema.Union([
-  Schema.Struct({
-    direction: Schema.Literals(["client", "server"]),
-    kind: Schema.tag("text"),
-    body: Schema.String,
-  }),
-  Schema.Struct({
-    direction: Schema.Literals(["client", "server"]),
-    kind: Schema.tag("binary"),
-    body: Schema.String,
-    bodyEncoding: Schema.Literal("base64"),
-  }),
+export const WebSocketFrameSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.tag("text"), body: Schema.String }),
+  Schema.Struct({ kind: Schema.tag("binary"), body: Schema.String, bodyEncoding: Schema.Literal("base64") }),
 ])
+export type WebSocketFrame = Schema.Schema.Type<typeof WebSocketFrameSchema>
 
 export const WebSocketInteractionSchema = Schema.Struct({
   transport: Schema.tag("websocket"),
@@ -59,8 +38,10 @@ export const WebSocketInteractionSchema = Schema.Struct({
     url: Schema.String,
     headers: Schema.Record(Schema.String, Schema.String),
   }),
-  events: Schema.Array(WebSocketEventSchema),
+  client: Schema.Array(WebSocketFrameSchema),
+  server: Schema.Array(WebSocketFrameSchema),
 })
+export type WebSocketInteraction = Schema.Schema.Type<typeof WebSocketInteractionSchema>
 
 export const InteractionSchema = Schema.Union([HttpInteractionSchema, WebSocketInteractionSchema]).pipe(
   Schema.toTaggedUnion("transport"),

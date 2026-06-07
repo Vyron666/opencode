@@ -1,5 +1,4 @@
 import { defer } from "@/util/defer"
-import { existsSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -14,17 +13,13 @@ export async function open(opts: { value: string; renderer: CliRenderer; cwd?: s
   const filepath = join(tmpdir(), `${Date.now()}.md`)
   await using _ = defer(async () => rm(filepath, { force: true }))
 
-  // In attach mode the server's project directory may not exist locally.
-  // Fall back to the local process cwd so the editor can still spawn.
-  const cwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : process.cwd()
-
   await Filesystem.write(filepath, opts.value)
   opts.renderer.suspend()
   opts.renderer.currentRenderBuffer.clear()
   try {
     const parts = editor.split(" ")
     const proc = Process.spawn([...parts, filepath], {
-      cwd,
+      cwd: opts.cwd,
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",

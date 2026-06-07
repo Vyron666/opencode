@@ -1,1 +1,1 @@
-export { evaluate } from "."
+export { evaluate } from "@opencode-ai/core/permission"

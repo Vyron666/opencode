@@ -208,7 +208,7 @@ function View(props: { api: TuiPluginApi }) {
         {
           title: "toggle",
           command: "plugins.toggle",
-          hidden: lock(),
+          disabled: lock(),
           onTrigger: (item) => {
             setCur(item.value)
             flip(item.value)
@@ -217,7 +217,7 @@ function View(props: { api: TuiPluginApi }) {
         {
           title: "install",
           command: "dialog.plugins.install",
-          hidden: lock(),
+          disabled: lock(),
           onTrigger: () => {
             showInstall(props.api)
           },

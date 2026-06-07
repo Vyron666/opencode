@@ -1,9 +1,9 @@
 import { $ } from "bun"
-import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import * as Observability from "@opencode-ai/core/effect/observability"
 import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, Context, Layer } from "effect"
+import { Effect, Context, Layer, ManagedRuntime } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import type * as Scope from "effect/Scope"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -18,31 +18,35 @@ import { TestLLMServer } from "../lib/llm-server"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 export const testInstanceStoreLayer = InstanceStore.defaultLayer.pipe(Layer.provide(noopBootstrap))
+const testInstanceRuntime = ManagedRuntime.make(testInstanceStoreLayer.pipe(Layer.provideMerge(Observability.layer)))
+
+const runTestInstanceStore = <A>(fn: (store: InstanceStore.Interface) => Effect.Effect<A>) =>
+  testInstanceRuntime.runPromise(InstanceStore.Service.use(fn))
 
 export async function provideTestInstance<R>(input: {
   directory: string
   init?: Effect.Effect<void>
   fn: (ctx: InstanceContext) => R
 }) {
-  const ctx = await InstanceRuntime.load({ directory: input.directory })
+  const ctx = await runTestInstanceStore((store) => store.load({ directory: input.directory }))
   try {
-    if (input.init) await Effect.runPromise(input.init.pipe(Effect.provideService(InstanceRef, ctx)))
+    if (input.init) await testInstanceRuntime.runPromise(input.init.pipe(Effect.provideService(InstanceRef, ctx)))
     return await input.fn(ctx)
   } finally {
-    await InstanceRuntime.disposeInstance(ctx)
+    await runTestInstanceStore((store) => store.dispose(ctx))
   }
 }
 
 export async function withTestInstance<R>(input: { directory: string; fn: (ctx: InstanceContext) => R }) {
-  return input.fn(await InstanceRuntime.load({ directory: input.directory }))
+  return input.fn(await runTestInstanceStore((store) => store.load({ directory: input.directory })))
 }
 
 export async function reloadTestInstance(input: { directory: string }) {
-  return InstanceRuntime.reloadInstance(input)
+  return runTestInstanceStore((store) => store.reload(input))
 }
 
 export async function disposeAllInstances() {
-  await InstanceRuntime.disposeAllInstances()
+  await Promise.all([InstanceRuntime.disposeAllInstances(), runTestInstanceStore((store) => store.disposeAll())])
 }
 
 // Strip null bytes from paths (defensive fix for CI environment issues)
@@ -73,7 +77,7 @@ async function stop(dir: string) {
 
 type TmpDirOptions<T> = {
   git?: boolean
-  config?: Partial<ConfigV1.Info>
+  config?: Partial<Config.Info>
   init?: (dir: string) => Promise<T>
   dispose?: (dir: string) => Promise<T>
 }
@@ -115,10 +119,9 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
 }
 
 /** Effectful scoped tmpdir. Cleaned up when the scope closes. Make sure these stay in sync */
-export function tmpdirScoped<E = never, R = never>(options?: {
+export function tmpdirScoped(options?: {
   git?: boolean
-  config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>)
-  init?: (directory: string) => Effect.Effect<void, E, R>
+  config?: Partial<Config.Info> | (() => Partial<Config.Info>)
 }) {
   return Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -155,16 +158,19 @@ export function tmpdirScoped<E = never, R = never>(options?: {
       )
     }
 
-    if (options?.init) yield* options.init(dir)
-
     return dir
   })
 }
 
 export const provideInstance =
   (directory: string) =>
-  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | InstanceStore.Service> =>
-    InstanceStore.Service.use((store) => store.provide({ directory }, self))
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.contextWith((services: Context.Context<R>) =>
+      Effect.promise<A>(async () => {
+        const ctx = await runTestInstanceStore((store) => store.load({ directory }))
+        return Effect.runPromiseWith(services)(self.pipe(Effect.provideService(InstanceRef, ctx)))
+      }),
+    )
 
 export const provideInstanceEffect =
   (directory: string) =>
@@ -178,12 +184,25 @@ export const disposeAllInstancesEffect = InstanceStore.Service.use((store) => st
 
 export function provideTmpdirInstance<A, E, R>(
   self: (path: string) => Effect.Effect<A, E, R>,
-  options?: { git?: boolean; config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>) },
+  options?: { git?: boolean; config?: Partial<Config.Info> | (() => Partial<Config.Info>) },
 ) {
   return Effect.gen(function* () {
     const path = yield* tmpdirScoped(options)
+    let provided = false
+
+    yield* Effect.addFinalizer(() =>
+      provided
+        ? Effect.promise(() =>
+            runTestInstanceStore((store) =>
+              store.load({ directory: path }).pipe(Effect.flatMap((ctx) => store.dispose(ctx))),
+            ),
+          ).pipe(Effect.ignore)
+        : Effect.void,
+    )
+
+    provided = true
     return yield* self(path).pipe(provideInstance(path))
-  }).pipe(Effect.provide(testInstanceStoreLayer))
+  })
 }
 
 export class TestInstance extends Context.Service<TestInstance, { readonly directory: string }>()("@test/Instance") {}
@@ -195,11 +214,7 @@ export const requireInstance = Effect.gen(function* () {
 })
 
 export const withTmpdirInstance =
-  <E2 = never, R2 = never>(options?: {
-    git?: boolean
-    config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>)
-    init?: (directory: string) => Effect.Effect<void, E2, R2>
-  }) =>
+  (options?: { git?: boolean; config?: Partial<Config.Info> | (() => Partial<Config.Info>) }) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
       const directory = yield* tmpdirScoped(options)
@@ -208,7 +223,7 @@ export const withTmpdirInstance =
 
 export function provideTmpdirServer<A, E, R>(
   self: (input: { dir: string; llm: TestLLMServer["Service"] }) => Effect.Effect<A, E, R>,
-  options?: { git?: boolean; config?: (url: string) => Partial<ConfigV1.Info> },
+  options?: { git?: boolean; config?: (url: string) => Partial<Config.Info> },
 ): Effect.Effect<
   A,
   E | PlatformError.PlatformError,

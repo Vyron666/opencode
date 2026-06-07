@@ -1,15 +1,11 @@
-export * as ProjectV2 from "./project"
 export * as Project from "./project"
 
 import { Context, Effect, Layer, Schema } from "effect"
-import { asc, desc, eq } from "drizzle-orm"
 import path from "path"
 import { AbsolutePath, withStatics } from "./schema"
-import { FSUtil } from "./fs-util"
-import { Database } from "./database/database"
+import { AppFileSystem } from "./filesystem"
 import { Git } from "./git"
 import { Hash } from "./util/hash"
-import { ProjectDirectoryTable } from "./project/sql"
 
 export const ID = Schema.String.pipe(
   Schema.brand("Project.ID"),
@@ -29,18 +25,10 @@ export type Vcs = typeof Vcs.Type
 
 export class Info extends Schema.Class<Info>("Project.Info")({
   id: ID,
+  vcs: Schema.optional(Vcs),
 }) {}
 
-export const DirectoriesInput = Schema.Struct({
-  projectID: ID,
-}).annotate({ identifier: "Project.DirectoriesInput" })
-export type DirectoriesInput = typeof DirectoriesInput.Type
-
-export const Directories = Schema.Array(AbsolutePath).annotate({ identifier: "Project.Directories" })
-export type Directories = typeof Directories.Type
-
 export interface Interface {
-  readonly directories: (input: DirectoriesInput) => Effect.Effect<Directories>
   readonly resolve: (input: AbsolutePath) => Effect.Effect<
     {
       previous?: ID
@@ -67,20 +55,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Pr
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const db = (yield* Database.Service).db
-    const fs = yield* FSUtil.Service
+    const fs = yield* AppFileSystem.Service
     const git = yield* Git.Service
-
-    const directories = Effect.fn("Project.directories")(function* (input: DirectoriesInput) {
-      const rows = yield* db
-        .select({ directory: ProjectDirectoryTable.directory })
-        .from(ProjectDirectoryTable)
-        .where(eq(ProjectDirectoryTable.project_id, input.projectID))
-        .orderBy(desc(ProjectDirectoryTable.time_created), asc(ProjectDirectoryTable.directory))
-        .all()
-        .pipe(Effect.orDie)
-      return rows.map((row) => AbsolutePath.make(row.directory))
-    })
 
     const cached = Effect.fnUntraced(function* (dir: string) {
       return yield* fs.readFileString(path.join(dir, "opencode")).pipe(
@@ -129,10 +105,11 @@ export const layer = Layer.effect(
 
     const resolve = Effect.fn("Project.resolve")(function* (input: AbsolutePath) {
       const repo = yield* git.find(input)
-      if (!repo) return { id: ID.global, directory: AbsolutePath.make(path.parse(input).root), vcs: undefined }
+      if (!repo) return { id: ID.global, directory: input, vcs: undefined }
 
       const previous = yield* cached(repo.store)
       const id = (yield* remote(repo)) ?? previous ?? (yield* root(repo))
+
       return {
         previous,
         id: id ?? ID.global,
@@ -145,12 +122,8 @@ export const layer = Layer.effect(
       yield* fs.writeFileString(path.join(input.store, "opencode"), input.id).pipe(Effect.ignore)
     })
 
-    return Service.of({ directories, resolve, commit })
+    return Service.of({ resolve, commit })
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Database.defaultLayer),
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Git.defaultLayer),
-)
+export const defaultLayer = layer.pipe(Layer.provide(AppFileSystem.defaultLayer), Layer.provide(Git.defaultLayer))

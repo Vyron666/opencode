@@ -1,5 +1,5 @@
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { EventV2 } from "@opencode-ai/core/event"
+import { BusEvent } from "@/bus/bus-event"
+import { Bus } from "@/bus"
 import * as Log from "@opencode-ai/core/util/log"
 import * as LSPClient from "./client"
 import path from "path"
@@ -17,7 +17,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 const log = Log.create({ service: "lsp" })
 
 export const Event = {
-  Updated: EventV2.define({ type: "lsp.updated", schema: {} }),
+  Updated: BusEvent.define("lsp.updated", Schema.Struct({})),
 }
 
 const Position = Schema.Struct({
@@ -144,7 +144,6 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const flags = yield* RuntimeFlags.Service
-    const events = yield* EventV2Bridge.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("LSP.state")(function* (ctx) {
@@ -213,10 +212,9 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       if (!containsPath(file, ctx)) return [] as LSPClient.Info[]
       const s = yield* InstanceState.get(state)
-      const clients = yield* Effect.promise(async () => {
+      return yield* Effect.promise(async () => {
         const extension = path.parse(file).ext || file
         const result: LSPClient.Info[] = []
-        let updated = 0
 
         async function schedule(server: LSPServer.Info, root: string, key: string) {
           const handle = await server
@@ -293,15 +291,11 @@ export const layer = Layer.effect(
           if (!client) continue
 
           result.push(client)
-          updated++
+          await Bus.publish(ctx, Event.Updated, {})
         }
 
-        return { result, updated }
+        return result
       })
-      yield* Effect.forEach(Array.from({ length: clients.updated }), () => events.publish(Event.Updated, {}), {
-        discard: true,
-      })
-      return clients.result
     })
 
     const run = Effect.fnUntraced(function* <T>(file: string, fn: (client: LSPClient.Info) => Promise<T>) {
@@ -506,11 +500,7 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(RuntimeFlags.defaultLayer),
-  Layer.provide(EventV2Bridge.defaultLayer),
-)
+export const defaultLayer = layer.pipe(Layer.provide(Config.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer))
 
 export * as Diagnostic from "./diagnostic"
 

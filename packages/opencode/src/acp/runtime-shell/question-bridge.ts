@@ -10,7 +10,7 @@ import { Question } from "@/question"
 // 中文/English: keep runtime-shell question customization in one small module
 // so agent.ts only owns the event switch and session queue wiring.
 export async function handleRuntimeShellQuestion(input: {
-  connection: Partial<Pick<AgentSideConnection, "unstable_createElicitation">>
+  connection: AgentSideConnection
   sdk: OpencodeClient
   question: Question.Request
   directory: string
@@ -18,7 +18,7 @@ export async function handleRuntimeShellQuestion(input: {
   if (!input.connection.unstable_createElicitation) {
     await input.sdk.question.reject(
       {
-        requestID: String(input.question.id),
+        requestID: input.question.id,
         directory: input.directory,
       },
       { throwOnError: true },
@@ -126,7 +126,7 @@ async function replyQuestion(
   if (response.action === "decline" || response.action === "cancel") {
     // 中文/English: question reply/reject must target the same workspace-routed
     // opencode instance, otherwise the pending request cannot be found.
-    await sdk.question.reject({ requestID: String(question.id), directory }, { throwOnError: true })
+    await sdk.question.reject({ requestID: question.id, directory }, { throwOnError: true })
     return
   }
 
@@ -144,7 +144,7 @@ async function replyQuestion(
 
   await sdk.question.reply(
     {
-      requestID: String(question.id),
+      requestID: question.id,
       directory,
       answers,
     },

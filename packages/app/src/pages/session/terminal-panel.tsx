@@ -26,7 +26,7 @@ export function TerminalPanel() {
   const terminal = useTerminal()
   const language = useLanguage()
   const command = useCommand()
-  const { params, workspaceKey, view } = useSessionLayout()
+  const { params, view } = useSessionLayout()
 
   const opened = createMemo(() => view().terminal.opened())
   const size = createSizing()
@@ -126,7 +126,7 @@ export function TerminalPanel() {
     language.locale()
 
     setTerminalHandoff(
-      workspaceKey(),
+      dir,
       terminal.all().map((pty) =>
         terminalTabLabel({
           title: pty.title,
@@ -140,7 +140,7 @@ export function TerminalPanel() {
   const handoff = createMemo(() => {
     const dir = params.dir
     if (!dir) return []
-    return getTerminalHandoff(workspaceKey()) ?? []
+    return getTerminalHandoff(dir) ?? []
   })
 
   const all = terminal.all

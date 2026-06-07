@@ -22,25 +22,25 @@ describe("NvidiaPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(NvidiaPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const nvidia = provider("nvidia", {
-          api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://integrate.api.nvidia.com/v1" },
-          request: { headers: { Existing: "value" }, body: {} },
+          endpoint: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://integrate.api.nvidia.com/v1" },
+          options: { headers: { Existing: "value" }, body: {}, aisdk: { provider: {}, request: {} } },
         })
         catalog.provider.update(nvidia.id, (draft) => {
-          draft.api = nvidia.api
-          draft.request = nvidia.request
+          draft.endpoint = nvidia.endpoint
+          draft.options = nvidia.options
         })
         catalog.provider.update(provider("openrouter").id, () => {})
       })
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).options.headers).toEqual({
         Existing: "value",
         "HTTP-Referer": "https://opencode.ai/",
         "X-Title": "opencode",
         "X-BILLING-INVOKE-ORIGIN": "OpenCode",
       })
-      expect((yield* catalog.provider.get(ProviderV2.ID.openrouter)).request.headers).toEqual({})
+      expect((yield* catalog.provider.get(ProviderV2.ID.openrouter)).options.headers).toEqual({})
     }),
   )
 
@@ -49,19 +49,19 @@ describe("NvidiaPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(NvidiaPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("nvidia", {
-          api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://integrate.api.nvidia.com/v1" },
-          request: { headers: {}, body: {} },
+          endpoint: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://integrate.api.nvidia.com/v1" },
+          options: { headers: {}, body: {}, aisdk: { provider: {}, request: {} } },
         })
         catalog.provider.update(item.id, (draft) => {
-          draft.api = item.api
-          draft.request = item.request
+          draft.endpoint = item.endpoint
+          draft.options = item.options
         })
       })
 
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).options.headers).toEqual({
         "HTTP-Referer": "https://opencode.ai/",
         "X-Title": "opencode",
         "X-BILLING-INVOKE-ORIGIN": "OpenCode",
@@ -74,22 +74,23 @@ describe("NvidiaPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(NvidiaPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("nvidia", {
-          api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://integrate.api.nvidia.com/v1" },
-          request: {
+          endpoint: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://integrate.api.nvidia.com/v1" },
+          options: {
             headers: { "X-BILLING-INVOKE-ORIGIN": "CustomOrigin" },
-            body: { baseURL: "https://integrate.api.nvidia.com/v1" },
+            body: {},
+            aisdk: { provider: { baseURL: "https://integrate.api.nvidia.com/v1" }, request: {} },
           },
         })
         catalog.provider.update(item.id, (draft) => {
-          draft.api = item.api
-          draft.request = item.request
+          draft.endpoint = item.endpoint
+          draft.options = item.options
         })
       })
 
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).options.headers).toEqual({
         "HTTP-Referer": "https://opencode.ai/",
         "X-Title": "opencode",
         "X-BILLING-INVOKE-ORIGIN": "CustomOrigin",

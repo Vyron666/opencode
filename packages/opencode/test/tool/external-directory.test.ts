@@ -1,4 +1,3 @@
-import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect } from "effect"
@@ -6,7 +5,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import type { Tool } from "@/tool/tool"
 import { assertExternalDirectoryEffect } from "../../src/tool/external-directory"
 import { Filesystem } from "@/util/filesystem"
-import { TestInstance, tmpdirScoped } from "../fixture/fixture"
+import { provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
@@ -27,7 +26,7 @@ const glob = (p: string) =>
   process.platform === "win32" ? Filesystem.normalizePathPattern(p) : p.replaceAll("\\", "/")
 
 function makeCtx() {
-  const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+  const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
   const ctx: Tool.Context = {
     ...baseCtx,
     ask: (req) =>
@@ -49,26 +48,27 @@ describe("tool.assertExternalDirectory", () => {
     }),
   )
 
-  it.instance("no-ops for paths inside the instance directory", () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      const { requests, ctx } = makeCtx()
+  it.live("no-ops for paths inside the instance directory", () =>
+    provideInstance("/tmp/project")(
+      Effect.gen(function* () {
+        const { requests, ctx } = makeCtx()
 
-      yield* assertExternalDirectoryEffect(ctx, path.join(test.directory, "file.txt"))
+        yield* assertExternalDirectoryEffect(ctx, path.join("/tmp/project", "file.txt"))
 
-      expect(requests.length).toBe(0)
-    }),
+        expect(requests.length).toBe(0)
+      }),
+    ),
   )
 
-  it.instance("asks with a single canonical glob", () =>
+  it.live("asks with a single canonical glob", () =>
     Effect.gen(function* () {
-      const test = yield* TestInstance
       const { requests, ctx } = makeCtx()
 
-      const target = path.join(path.dirname(test.directory), "outside", "file.txt")
+      const directory = "/tmp/project"
+      const target = "/tmp/outside/file.txt"
       const expected = glob(path.join(path.dirname(target), "*"))
 
-      yield* assertExternalDirectoryEffect(ctx, target)
+      yield* provideInstance(directory)(assertExternalDirectoryEffect(ctx, target))
 
       const req = requests.find((r) => r.permission === "external_directory")
       expect(req).toBeDefined()
@@ -77,15 +77,15 @@ describe("tool.assertExternalDirectory", () => {
     }),
   )
 
-  it.instance("uses target directory when kind=directory", () =>
+  it.live("uses target directory when kind=directory", () =>
     Effect.gen(function* () {
-      const test = yield* TestInstance
       const { requests, ctx } = makeCtx()
 
-      const target = path.join(path.dirname(test.directory), "outside")
+      const directory = "/tmp/project"
+      const target = "/tmp/outside"
       const expected = glob(path.join(target, "*"))
 
-      yield* assertExternalDirectoryEffect(ctx, target, { kind: "directory" })
+      yield* provideInstance(directory)(assertExternalDirectoryEffect(ctx, target, { kind: "directory" }))
 
       const req = requests.find((r) => r.permission === "external_directory")
       expect(req).toBeDefined()
@@ -95,13 +95,15 @@ describe("tool.assertExternalDirectory", () => {
   )
 
   it.live("skips prompting when bypass=true", () =>
-    Effect.gen(function* () {
-      const { requests, ctx } = makeCtx()
+    provideInstance("/tmp/project")(
+      Effect.gen(function* () {
+        const { requests, ctx } = makeCtx()
 
-      yield* assertExternalDirectoryEffect(ctx, "/tmp/outside/file.txt", { bypass: true })
+        yield* assertExternalDirectoryEffect(ctx, "/tmp/outside/file.txt", { bypass: true })
 
-      expect(requests.length).toBe(0)
-    }),
+        expect(requests.length).toBe(0)
+      }),
+    ),
   )
 
   if (process.platform === "win32") {

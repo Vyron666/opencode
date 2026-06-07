@@ -5,7 +5,7 @@ import { Global } from "@opencode-ai/core/global"
 
 const id = "internal:sidebar-footer"
 
-function View(props: { api: TuiPluginApi; sessionID: string }) {
+function View(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const has = createMemo(() =>
     props.api.state.provider.some(
@@ -15,11 +15,9 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
   const path = createMemo(() => {
-    const session = props.api.state.session.get(props.sessionID)
-    const dir = session?.directory || props.api.state.path.directory || process.cwd()
+    const dir = props.api.state.path.directory || process.cwd()
     const out = dir.replace(Global.Path.home, "~")
-    const branch = session?.directory === props.api.state.path.directory ? props.api.state.vcs?.branch : undefined
-    const text = branch ? out + ":" + branch : out
+    const text = props.api.state.vcs?.branch ? out + ":" + props.api.state.vcs.branch : out
     const list = text.split("/")
     return {
       parent: list.slice(0, -1).join("/"),
@@ -81,8 +79,8 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 100,
     slots: {
-      sidebar_footer(_ctx, props) {
-        return <View api={api} sessionID={props.session_id} />
+      sidebar_footer() {
+        return <View api={api} />
       },
     },
   })

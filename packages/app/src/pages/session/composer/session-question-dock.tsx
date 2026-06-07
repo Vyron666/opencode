@@ -4,14 +4,12 @@ import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@opencode-ai/ui/dock-prompt"
 import { Icon } from "@opencode-ai/ui/icon"
-import { showToast } from "@/utils/toast"
+import { showToast } from "@opencode-ai/ui/toast"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { useServerSDK } from "@/context/server-sdk"
-import { ScopedKey } from "@/utils/server-scope"
 
 const cache = new Map<string, { tab: number; answers: QuestionAnswer[]; custom: string[]; customOn: boolean[] }>()
 
@@ -62,14 +60,12 @@ function Option(props: {
 
 export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit: () => void }> = (props) => {
   const sdk = useSDK()
-  const serverSDK = useServerSDK()
   const language = useLanguage()
-  const cacheKey = ScopedKey.from(serverSDK.scope, props.request.id)
 
   const questions = createMemo(() => props.request.questions)
   const total = createMemo(() => questions().length)
 
-  const cached = cache.get(cacheKey)
+  const cached = cache.get(props.request.id)
   const [store, setStore] = createStore({
     tab: cached?.tab ?? 0,
     answers: cached?.answers ?? ([] as QuestionAnswer[]),
@@ -195,7 +191,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   onCleanup(() => {
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     if (replied) return
-    cache.set(cacheKey, {
+    cache.set(props.request.id, {
       tab: store.tab,
       answers: store.answers.map((a) => (a ? [...a] : [])),
       custom: store.custom.map((s) => s ?? ""),
@@ -215,7 +211,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     },
     onSuccess: () => {
       replied = true
-      cache.delete(cacheKey)
+      cache.delete(props.request.id)
     },
     onError: fail,
   }))
@@ -227,7 +223,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     },
     onSuccess: () => {
       replied = true
-      cache.delete(cacheKey)
+      cache.delete(props.request.id)
     },
     onError: fail,
   }))

@@ -1,18 +1,25 @@
-import { http } from "./effect.js"
-import { socket } from "./socket.js"
+export type {
+  CassetteMetadata,
+  HttpInteraction,
+  Interaction,
+  RequestSnapshot,
+  ResponseSnapshot,
+  WebSocketFrame,
+  WebSocketInteraction,
+} from "./schema"
+export { CassetteNotFoundError, hasCassetteSync, UnsafeCassetteError } from "./cassette"
+export { defaultMatcher, type RequestMatcher } from "./matching"
+export { redactHeaders, redactUrl, secretFindings, type SecretFinding } from "./redaction"
+export { cassetteLayer, recordingLayer, type RecordReplayMode, type RecordReplayOptions } from "./effect"
+export {
+  makeWebSocketExecutor,
+  type WebSocketConnection,
+  type WebSocketExecutor,
+  type WebSocketRecordReplayOptions,
+  type WebSocketRequest,
+} from "./websocket"
 
-/** HTTP and WebSocket cassette recording. */
-export const HttpRecorder = { http, socket } as const
+export * as Cassette from "./cassette"
+export * as Redactor from "./redactor"
 
-export namespace HttpRecorder {
-  /** Additional JSON metadata stored with a cassette. */
-  export type CassetteMetadata = import("./types.js").CassetteMetadata
-  /** Recorder configuration. */
-  export type RecorderOptions = import("./types.js").RecorderOptions
-  /** Additive redaction and header-preservation policy. */
-  export type RedactOptions = import("./types.js").RedactOptions
-  /** Returns whether an incoming HTTP request matches a recorded request. */
-  export type RequestMatcher = import("./types.js").RequestMatcher
-  /** The normalized HTTP request representation used for matching. */
-  export type RequestSnapshot = import("./types.js").RequestSnapshot
-}
+export * as HttpRecorder from "."

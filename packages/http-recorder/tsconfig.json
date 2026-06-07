@@ -1,13 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@tsconfig/node22/tsconfig.json",
+  "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "declaration": true,
-    "stripInternal": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "noUncheckedIndexedAccess": false,
     "plugins": [
@@ -17,6 +11,5 @@
         "namespaceImportPackages": ["effect", "@effect/*"]
       }
     ]
-  },
-  "include": ["src"]
+  }
 }

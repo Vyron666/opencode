@@ -1,5 +1,4 @@
 import { Config } from "@/config/config"
-import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Provider } from "@/provider/provider"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
@@ -15,7 +14,7 @@ export const ConfigApi = HttpApi.make("config")
       .add(
         HttpApiEndpoint.get("get", root, {
           query: WorkspaceRoutingQuery,
-          success: described(ConfigV1.Info, "Get config info"),
+          success: described(Config.Info, "Get config info"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "config.get",
@@ -25,8 +24,8 @@ export const ConfigApi = HttpApi.make("config")
         ),
         HttpApiEndpoint.patch("update", root, {
           query: WorkspaceRoutingQuery,
-          payload: ConfigV1.Info,
-          success: described(ConfigV1.Info, "Successfully updated config"),
+          payload: Config.Info,
+          success: described(Config.Info, "Successfully updated config"),
           error: HttpApiError.BadRequest,
         }).annotateMerge(
           OpenApi.annotations({

@@ -8,20 +8,11 @@ import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
-import { useGlobal } from "./global"
-import { ServerScope } from "@/utils/server-scope"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
 
-const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(error) || signal?.aborted === true
-
-export function resumeStreamAfterPageShow(event: PageTransitionEvent, start: () => unknown) {
-  if (!event.persisted) return
-  start()
-}
-
-export function createServerSdkContext(server: ServerConnection.Any, scope: ServerScope) {
+function createServerSdkContext(server: ServerConnection.Any) {
   const platform = usePlatform()
   const abort = new AbortController()
 
@@ -104,10 +95,11 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
 
   let streamErrorLogged = false
   const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+  const aborted = isAbortError
+
   let attempt: AbortController | undefined
   let run: Promise<void> | undefined
   let started = false
-  let generation = 0
   const HEARTBEAT_TIMEOUT_MS = 15_000
   let lastEventAt = Date.now()
   let heartbeat: ReturnType<typeof setTimeout> | undefined
@@ -127,12 +119,9 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
   const start = () => {
     if (started) return run
     started = true
-    const active = ++generation
-    const previous = run
-    const current = (async () => {
-      if (previous) await previous
+    run = (async () => {
       // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
-      while (!abort.signal.aborted && started && generation === active) {
+      while (!abort.signal.aborted && started) {
         attempt = new AbortController()
         lastEventAt = Date.now()
         const onAbort = () => {
@@ -143,7 +132,7 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
           const events = await eventSdk.global.event({
             signal: attempt.signal,
             onSseError: (error) => {
-              if (isStreamClosed(error, attempt?.signal)) return
+              if (aborted(error)) return
               if (streamErrorLogged) return
               streamErrorLogged = true
               console.error("[global-sdk] event stream error", {
@@ -186,7 +175,7 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
             await wait(0)
           }
         } catch (error) {
-          if (!isStreamClosed(error, attempt?.signal) && !streamErrorLogged) {
+          if (!aborted(error) && !streamErrorLogged) {
             streamErrorLogged = true
             console.error("[global-sdk] event stream failed", {
               url: server.http.url,
@@ -200,28 +189,23 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
           clearHeartbeat()
         }
 
-        if (abort.signal.aborted || !started || generation !== active) return
+        if (abort.signal.aborted || !started) return
         await wait(RECONNECT_DELAY_MS)
       }
     })().finally(() => {
-      if (run !== current) return
       run = undefined
       flush()
     })
-    run = current
     return run
   }
 
   const stop = () => {
     started = false
-    generation++
     attempt?.abort()
     clearHeartbeat()
   }
 
   onMount(() => {
-    makeEventListener(window, "pagehide", stop)
-    makeEventListener(window, "pageshow", (event) => resumeStreamAfterPageShow(event, start))
     makeEventListener(document, "visibilitychange", () => {
       if (document.visibilityState !== "visible") return
       if (!started) return
@@ -243,7 +227,6 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
   })
 
   return {
-    scope,
     url: server.http.url,
     client: sdk,
     event: {
@@ -261,22 +244,18 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
   }
 }
 
-export type ServerSDK = ReturnType<typeof createServerSdkContext>
-
 export const { use: useServerSDK, provider: ServerSDKProvider } = createSimpleContext({
   name: "ServerSDK",
-  init: (props: { server?: ServerConnection.Any }) => {
-    const global = useGlobal()
+  init: () => {
     const language = useLanguage()
     const server = useServer()
 
-    const conn = props.server ?? server.current
-    if (!conn) throw new Error(language.t("error.serverSDK.noServerAvailable"))
-
-    const ctx = global.createServerCtx(conn)
-    return Object.assign(ctx.sdk, {
-      createDirSdkContext: createRefCountMap((dir) => createDirSdkContext(dir, ctx.sdk)),
-    })
+    if (!server.current) throw new Error(language.t("error.serverSDK.noServerAvailable"))
+    const sdk = createServerSdkContext(server.current)
+    return {
+      ...sdk,
+      createDirSdkContext: createRefCountMap((dir) => createDirSdkContext(dir, sdk)),
+    }
   },
 })
 
@@ -284,7 +263,7 @@ type SDKEventMap = {
   [key in Event["type"]]: Extract<Event, { type: key }>
 }
 
-function createDirSdkContext(directory: string, serverSDK: ServerSDK) {
+function createDirSdkContext(directory: string, serverSDK: ReturnType<typeof createServerSdkContext>) {
   const client = serverSDK.createClient({
     directory,
     throwOnError: true,
@@ -298,7 +277,6 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDK) {
   onCleanup(unsub)
 
   return {
-    scope: serverSDK.scope,
     directory,
     client,
     event: emitter,

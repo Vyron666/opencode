@@ -107,7 +107,6 @@ function buildNotificationIndex(list: Notification[]) {
 
 export const { use: useNotification, provider: NotificationProvider } = createSimpleContext({
   name: "Notification",
-  gate: false,
   init: () => {
     const params = useParams()
     const serverSDK = useServerSDK()
@@ -125,7 +124,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     const currentSession = createMemo(() => params.id)
 
     const [store, setStore, _, ready] = persisted(
-      Persist.serverGlobal(serverSDK.scope, "notification", ["notification.v1"]),
+      Persist.global("notification", ["notification.v1"]),
       createStore({
         list: [] as Notification[],
       }),

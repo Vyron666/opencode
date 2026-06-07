@@ -4,7 +4,7 @@ import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "e
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
 import { hasPtyConnectTicketURL } from "@/server/shared/pty-ticket"
 import { isPublicUIPath } from "@/server/shared/public-ui"
-export { V2Authorization, v2AuthorizationLayer } from "@opencode-ai/server/middleware/authorization"
+import { UnauthorizedError } from "../errors"
 
 const AUTH_TOKEN_QUERY = "auth_token"
 const UNAUTHORIZED = 401
@@ -20,10 +20,10 @@ export class Authorization extends HttpApiMiddleware.Service<Authorization>()(
   },
 ) {}
 
-export class PtyConnectAuthorization extends HttpApiMiddleware.Service<PtyConnectAuthorization>()(
-  "@opencode/ExperimentalHttpApiPtyConnectAuthorization",
+export class V2Authorization extends HttpApiMiddleware.Service<V2Authorization>()(
+  "@opencode/ExperimentalHttpApiV2Authorization",
   {
-    error: HttpApiError.UnauthorizedNoContent,
+    error: UnauthorizedError,
   },
 ) {}
 
@@ -56,11 +56,11 @@ function decodeCredential(input: string) {
     Effect.match({
       onFailure: emptyCredential,
       onSuccess: (header) => {
-        const separator = header.indexOf(":")
-        if (separator === -1) return emptyCredential()
+        const parts = header.split(":")
+        if (parts.length !== 2) return emptyCredential()
         return {
-          username: header.slice(0, separator),
-          password: Redacted.make(header.slice(separator + 1)),
+          username: parts[0],
+          password: Redacted.make(parts[1]),
         }
       },
     }),
@@ -105,6 +105,7 @@ export const authorizationRouterMiddleware = HttpRouter.middleware()(
         const request = yield* HttpServerRequest.HttpServerRequest
         const url = new URL(request.url, "http://localhost")
         if (isPublicUIPath(request.method, url.pathname)) return yield* effect
+        if (hasPtyConnectTicketURL(url)) return yield* effect
         return yield* credentialFromURL(url, request).pipe(
           Effect.flatMap((credential) => validateRawCredential(effect, credential, config)),
         )
@@ -128,18 +129,24 @@ export const authorizationLayer = Layer.effect(
   }),
 )
 
-export const ptyConnectAuthorizationLayer = Layer.effect(
-  PtyConnectAuthorization,
+export const v2AuthorizationLayer = Layer.effect(
+  V2Authorization,
   Effect.gen(function* () {
     const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return PtyConnectAuthorization.of((effect) => effect)
-    return PtyConnectAuthorization.of((effect) =>
+    if (!ServerAuth.required(config)) return V2Authorization.of((effect) => effect)
+    return V2Authorization.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const url = new URL(request.url, "http://localhost")
-        if (hasPtyConnectTicketURL(url)) return yield* effect
-        return yield* credentialFromURL(url, request).pipe(
-          Effect.flatMap((credential) => validateCredential(effect, credential, config)),
+        return yield* credentialFromRequest(request).pipe(
+          Effect.flatMap((credential) =>
+            Effect.gen(function* () {
+              if (ServerAuth.authorized(credential, config)) return yield* effect
+              yield* HttpEffect.appendPreResponseHandler((_request, response) =>
+                Effect.succeed(HttpServerResponse.setHeader(response, "www-authenticate", WWW_AUTHENTICATE)),
+              )
+              return yield* new UnauthorizedError({ message: "Authentication required" })
+            }),
+          ),
         )
       }),
     )

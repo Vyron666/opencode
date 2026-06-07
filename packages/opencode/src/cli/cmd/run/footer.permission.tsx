@@ -64,8 +64,7 @@ function buttons(
   )
 }
 
-/** @internal Exported to test managed textarea submission without permission navigation. */
-export function RejectField(props: {
+function RejectField(props: {
   theme: RunFooterTheme
   text: string
   disabled: boolean
@@ -108,7 +107,6 @@ export function RejectField(props: {
       focusedBackgroundColor={props.theme.surface}
       cursorColor={props.theme.text}
       focused={!props.disabled}
-      onSubmit={props.onConfirm}
       onContentChange={() => {
         if (!area || area.isDestroyed) {
           return
@@ -120,6 +118,11 @@ export function RejectField(props: {
           event.preventDefault()
           props.onCancel()
           return
+        }
+
+        if (event.name === "return" && !event.meta && !event.ctrl && !event.shift) {
+          event.preventDefault()
+          props.onConfirm()
         }
       }}
       ref={(item) => {

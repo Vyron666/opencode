@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Effect, Layer } from "effect"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
@@ -219,7 +218,7 @@ describe("StructuredOutput Integration", () => {
   )
 
   test("unit test: StructuredOutputError is properly structured", () => {
-    const error = new SessionV1.StructuredOutputError({
+    const error = new MessageV2.StructuredOutputError({
       message: "Failed to produce valid structured output after 3 attempts",
       retries: 3,
     })

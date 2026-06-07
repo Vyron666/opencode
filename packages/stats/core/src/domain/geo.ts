@@ -1,16 +1,13 @@
-import { and, asc, eq, inArray, or } from "drizzle-orm"
+import { and, asc, eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 import * as Context from "effect/Context"
 import { DatabaseError, DrizzleClient } from "../database"
 import { geoStat } from "../database/schema"
-import { RETIRED_STAT_MODELS, RETIRED_STAT_PROVIDERS } from "./model-normalization"
 import {
   chunks,
   collapseRows,
   inserted,
   rankRowsWithMarketShare,
-  statPeriodKey,
-  statRowScope,
   synthesizeAllTierRows,
   toStatBaseRow,
   UPSERT_CHUNK_SIZE,
@@ -18,18 +15,11 @@ import {
 } from "./stat"
 
 export type GeoStatRow = typeof geoStat.$inferInsert
-export type GeoStatAggregate = StatBaseAggregate & {
-  provider: string
-  model: string
-  country: string
-  continent: string
-}
+export type GeoStatAggregate = StatBaseAggregate & { country: string; continent: string }
 export type GeoStatMetric = {
-  periodKey: string
-  updatedAt: Date
+  periodStart: Date
+  periodEnd: Date
   tier: string
-  provider: string
-  model: string
   country: string
   continent: string
   totalTokens: number
@@ -37,22 +27,16 @@ export type GeoStatMetric = {
 
 export declare namespace GeoStatRepo {
   export interface Service {
-    readonly listDaily: (opts?: {
-      readonly provider?: string
-      readonly model?: string
-    }) => Effect.Effect<GeoStatMetric[], DatabaseError>
+    readonly listDaily: () => Effect.Effect<GeoStatMetric[], DatabaseError>
     readonly listByPeriod: (opts: {
       readonly grain: string
-      readonly periodKey: string
+      readonly periodStart: Date
       readonly dataset?: string
       readonly tier?: string
       readonly client?: string
       readonly source?: string
-      readonly provider?: string
-      readonly model?: string
     }) => Effect.Effect<GeoStatRow[], DatabaseError>
     readonly upsert: (rows: GeoStatRow[]) => Effect.Effect<void, DatabaseError>
-    readonly deleteRetiredDimensions: (rows: GeoStatRow[]) => Effect.Effect<void, DatabaseError>
   }
 }
 
@@ -62,45 +46,32 @@ export class GeoStatRepo extends Context.Service<GeoStatRepo, GeoStatRepo.Servic
     Effect.gen(function* () {
       const db = yield* DrizzleClient
 
-      const listDaily = Effect.fn("GeoStatRepo.listDaily")(function* (opts?: {
-        readonly provider?: string
-        readonly model?: string
-      }) {
-        const scope =
-          opts?.model && opts.provider
-            ? and(eq(geoStat.provider, opts.provider), eq(geoStat.model, opts.model))
-            : opts?.model
-              ? eq(geoStat.model, opts.model)
-              : and(eq(geoStat.provider, "all"), eq(geoStat.model, "all"))
+      const listDaily = Effect.fn("GeoStatRepo.listDaily")(function* () {
         return yield* Effect.tryPromise({
           try: () =>
             db
               .select({
-                periodKey: geoStat.period_key,
-                updatedAt: geoStat.updated_at,
+                periodStart: geoStat.period_start,
+                periodEnd: geoStat.period_end,
                 tier: geoStat.tier,
-                provider: geoStat.provider,
-                model: geoStat.model,
                 country: geoStat.country,
                 continent: geoStat.continent,
                 totalTokens: geoStat.total_tokens,
               })
               .from(geoStat)
-              .where(and(eq(geoStat.grain, "day"), eq(geoStat.client, "all"), eq(geoStat.source, "all"), scope))
-              .orderBy(asc(geoStat.period_key)),
+              .where(and(eq(geoStat.grain, "day"), eq(geoStat.client, "all"), eq(geoStat.source, "all")))
+              .orderBy(asc(geoStat.period_start)),
           catch: (cause) => DatabaseError.make({ cause }),
         })
       })
 
       const listByPeriod = Effect.fn("GeoStatRepo.listByPeriod")(function* (opts: {
         readonly grain: string
-        readonly periodKey: string
+        readonly periodStart: Date
         readonly dataset?: string
         readonly tier?: string
         readonly client?: string
         readonly source?: string
-        readonly provider?: string
-        readonly model?: string
       }) {
         return yield* Effect.tryPromise({
           try: () =>
@@ -110,13 +81,11 @@ export class GeoStatRepo extends Context.Service<GeoStatRepo, GeoStatRepo.Servic
               .where(
                 and(
                   eq(geoStat.grain, opts.grain),
-                  eq(geoStat.period_key, opts.periodKey),
+                  eq(geoStat.period_start, opts.periodStart),
                   eq(geoStat.dataset, opts.dataset ?? "zen"),
                   eq(geoStat.tier, opts.tier ?? "all"),
                   eq(geoStat.client, opts.client ?? "all"),
                   eq(geoStat.source, opts.source ?? "all"),
-                  eq(geoStat.provider, opts.provider ?? "all"),
-                  eq(geoStat.model, opts.model ?? "all"),
                 ),
               ),
           catch: (cause) => DatabaseError.make({ cause }),
@@ -134,6 +103,7 @@ export class GeoStatRepo extends Context.Service<GeoStatRepo, GeoStatRepo.Servic
                   .values(chunk)
                   .onDuplicateKeyUpdate({
                     set: {
+                      period_end: inserted("period_end"),
                       continent: inserted("continent"),
                       sessions: inserted("sessions"),
                       requests: inserted("requests"),
@@ -170,63 +140,32 @@ export class GeoStatRepo extends Context.Service<GeoStatRepo, GeoStatRepo.Servic
         )
       })
 
-      const deleteRetiredDimensions = Effect.fn("GeoStatRepo.deleteRetiredDimensions")(function* (rows: GeoStatRow[]) {
-        const scope = statRowScope(rows)
-        if (!scope) return
-
-        yield* Effect.tryPromise({
-          try: () =>
-            db
-              .delete(geoStat)
-              .where(
-                and(
-                  inArray(geoStat.grain, scope.grains),
-                  inArray(geoStat.period_key, scope.periodKeys),
-                  inArray(geoStat.dataset, scope.datasets),
-                  inArray(geoStat.client, scope.clients),
-                  inArray(geoStat.source, scope.sources),
-                  or(inArray(geoStat.provider, RETIRED_STAT_PROVIDERS), inArray(geoStat.model, RETIRED_STAT_MODELS)),
-                ),
-              ),
-          catch: (cause) => DatabaseError.make({ cause }),
-        })
-      })
-
-      return GeoStatRepo.of({ listDaily, listByPeriod, upsert, deleteRetiredDimensions })
+      return GeoStatRepo.of({ listDaily, listByPeriod, upsert })
     }),
   )
 }
 
 export function rowsFromAggregates(aggregates: GeoStatAggregate[]) {
-  return rankRowsWithMarketShare(
-    [
-      ...synthesizeAllTierRows(
-        collapseRows(aggregates.filter((item) => item.grain === "week").map(toRow), dimensionKey),
-        dimensionKey,
-      ),
-      ...synthesizeAllTierRows(
-        collapseRows(aggregates.filter((item) => item.grain === "day").map(toRow), dimensionKey),
-        dimensionKey,
-      ),
-    ],
-    marketShareKey,
-  )
+  return rankRowsWithMarketShare([
+    ...synthesizeAllTierRows(
+      collapseRows(aggregates.filter((item) => item.grain === "week").map(toRow), dimensionKey),
+      dimensionKey,
+    ),
+    ...synthesizeAllTierRows(
+      collapseRows(aggregates.filter((item) => item.grain === "day").map(toRow), dimensionKey),
+      dimensionKey,
+    ),
+  ])
 }
 
 function toRow(data: GeoStatAggregate): GeoStatRow {
   return {
     ...toStatBaseRow(data),
-    provider: data.provider,
-    model: data.model,
     country: data.country,
     continent: data.continent,
   }
 }
 
 function dimensionKey(row: GeoStatRow) {
-  return [row.provider, row.model, row.country].join("\u0000")
-}
-
-function marketShareKey(row: GeoStatRow) {
-  return [statPeriodKey(row), row.provider, row.model].join("\u0000")
+  return row.country
 }

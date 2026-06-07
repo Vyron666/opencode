@@ -37,7 +37,7 @@ describe("config HttpApi", () => {
     "serves config update through the default server app",
     Effect.gen(function* () {
       const tmp = yield* tmpdirEffect({ config: { formatter: false, lsp: false } })
-      const disposed = yield* waitDisposed(tmp.path).pipe(Effect.forkScoped({ startImmediately: true }))
+      const disposed = yield* waitDisposed(tmp.path).pipe(Effect.forkScoped)
 
       const response = yield* Effect.promise(() =>
         Promise.resolve(

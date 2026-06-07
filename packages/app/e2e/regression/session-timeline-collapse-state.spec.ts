@@ -1,6 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test"
-import { mockOpenCodeServer } from "../utils/mock-server"
-import { expectAppVisible, expectSessionTitle } from "../utils/waits"
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 
 const directory = "C:/OpenCode/TimelineStateRegression"
 const projectID = "proj_timeline_state_regression"
@@ -107,10 +105,10 @@ test.describe("regression: session timeline local row state", () => {
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-    await expectSessionTitle(page, title)
+    await expect(page.getByRole("heading", { name: title })).toBeVisible()
 
     const wrapper = page.locator(`[data-timeline-part-id="${editPartID}"]`).first()
-    await expectAppVisible(wrapper)
+    await expect(wrapper).toBeVisible()
     await expectExpanded(wrapper, true)
 
     await wrapper.evaluate((element) => {
@@ -143,11 +141,11 @@ test.describe("regression: session timeline local row state", () => {
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-    await expectSessionTitle(page, title)
+    await expect(page.getByRole("heading", { name: title })).toBeVisible()
 
     const wrapper = page.locator(`[data-timeline-part-id="${editPartID}"]`).first()
-    await expectAppVisible(wrapper)
-    await expectAppVisible(wrapper.locator('[data-component="file"][data-mode="diff"]').first())
+    await expect(wrapper).toBeVisible()
+    await expect(wrapper.locator('[data-component="file"][data-mode="diff"]').first()).toBeVisible()
     await markDiffProbe(page)
 
     events.push({
@@ -301,13 +299,39 @@ function readExpanded(element: Element) {
 }
 
 async function mockServer(page: Page, events: EventPayload[]) {
-  await mockOpenCodeServer(page, {
-    directory,
-    project: project(),
-    provider: provider(),
-    sessions: [session()],
-    pageMessages: () => ({ items: [userMessage, assistantMessage] }),
-    events: () => events.splice(0),
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url())
+    const targetPort = process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"
+    if (url.port !== targetPort) return route.fallback()
+
+    const path = url.pathname
+    if (path === "/global/event") return sse(route, events.splice(0))
+    if (
+      path === "/global/config" ||
+      path === "/config" ||
+      path === "/provider/auth" ||
+      path === "/mcp" ||
+      path === "/session/status"
+    )
+      return json(route, {})
+    if (
+      ["/skill", "/command", "/lsp", "/formatter", "/permission", "/question", "/vcs/status", "/vcs/diff"].includes(
+        path,
+      )
+    )
+      return json(route, [])
+    if (path === "/provider") return json(route, provider())
+    if (path === "/path")
+      return json(route, { state: directory, config: directory, worktree: directory, directory, home: "C:/OpenCode" })
+    if (path === "/project") return json(route, [project()])
+    if (path === "/project/current") return json(route, project())
+    if (path === "/agent") return json(route, [{ name: "build", mode: "primary" }])
+    if (path === "/vcs") return json(route, { branch: "main", default_branch: "main" })
+    if (path === "/session") return json(route, [session()])
+    if (path === `/session/${sessionID}`) return json(route, session())
+    if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(path)) return json(route, [])
+    if (path === `/session/${sessionID}/message`) return json(route, [userMessage, assistantMessage])
+    return json(route, {})
   })
 }
 
@@ -346,6 +370,24 @@ function provider() {
     connected: ["opencode"],
     default: { providerID: "opencode", modelID: "claude-opus-4-6" },
   }
+}
+
+function json(route: Route, body: unknown, headers?: Record<string, string>) {
+  return route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    headers: { "access-control-allow-origin": "*", "access-control-expose-headers": "x-next-cursor", ...headers },
+    body: JSON.stringify(body ?? null),
+  })
+}
+
+function sse(route: Route, events: EventPayload[]) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    headers: { "access-control-allow-origin": "*" },
+    body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+  })
 }
 
 function base64Encode(value: string) {

@@ -259,7 +259,6 @@ export default defineConfig({
             "commands",
             "formatters",
             "permissions",
-            "policies",
             "lsp",
             "mcp-servers",
             "acp",

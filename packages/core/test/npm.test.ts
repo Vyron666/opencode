@@ -3,7 +3,7 @@ import path from "path"
 import { describe, expect, test } from "bun:test"
 import { NodeFileSystem } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 import { Npm } from "@opencode-ai/core/npm"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
@@ -23,7 +23,7 @@ const writePackage = (dir: string, pkg: Record<string, unknown>) =>
 const npmLayer = (cache: string) =>
   Npm.layer.pipe(
     Layer.provide(EffectFlock.layer),
-    Layer.provide(FSUtil.layer),
+    Layer.provide(AppFileSystem.layer),
     Layer.provide(Global.layerWith({ cache, state: path.join(cache, "state") })),
     Layer.provide(NodeFileSystem.layer),
   )

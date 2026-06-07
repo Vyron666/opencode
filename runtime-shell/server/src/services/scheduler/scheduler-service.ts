@@ -210,6 +210,9 @@ async function resolveWorkspacePinnedWorker(input: {
 }
 
 function compareWorkers(left: WorkerNode, right: WorkerNode) {
+  const leftWarmRuntimeSpare = readWarmRuntimeSpare(left)
+  const rightWarmRuntimeSpare = readWarmRuntimeSpare(right)
+  if (leftWarmRuntimeSpare !== rightWarmRuntimeSpare) return rightWarmRuntimeSpare - leftWarmRuntimeSpare
   if (left.activeSessionCount !== right.activeSessionCount) {
     return left.activeSessionCount - right.activeSessionCount
   }
@@ -219,11 +222,6 @@ function compareWorkers(left: WorkerNode, right: WorkerNode) {
   const leftQueue = left.resourceSummary?.queuedOperationCount ?? 0
   const rightQueue = right.resourceSummary?.queuedOperationCount ?? 0
   if (leftQueue !== rightQueue) return leftQueue - rightQueue
-  const leftWarmRuntimeSpare = readWarmRuntimeSpare(left)
-  const rightWarmRuntimeSpare = readWarmRuntimeSpare(right)
-  // 中文/English: warm spare is only a tie-breaker. Prioritizing it before load
-  // can hotspot one worker during bursts and turn warm hits into agent timeouts.
-  if (leftWarmRuntimeSpare !== rightWarmRuntimeSpare) return rightWarmRuntimeSpare - leftWarmRuntimeSpare
   const leftSpare = left.capacity - left.activeSessionCount
   const rightSpare = right.capacity - right.activeSessionCount
   if (leftSpare !== rightSpare) return rightSpare - leftSpare

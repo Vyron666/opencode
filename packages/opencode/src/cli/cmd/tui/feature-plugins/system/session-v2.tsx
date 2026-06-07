@@ -30,7 +30,6 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
-import { setPreLayoutSiblingMargin } from "../../util/layout"
 
 const id = "internal:session-v2-debug"
 const route = "session.v2.messages"
@@ -103,9 +102,6 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
                     />
                   </Match>
                   <Match when={message.type === "synthetic"}>
-                    <></>
-                  </Match>
-                  <Match when={message.type === "system"}>
                     <></>
                   </Match>
                   <Match when={message.type === "shell"}>
@@ -232,7 +228,7 @@ function ShellMessage(props: { message: SessionMessageShell }) {
 }
 
 function CompactionMessage(props: { message: SessionMessageCompaction }) {
-  const { theme } = useTheme()
+  const { theme, syntax } = useTheme()
   return (
     <box
       marginTop={1}
@@ -241,7 +237,23 @@ function CompactionMessage(props: { message: SessionMessageCompaction }) {
       titleAlignment="center"
       borderColor={theme.borderActive}
       flexShrink={0}
-    />
+    >
+      <Show when={props.message.summary}>
+        {(summary) => (
+          <box paddingLeft={3} paddingTop={1}>
+            <code
+              filetype="markdown"
+              drawUnstyledText={false}
+              streaming={false}
+              syntaxStyle={syntax()}
+              content={summary().trim()}
+              conceal={true}
+              fg={theme.text}
+            />
+          </box>
+        )}
+      </Show>
+    </box>
   )
 }
 
@@ -358,7 +370,7 @@ function AssistantText(props: { part: SessionMessageAssistantText; syntax: Synta
   const { theme } = useTheme()
   return (
     <Show when={props.part.text.trim()}>
-      <box paddingLeft={3} marginTop={1} flexShrink={0} id={`text-${props.part.id}`}>
+      <box paddingLeft={3} marginTop={1} flexShrink={0} id="text">
         <code
           filetype="markdown"
           drawUnstyledText={false}
@@ -430,25 +442,16 @@ function ReasoningHeader(props: { toggleable: boolean; open: boolean; done: bool
       : theme.warning
 
   return (
-    <Switch>
-      <Match when={!props.done}>
-        <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
-        </box>
-      </Match>
-      <Match when={true}>
-        <text fg={fg()} wrapMode="none">
-          <Show when={props.toggleable}>
-            <span>{props.open ? "- " : "+ "}</span>
-          </Show>
-          <span>Thought</span>
-          <Show when={props.title}>
-            <span>: </span>
-            <span>{props.title}</span>
-          </Show>
-        </text>
-      </Match>
-    </Switch>
+    <text fg={fg()} wrapMode="none">
+      <Show when={props.toggleable}>
+        <span>{props.open ? "- " : "+ "}</span>
+      </Show>
+      <span>{props.done ? "Thought" : "Thinking"}</span>
+      <Show when={props.title}>
+        <span>: </span>
+        <span>{props.title}</span>
+      </Show>
+    </text>
   )
 }
 
@@ -570,6 +573,7 @@ function InlineTool(props: {
 }) {
   const { theme } = useTheme()
   const renderer = useRenderer()
+  const [margin, setMargin] = createSignal(0)
   const [hover, setHover] = createSignal(false)
   const [showError, setShowError] = createSignal(false)
   const error = createMemo(() => (props.part.state.status === "error" ? props.part.state.error.message : undefined))
@@ -592,6 +596,7 @@ function InlineTool(props: {
   const attributes = createMemo(() => (denied() ? TextAttributes.STRIKETHROUGH : undefined))
   return (
     <box
+      marginTop={margin()}
       paddingLeft={3}
       flexShrink={0}
       flexDirection="row"
@@ -604,8 +609,16 @@ function InlineTool(props: {
         if (renderer.getSelection()?.getSelectedText()) return
         setShowError((prev) => !prev)
       }}
-      ref={(el: BoxRenderable) => {
-        setPreLayoutSiblingMargin(el, (previous) => (previous?.id.startsWith("text-") ? 1 : 0))
+      renderBefore={function () {
+        const el = this as BoxRenderable
+        const parent = el.parent
+        if (!parent) return
+        const previous = parent.getChildren()[parent.getChildren().indexOf(el) - 1]
+        if (!previous) {
+          setMargin(0)
+          return
+        }
+        if (previous.id.startsWith("text")) setMargin(1)
       }}
     >
       <box flexShrink={0}>
@@ -1065,9 +1078,7 @@ function toolOutput(content?: Array<ToolTextContent | ToolFileContent>) {
   return (content ?? [])
     .map((item) => {
       if (item.type === "text") return item.text.trim()
-      const source =
-        item.source.type === "data" ? "inline data" : item.source.type === "url" ? item.source.url : item.source.uri
-      return `[file ${item.name ?? source}]`
+      return `[file ${item.name ?? item.uri}]`
     })
     .filter(Boolean)
     .join("\n")

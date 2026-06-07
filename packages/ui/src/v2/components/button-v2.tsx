@@ -7,7 +7,7 @@ export interface ButtonV2Props
   extends ComponentProps<typeof Kobalte>,
     Pick<ComponentProps<"button">, "class" | "classList" | "children"> {
   size?: "small" | "normal" | "large"
-  variant?: "neutral" | "contrast" | "ghost" | "ghost-muted"
+  variant?: "neutral" | "contrast" | "ghost"
   icon?: IconProps["name"]
 }
 
@@ -27,7 +27,7 @@ export function ButtonV2(props: ButtonV2Props) {
       }}
     >
       <Show when={resolvedIcon()}>
-        <Icon name={resolvedIcon()!} />
+        <Icon name={resolvedIcon()!} size="small" />
       </Show>
       {props.children}
     </Kobalte>

@@ -1,6 +1,5 @@
 import { expect } from "bun:test"
 import { Duration, Effect, Layer, Option, Schema } from "effect"
-import { sql } from "drizzle-orm"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http"
 
 import { AccountRepo } from "../../src/account/repo"
@@ -16,18 +15,18 @@ import {
   RefreshToken,
   UserCode,
 } from "../../src/account/schema"
-import { Database } from "@opencode-ai/core/database/database"
+import { Database } from "@/storage/db"
 import { testEffect } from "../lib/effect"
 
 const truncate = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const { db } = yield* Database.Service
-    yield* db.run(sql`DELETE FROM account_state`)
-    yield* db.run(sql`DELETE FROM account`)
+  Effect.sync(() => {
+    const db = Database.Client()
+    db.run(/*sql*/ `DELETE FROM account_state`)
+    db.run(/*sql*/ `DELETE FROM account`)
   }),
-).pipe(Layer.provide(Database.defaultLayer))
+)
 
-const it = testEffect(Layer.merge(AccountRepo.defaultLayer, truncate))
+const it = testEffect(Layer.merge(AccountRepo.layer, truncate))
 
 const insideEagerRefreshWindow = Duration.toMillis(Duration.minutes(1))
 const outsideEagerRefreshWindow = Duration.toMillis(Duration.minutes(10))

@@ -2,7 +2,6 @@ import { DateTime, Effect, Scope, Stream } from "effect"
 import { Catalog } from "../catalog"
 import { EventV2 } from "../event"
 import { ModelV2 } from "../model"
-import { ModelRequest } from "../model-request"
 import { ModelsDev } from "../models-dev"
 import { PluginV2 } from "../plugin"
 import { ProviderV2 } from "../provider"
@@ -39,15 +38,16 @@ function cost(input: ModelsDev.Model["cost"]) {
   ]
 }
 
-function variants(model: ModelsDev.Model, packageName?: string) {
-  return Object.entries(model.experimental?.modes ?? {}).map(([id, item]) => {
-    const request = ModelRequest.normalizeAiSdkOptions(packageName, item.provider?.body ?? {})
-    return {
-      id: ModelV2.VariantID.make(id),
-      headers: { ...(item.provider?.headers ?? {}) },
-      ...request,
-    }
-  })
+function variants(model: ModelsDev.Model) {
+  return Object.entries(model.experimental?.modes ?? {}).map(([id, item]) => ({
+    id: ModelV2.VariantID.make(id),
+    headers: { ...(item.provider?.headers ?? {}) },
+    body: { ...(item.provider?.body ?? {}) },
+    aisdk: {
+      provider: {},
+      request: {},
+    },
+  }))
 }
 
 export const ModelsDevPlugin = PluginV2.define({
@@ -57,25 +57,23 @@ export const ModelsDevPlugin = PluginV2.define({
     const modelsDev = yield* ModelsDev.Service
     const events = yield* EventV2.Service
     const scope = yield* Scope.Scope
-    const transform = yield* catalog.transform()
+    const load = yield* catalog.loader()
     const refresh = Effect.fn("ModelsDevPlugin.refresh")(function* () {
       const data = yield* modelsDev.get()
-      yield* transform((catalog) => {
+      yield* load((catalog) => {
         for (const item of Object.values(data)) {
           const providerID = ProviderV2.ID.make(item.id)
           catalog.provider.update(providerID, (provider) => {
             provider.name = item.name
             provider.env = [...item.env]
-            provider.api = item.npm
+            provider.endpoint = item.npm
               ? {
                   type: "aisdk",
                   package: item.npm,
                   url: item.api,
                 }
               : {
-                  type: "native",
-                  url: item.api,
-                  settings: {},
+                  type: "unknown",
                 }
           })
 
@@ -84,25 +82,21 @@ export const ModelsDevPlugin = PluginV2.define({
             catalog.model.update(providerID, modelID, (draft) => {
               draft.name = model.name
               draft.family = model.family ? ModelV2.Family.make(model.family) : undefined
-              draft.api = model.provider?.npm
+              draft.endpoint = model.provider?.npm
                 ? {
-                    id: draft.api.id,
                     type: "aisdk",
                     package: model.provider?.npm,
                     url: model.provider.api,
                   }
                 : {
-                    id: draft.api.id,
-                    type: "native",
-                    url: model.provider?.api,
-                    settings: {},
+                    type: "unknown",
                   }
               draft.capabilities = {
                 tools: model.tool_call,
                 input: [...(model.modalities?.input ?? [])],
                 output: [...(model.modalities?.output ?? [])],
               }
-              draft.variants = variants(model, model.provider?.npm ?? item.npm)
+              draft.variants = variants(model)
               draft.time.released = released(model.release_date)
               draft.cost = cost(model.cost)
               draft.status = model.status ?? "active"
@@ -120,7 +114,7 @@ export const ModelsDevPlugin = PluginV2.define({
     yield* refresh()
     yield* events.subscribe(ModelsDev.Event.Refreshed).pipe(
       Stream.runForEach(() => refresh()),
-      Effect.forkScoped({ startImmediately: true }),
+      Effect.forkIn(scope, { startImmediately: true }),
     )
-  }),
+  }).pipe(Effect.provide(ModelsDev.defaultLayer)),
 })

@@ -1,4 +1,4 @@
-import { InputRenderable, TextareaRenderable, type CliRenderer } from "@opentui/core"
+import { type CliRenderer } from "@opentui/core"
 import * as addons from "@opentui/keymap/addons/opentui"
 import { stringifyKeyStroke } from "@opentui/keymap"
 import {
@@ -31,7 +31,6 @@ type CommandSlashEntry = {
   onSelect: () => void
 }
 type Command = ReturnType<OpenTuiKeymap["getCommands"]>[number]
-type FormatConfig = Pick<TuiConfig.Resolved, "keybinds">
 
 const modeStacks = new WeakMap<OpenTuiKeymap, OpencodeModeStack>()
 
@@ -161,22 +160,13 @@ const inputCommands = [
   "input.submit",
 ] as const
 
-function hasManagedTextareaFocus(renderer: CliRenderer) {
-  const editor = renderer.currentFocusedEditor
-  return editor instanceof TextareaRenderable && !(editor instanceof InputRenderable)
-}
-
-function leaderDisplay(config: FormatConfig) {
+function leaderDisplay(config: TuiConfig.Resolved) {
   const key = config.keybinds.get(LEADER_TOKEN)?.[0]?.key
   if (!key) return TuiKeybind.LeaderDefault
   return typeof key === "string" ? key : stringifyKeyStroke(key)
 }
 
-function leaderKey(config: FormatConfig) {
-  return config.keybinds.get(LEADER_TOKEN)?.[0]?.key
-}
-
-function formatOptions(config: FormatConfig) {
+function formatOptions(config: TuiConfig.Resolved) {
   return {
     tokenDisplay: {
       [LEADER_TOKEN]: leaderDisplay(config),
@@ -192,11 +182,14 @@ function formatOptions(config: FormatConfig) {
   } as const
 }
 
-export function formatKeySequence(parts: Parameters<typeof formatKeySequenceExtra>[0], config: FormatConfig) {
+export function formatKeySequence(parts: Parameters<typeof formatKeySequenceExtra>[0], config: TuiConfig.Resolved) {
   return formatKeySequenceExtra(parts, formatOptions(config))
 }
 
-export function formatKeyBindings(bindings: Parameters<typeof formatCommandBindingsExtra>[0], config: FormatConfig) {
+export function formatKeyBindings(
+  bindings: Parameters<typeof formatCommandBindingsExtra>[0],
+  config: TuiConfig.Resolved,
+) {
   return formatCommandBindingsExtra(bindings, formatOptions(config))
 }
 
@@ -209,18 +202,15 @@ export function registerOpencodeKeymap(
   const offCommaBindings = addons.registerCommaBindings(keymap)
   const offAliasExpander = registerKeyAliases(keymap)
   const offBaseLayout = addons.registerBaseLayoutFallback(keymap)
-  const leader = leaderKey(config)
-  const offLeader = leader
-    ? addons.registerTimedLeader(keymap, {
-        trigger: leader,
-        name: LEADER_TOKEN,
-        timeoutMs: config.leader_timeout,
-      })
-    : () => {}
+  const offLeader = addons.registerTimedLeader(keymap, {
+    trigger: config.keybinds.get(LEADER_TOKEN),
+    name: LEADER_TOKEN,
+    timeoutMs: config.leader_timeout,
+  })
   const offEscape = addons.registerEscapeClearsPendingSequence(keymap)
   const offBackspace = addons.registerBackspacePopsPendingSequence(keymap)
   const offInputBindings = addons.registerManagedTextareaLayer(keymap, renderer, {
-    enabled: () => hasManagedTextareaFocus(renderer),
+    enabled: () => renderer.currentFocusedEditor !== null,
     bindings: config.keybinds.gather("input", inputCommands),
   })
 

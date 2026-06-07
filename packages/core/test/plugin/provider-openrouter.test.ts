@@ -23,25 +23,25 @@ describe("OpenRouterPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(OpenRouterPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const openrouter = provider("openrouter", {
-          api: { type: "aisdk", package: "@openrouter/ai-sdk-provider" },
-          request: { headers: { Existing: "value" }, body: {} },
+          endpoint: { type: "aisdk", package: "@openrouter/ai-sdk-provider" },
+          options: { headers: { Existing: "value" }, body: {}, aisdk: { provider: {}, request: {} } },
         })
         catalog.provider.update(openrouter.id, (item) => {
-          item.api = openrouter.api
-          item.request = openrouter.request
+          item.endpoint = openrouter.endpoint
+          item.options = openrouter.options
         })
         catalog.provider.update(ProviderV2.ID.make("nvidia"), () => {})
       })
 
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("openrouter"))).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("openrouter"))).options.headers).toEqual({
         Existing: "value",
         "HTTP-Referer": "https://opencode.ai/",
         "X-Title": "opencode",
       })
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).request.headers).toEqual({})
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("nvidia"))).options.headers).toEqual({})
     }),
   )
 
@@ -75,13 +75,13 @@ describe("OpenRouterPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(OpenRouterPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const openrouter = provider("openrouter", {
-          api: { type: "aisdk", package: "@openrouter/ai-sdk-provider" },
+          endpoint: { type: "aisdk", package: "@openrouter/ai-sdk-provider" },
         })
         catalog.provider.update(openrouter.id, (item) => {
-          item.api = openrouter.api
+          item.endpoint = openrouter.endpoint
         })
         catalog.provider.update(ProviderV2.ID.openai, () => {})
         for (const item of [
@@ -108,8 +108,8 @@ describe("OpenRouterPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(OpenRouterPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         catalog.provider.update(ProviderV2.ID.make("custom-openrouter"), () => {})
         catalog.model.update(ProviderV2.ID.make("custom-openrouter"), ModelV2.ID.make("gpt-5-chat-latest"), () => {})
       })

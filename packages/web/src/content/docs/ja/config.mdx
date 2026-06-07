@@ -492,13 +492,13 @@ OpenCode は起動時に新しいアップデートを自動的にダウンロ�
   "$schema": "https://opencode.ai/config.json",
   "compaction": {
     "auto": true,
-    "prune": false
+    "prune": true
   }
 }
 ```
 
 - `auto` - コンテキストがいっぱいのときにセッションを自動的に圧縮します (デフォルト: `true`)。
-- `prune` - 古いツールの出力を削除してトークンを保存します (デフォルト: `false`)。
+- `prune` - 古いツールの出力を削除してトークンを保存します (デフォルト: `true`)。
 
 ---
 

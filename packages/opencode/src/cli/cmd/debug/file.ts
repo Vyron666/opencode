@@ -1,17 +1,9 @@
 import { EOL } from "os"
 import { Effect } from "effect"
-import { FileSystem } from "@opencode-ai/core/filesystem"
-import { LocationServiceMap } from "@opencode-ai/core/location-layer"
-import { Ripgrep } from "@opencode-ai/core/filesystem/ripgrep"
-import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
+import { File } from "../../../file"
+import { Ripgrep } from "@/file/ripgrep"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"
-
-const filesystem = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
-    Effect.provide(LocationServiceMap.get({ directory: AbsolutePath.make(process.cwd()) })),
-    Effect.provide(LocationServiceMap.layer),
-  )
 
 const FileSearchCommand = effectCmd({
   command: "search <query>",
@@ -23,8 +15,8 @@ const FileSearchCommand = effectCmd({
       description: "Search query",
     }),
   handler: Effect.fn("Cli.debug.file.search")(function* (args) {
-    const results = yield* filesystem(FileSystem.Service.use((svc) => svc.find({ query: args.query })))
-    process.stdout.write(results.map((item) => item.path).join(EOL) + EOL)
+    const results = yield* File.Service.use((svc) => svc.search({ query: args.query }))
+    process.stdout.write(results.join(EOL) + EOL)
   }),
 })
 
@@ -38,8 +30,18 @@ const FileReadCommand = effectCmd({
       description: "File path to read",
     }),
   handler: Effect.fn("Cli.debug.file.read")(function* (args) {
-    const content = yield* filesystem(FileSystem.Service.use((svc) => svc.read({ path: RelativePath.make(args.path) })))
+    const content = yield* File.Service.use((svc) => svc.read(args.path))
     process.stdout.write(JSON.stringify(content, null, 2) + EOL)
+  }),
+})
+
+const FileStatusCommand = effectCmd({
+  command: "status",
+  describe: "show file status information",
+  builder: (yargs) => yargs,
+  handler: Effect.fn("Cli.debug.file.status")(function* () {
+    const status = yield* File.Service.use((svc) => svc.status())
+    process.stdout.write(JSON.stringify(status, null, 2) + EOL)
   }),
 })
 
@@ -53,7 +55,7 @@ const FileListCommand = effectCmd({
       description: "File path to list",
     }),
   handler: Effect.fn("Cli.debug.file.list")(function* (args) {
-    const files = yield* filesystem(FileSystem.Service.use((svc) => svc.list({ path: RelativePath.make(args.path) })))
+    const files = yield* File.Service.use((svc) => svc.list(args.path))
     process.stdout.write(JSON.stringify(files, null, 2) + EOL)
   }),
 })
@@ -79,6 +81,7 @@ export const FileCommand = cmd({
   builder: (yargs) =>
     yargs
       .command(FileReadCommand)
+      .command(FileStatusCommand)
       .command(FileListCommand)
       .command(FileSearchCommand)
       .command(FileTreeCommand)

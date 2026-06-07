@@ -1,11 +1,12 @@
-import { Effect, Option, Ref, Scope, Semaphore, Stream, SynchronizedRef } from "effect"
+import { Effect, Option, Ref, Scope, Stream } from "effect"
 import type { Headers } from "effect/unstable/http"
-import * as CassetteService from "./cassette.js"
-import { canonicalizeJson, decodeJson, safeText } from "./matching.js"
-import { makeReplayState, resolveAutoMode } from "./recorder.js"
-import type { RecordReplayMode } from "./internal-effect.js"
-import { make, type Redactor } from "./redactor.js"
-import { webSocketInteractions, type CassetteMetadata, type WebSocketEvent } from "./schema.js"
+import * as CassetteService from "./cassette"
+import { canonicalizeJson, decodeJson, safeText } from "./matching"
+import { makeReplayState, resolveAutoMode } from "./recorder"
+import type { RecordReplayMode } from "./effect"
+import { redactUrl } from "./redaction"
+import { defaults, type Redactor } from "./redactor"
+import { webSocketInteractions, type CassetteMetadata, type WebSocketFrame } from "./schema"
 
 export interface WebSocketRequest {
   readonly url: string
@@ -39,50 +40,50 @@ const headersRecord = (headers: Headers.Headers): Record<string, string> =>
     ),
   )
 
-const textEvent = (direction: "client" | "server", body: string): WebSocketEvent => ({
-  direction,
-  kind: "text",
-  body,
-})
+const encodeFrame = (message: string | Uint8Array): WebSocketFrame =>
+  typeof message === "string"
+    ? { kind: "text", body: message }
+    : { kind: "binary", body: Buffer.from(message).toString("base64"), bodyEncoding: "base64" }
 
-const decodeEvent = (event: WebSocketEvent) =>
-  event.kind === "text" ? event.body : new Uint8Array(Buffer.from(event.body, "base64"))
+const decodeFrameMessage = (frame: WebSocketFrame): string | Uint8Array =>
+  frame.kind === "text" ? frame.body : new Uint8Array(Buffer.from(frame.body, "base64"))
+
+const decodeFrameText = (frame: WebSocketFrame) =>
+  frame.kind === "text" ? frame.body : new TextDecoder().decode(Buffer.from(frame.body, "base64"))
+
+const assertEqual = (message: string, actual: unknown, expected: unknown) =>
+  Effect.sync(() => {
+    if (JSON.stringify(actual) === JSON.stringify(expected)) return
+    throw new Error(`${message}: expected ${safeText(expected)}, received ${safeText(actual)}`)
+  })
 
 const jsonOrText = (value: string) => Option.match(decodeJson(value), { onNone: () => value, onSome: canonicalizeJson })
 
-const assertClientEvent = (actual: string, expected: WebSocketEvent | undefined, index: number, asJson: boolean) =>
-  Effect.sync(() => {
-    const matches =
-      expected?.direction === "client" &&
-      expected.kind === "text" &&
-      JSON.stringify(asJson ? jsonOrText(actual) : actual) ===
-        JSON.stringify(asJson ? jsonOrText(expected.body) : expected.body)
-    if (matches) return
-    throw new Error(`WebSocket client frame ${index + 1}: expected ${safeText(expected)}, received ${safeText(actual)}`)
-  })
+const compareClientMessage = (actual: string, expected: WebSocketFrame | undefined, index: number, asJson: boolean) => {
+  if (!expected)
+    return Effect.sync(() => {
+      throw new Error(`Unexpected WebSocket client frame ${index + 1}: ${safeText(actual)}`)
+    })
+  const expectedText = decodeFrameText(expected)
+  if (!asJson) return assertEqual(`WebSocket client frame ${index + 1}`, actual, expectedText)
+  return assertEqual(`WebSocket client JSON frame ${index + 1}`, jsonOrText(actual), jsonOrText(expectedText))
+}
 
 export const makeWebSocketExecutor = <E>(
   options: WebSocketRecordReplayOptions<E>,
 ): Effect.Effect<WebSocketExecutor<E>, never, Scope.Scope> =>
   Effect.gen(function* () {
-    const mode = options.mode ?? (yield* resolveAutoMode(options.cassette, options.name))
-    const redactor = options.redactor ?? make()
+    const requested = options.mode ?? "auto"
+    const mode = requested === "auto" ? yield* resolveAutoMode(options.cassette, options.name) : requested
+    const redactor = options.redactor ?? defaults()
     const openSnapshot = (request: WebSocketRequest) => {
-      const snapshot = redactor.request({
+      const redacted = redactor.request({
         method: "GET",
         url: request.url,
         headers: headersRecord(request.headers),
         body: "",
       })
-      return { url: snapshot.url, headers: snapshot.headers }
-    }
-    const redactEvent = (event: WebSocketEvent) => {
-      if (event.kind === "binary") return event
-      const body =
-        event.direction === "client"
-          ? redactor.request({ method: "WEBSOCKET", url: "", headers: {}, body: event.body }).body
-          : redactor.response({ status: 101, headers: {}, body: event.body }).body
-      return { ...event, body }
+      return { url: redacted.url, headers: redacted.headers }
     }
 
     if (mode === "passthrough") return options.live
@@ -91,81 +92,67 @@ export const makeWebSocketExecutor = <E>(
       return {
         open: (request) =>
           Effect.gen(function* () {
-            const events: WebSocketEvent[] = []
+            const client: WebSocketFrame[] = []
+            const server: WebSocketFrame[] = []
             const connection = yield* options.live.open(request)
             const closed = yield* Ref.make(false)
-            const closeLock = yield* Semaphore.make(1)
+            const closeOnce = Effect.gen(function* () {
+              if (yield* Ref.getAndSet(closed, true)) return
+              yield* connection.close
+              yield* options.cassette
+                .append(
+                  options.name,
+                  { transport: "websocket", open: openSnapshot(request), client, server },
+                  options.metadata,
+                )
+                .pipe(Effect.orDie)
+            })
             return {
               sendText: (message) =>
-                Effect.sync(() => events.push(redactEvent(textEvent("client", message)))).pipe(
-                  Effect.andThen(connection.sendText(message)),
-                ),
+                connection
+                  .sendText(message)
+                  .pipe(Effect.tap(() => Effect.sync(() => client.push(encodeFrame(message))))),
               messages: connection.messages.pipe(
-                Stream.tap((message) =>
-                  Effect.sync(() =>
-                    events.push(
-                      typeof message === "string"
-                        ? redactEvent(textEvent("server", message))
-                        : {
-                            direction: "server",
-                            kind: "binary",
-                            body: Buffer.from(message).toString("base64"),
-                            bodyEncoding: "base64",
-                          },
-                    ),
-                  ),
-                ),
+                Stream.tap((message) => Effect.sync(() => server.push(encodeFrame(message)))),
               ),
-              close: closeLock.withPermit(
-                Effect.gen(function* () {
-                  if (yield* Ref.get(closed)) return
-                  yield* connection.close
-                  yield* options.cassette
-                    .append(
-                      options.name,
-                      { transport: "websocket", open: openSnapshot(request), events },
-                      options.metadata,
-                    )
-                    .pipe(Effect.orDie)
-                  yield* Ref.set(closed, true)
-                }),
-              ),
+              close: closeOnce,
             }
           }),
       }
     }
 
     const replay = yield* makeReplayState(options.cassette, options.name, webSocketInteractions)
+
     return {
       open: (request) =>
         Effect.gen(function* () {
-          const claimed = yield* replay
-            .claim((interaction, index) =>
-              Effect.sync(() => {
-                const incoming = canonicalizeJson(openSnapshot(request))
-                if (interaction && JSON.stringify(incoming) === JSON.stringify(canonicalizeJson(interaction.open)))
-                  return
-                throw new Error(`WebSocket open ${index + 1} does not match ${safeText(incoming)}`)
-              }),
-            )
-            .pipe(Effect.orDie)
-          const client = claimed.interaction.events.filter((event) => event.direction === "client")
-          const server = claimed.interaction.events.filter((event) => event.direction === "server")
-          const position = yield* SynchronizedRef.make(0)
+          const interactions = yield* replay.load.pipe(Effect.orDie)
+          const index = yield* replay.cursor
+          const interaction = interactions[index]
+          if (!interaction)
+            return yield* Effect.die(new Error(`No recorded WebSocket interaction for ${redactUrl(request.url)}`))
+          yield* replay.advance
+          yield* assertEqual(`WebSocket open frame ${index + 1}`, openSnapshot(request), interaction.open)
+          const messageIndex = yield* Ref.make(0)
           return {
             sendText: (message) =>
-              SynchronizedRef.updateEffect(position, (index) =>
-                assertClientEvent(message, client[index], index, options.compareClientMessagesAsJson === true).pipe(
-                  Effect.as(index + 1),
-                ),
-              ),
-            messages: Stream.fromIterable(server).pipe(Stream.map(decodeEvent)),
-            close: Effect.gen(function* () {
-              const used = yield* SynchronizedRef.get(position)
-              if (used !== client.length)
-                return yield* Effect.die(
-                  new Error(`WebSocket client frame count: expected ${client.length}, received ${used}`),
+              Effect.gen(function* () {
+                const current = yield* Ref.get(messageIndex)
+                yield* compareClientMessage(
+                  message,
+                  interaction.client[current],
+                  current,
+                  options.compareClientMessagesAsJson === true,
                 )
+                yield* Ref.update(messageIndex, (value) => value + 1)
+              }),
+            messages: Stream.fromIterable(interaction.server).pipe(Stream.map(decodeFrameMessage)),
+            close: Effect.gen(function* () {
+              yield* assertEqual(
+                `WebSocket client frame count for interaction ${index + 1}`,
+                yield* Ref.get(messageIndex),
+                interaction.client.length,
+              )
             }),
           }
         }),

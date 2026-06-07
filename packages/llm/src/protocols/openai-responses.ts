@@ -18,7 +18,6 @@ import {
   type ToolResultPart,
 } from "../schema"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
-import { isContextOverflow } from "../provider-error"
 import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolStream } from "./utils/tool-stream"
@@ -127,7 +126,6 @@ const OpenAIResponsesCoreFields = {
   tools: optionalArray(OpenAIResponsesTool),
   tool_choice: Schema.optional(OpenAIResponsesToolChoice),
   store: Schema.optional(Schema.Boolean),
-  service_tier: Schema.optional(OpenAIOptions.OpenAIServiceTier),
   prompt_cache_key: Schema.optional(Schema.String),
   include: optionalArray(OpenAIOptions.OpenAIResponseIncludable),
   reasoning: Schema.optional(
@@ -257,7 +255,7 @@ const lowerTool = (tool: ToolDefinition): OpenAIResponsesTool => ({
   type: "function",
   name: tool.name,
   description: tool.description,
-  parameters: ProviderShared.openAiToolInputSchema(tool.inputSchema),
+  parameters: tool.inputSchema,
 })
 
 const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
@@ -293,25 +291,14 @@ const lowerReasoning = (part: ReasoningPart): OpenAIResponsesReasoningInput | un
   }
 }
 
-const hostedToolItemID = (part: ToolResultPart) => {
-  const openai = part.providerMetadata?.openai
-  return ProviderShared.isRecord(openai) && typeof openai.itemId === "string" && openai.itemId.length > 0
-    ? openai.itemId
-    : undefined
-}
-
 const lowerUserContent = Effect.fn("OpenAIResponses.lowerUserContent")(function* (
   part: LLMRequest["messages"][number]["content"][number],
 ) {
   if (part.type === "text") return { type: "input_text" as const, text: part.text }
-  if (part.type === "media") {
-    const media = yield* ProviderShared.validateMedia(
-      "OpenAI Responses",
-      part,
-      new Set<string>(ProviderShared.IMAGE_MIMES),
-    )
-    return { type: "input_image" as const, image_url: media.dataUrl }
+  if (part.type === "media" && part.mediaType.startsWith("image/")) {
+    return { type: "input_image" as const, image_url: ProviderShared.mediaDataUrl(part) }
   }
+  if (part.type === "media") return yield* invalid("OpenAI Responses user media content only supports images")
   return yield* ProviderShared.unsupportedContent("OpenAI Responses", "user", ["text", "media"])
 })
 
@@ -321,21 +308,19 @@ const lowerToolResultContentItem = Effect.fn("OpenAIResponses.lowerToolResultCon
   item: ToolResultContentPart,
 ) {
   if (item.type === "text") return { type: "input_text" as const, text: item.text }
-  const media = yield* ProviderShared.validateMedia(
-    "OpenAI Responses",
-    item,
-    new Set<string>(ProviderShared.IMAGE_MIMES),
-  )
-  return { type: "input_image" as const, image_url: media.dataUrl }
+  if (item.mediaType.startsWith("image/"))
+    return {
+      type: "input_image" as const,
+      image_url: ProviderShared.mediaDataUrl(item),
+    }
+  return yield* invalid(`OpenAI Responses tool-result media content only supports images, got ${item.mediaType}`)
 })
 
 const lowerToolResultOutput = Effect.fn("OpenAIResponses.lowerToolResultOutput")(function* (part: ToolResultPart) {
   // Text/json/error results are encoded as a plain string for backward
   // compatibility with existing cassettes and provider expectations.
   if (part.result.type !== "content") return ProviderShared.toolResultText(part)
-  // Preserve the narrowed array element type when compiled through a consumer package.
-  const content: ReadonlyArray<ToolResultContentPart> = part.result.value
-  return yield* Effect.forEach(content, lowerToolResultContentItem)
+  return yield* Effect.forEach(part.result.value, lowerToolResultContentItem)
 })
 
 const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (request: LLMRequest) {
@@ -345,18 +330,6 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
   const store = OpenAIOptions.store(request)
 
   for (const message of request.messages) {
-    if (message.role === "system") {
-      const part = yield* ProviderShared.wrappedSystemUpdate("OpenAI Responses", message)
-      const previous = input.at(-1)
-      if (previous && "role" in previous && previous.role === "user")
-        input[input.length - 1] = {
-          role: "user",
-          content: [...previous.content, { type: "input_text", text: part.text }],
-        }
-      else input.push({ role: "user", content: [{ type: "input_text", text: part.text }] })
-      continue
-    }
-
     if (message.role === "user") {
       input.push({ role: "user", content: yield* Effect.forEach(message.content, lowerUserContent) })
       continue
@@ -366,7 +339,6 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
       const content: TextPart[] = []
       const reasoningItems: Record<string, OpenAIResponsesReasoningInput> = {}
       const reasoningReferences = new Set<string>()
-      const hostedToolReferences = new Set<string>()
       const flushText = () => {
         if (content.length === 0) return
         input.push({ role: "assistant", content: content.map((part) => ({ type: "output_text", text: part.text })) })
@@ -399,23 +371,13 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
         }
         if (part.type === "tool-call") {
           flushText()
-          if (part.providerExecuted === true) continue
           input.push(lowerToolCall(part))
-          continue
-        }
-        if (part.type === "tool-result" && part.providerExecuted === true) {
-          flushText()
-          const itemID = hostedToolItemID(part)
-          if (store !== false && itemID && !hostedToolReferences.has(itemID))
-            input.push({ type: "item_reference", id: itemID })
-          if (itemID) hostedToolReferences.add(itemID)
           continue
         }
         return yield* ProviderShared.unsupportedContent("OpenAI Responses", "assistant", [
           "text",
           "reasoning",
           "tool-call",
-          "tool-result",
         ])
       }
       flushText()
@@ -453,7 +415,6 @@ const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (reques
   const include = OpenAIOptions.include(request)
   const verbosity = OpenAIOptions.textVerbosity(request)
   const instructions = OpenAIOptions.instructions(request)
-  const serviceTier = OpenAIOptions.serviceTier(request)
   return {
     ...(instructions ? { instructions } : {}),
     ...(store !== undefined ? { store } : {}),
@@ -461,13 +422,11 @@ const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (reques
     ...(include ? { include } : {}),
     ...(effort || summary ? { reasoning: { effort, summary } } : {}),
     ...(verbosity ? { text: { verbosity } } : {}),
-    ...(serviceTier ? { service_tier: serviceTier } : {}),
   }
 })
 
 const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request: LLMRequest) {
   const generation = request.generation
-  const options = yield* lowerOptions(request)
   return {
     model: request.model.id,
     input: yield* lowerMessages(request),
@@ -477,7 +436,7 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
     max_output_tokens: generation?.maxTokens,
     temperature: generation?.temperature,
     top_p: generation?.topP,
-    ...options,
+    ...(yield* lowerOptions(request)),
   }
 })
 
@@ -885,23 +844,14 @@ const providerErrorMessage = (event: OpenAIResponsesEvent, fallback: string): st
   return message || code || fallback
 }
 
-const providerError = (event: OpenAIResponsesEvent, fallback: string) => {
-  const code = event.code || event.response?.error?.code || undefined
-  const message = providerErrorMessage(event, fallback)
-  return LLMEvent.providerError({
-    message,
-    classification: code === "context_length_exceeded" || isContextOverflow(message) ? "context-overflow" : undefined,
-  })
-}
-
 const onResponseFailed = (state: ParserState, event: OpenAIResponsesEvent): StepResult => [
   state,
-  [providerError(event, "OpenAI Responses response failed")],
+  [LLMEvent.providerError({ message: providerErrorMessage(event, "OpenAI Responses response failed") })],
 ]
 
 const onError = (state: ParserState, event: OpenAIResponsesEvent): StepResult => [
   state,
-  [providerError(event, "OpenAI Responses stream error")],
+  [LLMEvent.providerError({ message: providerErrorMessage(event, "OpenAI Responses stream error") })],
 ]
 
 const step = (state: ParserState, event: OpenAIResponsesEvent) => {

@@ -22,18 +22,18 @@ describe("ZenmuxPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(ZenmuxPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("zenmux", {
-          api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://zenmux.ai/api/v1" },
+          endpoint: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://zenmux.ai/api/v1" },
         })
         catalog.provider.update(item.id, (draft) => {
-          draft.api = item.api
+          draft.endpoint = item.endpoint
         })
       })
       const result = yield* catalog.provider.get(ProviderV2.ID.make("zenmux"))
-      expect(result.request.headers).toEqual({ "HTTP-Referer": "https://opencode.ai/", "X-Title": "opencode" })
-      expect(Object.keys(result.request.headers).sort()).toEqual(["HTTP-Referer", "X-Title"])
+      expect(result.options.headers).toEqual({ "HTTP-Referer": "https://opencode.ai/", "X-Title": "opencode" })
+      expect(Object.keys(result.options.headers).sort()).toEqual(["HTTP-Referer", "X-Title"])
     }),
   )
 
@@ -42,19 +42,19 @@ describe("ZenmuxPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(ZenmuxPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("zenmux", {
-          api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://zenmux.ai/api/v1" },
-          request: { headers: { Existing: "value" }, body: {} },
+          endpoint: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://zenmux.ai/api/v1" },
+          options: { headers: { Existing: "value" }, body: {}, aisdk: { provider: {}, request: {} } },
         })
         catalog.provider.update(item.id, (draft) => {
-          draft.api = item.api
-          draft.request = item.request
+          draft.endpoint = item.endpoint
+          draft.options = item.options
         })
       })
 
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("zenmux"))).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("zenmux"))).options.headers).toEqual({
         Existing: "value",
         "HTTP-Referer": "https://opencode.ai/",
         "X-Title": "opencode",
@@ -67,22 +67,23 @@ describe("ZenmuxPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(ZenmuxPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("zenmux", {
-          api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://zenmux.ai/api/v1" },
-          request: {
+          endpoint: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://zenmux.ai/api/v1" },
+          options: {
             headers: { "HTTP-Referer": "https://example.com/", "X-Title": "custom-title" },
             body: {},
+            aisdk: { provider: {}, request: {} },
           },
         })
         catalog.provider.update(item.id, (draft) => {
-          draft.api = item.api
-          draft.request = item.request
+          draft.endpoint = item.endpoint
+          draft.options = item.options
         })
       })
 
-      expect((yield* catalog.provider.get(ProviderV2.ID.make("zenmux"))).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.make("zenmux"))).options.headers).toEqual({
         "HTTP-Referer": "https://example.com/",
         "X-Title": "custom-title",
       })
@@ -94,20 +95,21 @@ describe("ZenmuxPlugin", () => {
       const plugin = yield* PluginV2.Service
       const catalog = yield* Catalog.Service
       yield* plugin.add(ZenmuxPlugin)
-      const transform = yield* catalog.transform()
-      yield* transform((catalog) => {
+      const load = yield* catalog.loader()
+      yield* load((catalog) => {
         const item = provider("openrouter", {
-          request: {
+          options: {
             headers: { "HTTP-Referer": "https://example.com/", "X-Title": "custom-title" },
             body: {},
+            aisdk: { provider: {}, request: {} },
           },
         })
         catalog.provider.update(item.id, (draft) => {
-          draft.request = item.request
+          draft.options = item.options
         })
       })
 
-      expect((yield* catalog.provider.get(ProviderV2.ID.openrouter)).request.headers).toEqual({
+      expect((yield* catalog.provider.get(ProviderV2.ID.openrouter)).options.headers).toEqual({
         "HTTP-Referer": "https://example.com/",
         "X-Title": "custom-title",
       })
