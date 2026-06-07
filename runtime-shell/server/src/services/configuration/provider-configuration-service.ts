@@ -126,7 +126,9 @@ export async function listReservedPlatformProviderConfigs(user: User) {
 export async function savePlatformProviderConfig(input: {
   user: User
   requestId: string
-  config: RuntimeShellProviderConfig
+  // 中文/English: persisted provider config may include the secret apiKey and
+  // must be stored with the runtime-facing shape intact.
+  config: RuntimeShellStoredProviderConfig
   summaryJson: Record<string, unknown>
 }) {
   const scope = platformSharedScope(input.user)
@@ -163,7 +165,9 @@ export async function savePlatformProviderConfig(input: {
 export async function saveUserPrivateProviderConfig(input: {
   user: User
   requestId: string
-  config: RuntimeShellProviderConfig
+  // 中文/English: user-private provider writes use the same stored shape so
+  // later runtime snapshots can reuse the saved apiKey directly.
+  config: RuntimeShellStoredProviderConfig
   summaryJson: Record<string, unknown>
 }) {
   const platformProviders = await listPlatformProviderConfigs(input.user)
@@ -280,7 +284,7 @@ export async function removeUserPrivateProviderConfig(input: {
   return deleted
 }
 
-export function createMaskedProviderSummary(config: RuntimeShellProviderConfig) {
+export function createMaskedProviderSummary(config: RuntimeShellProviderConfig | RuntimeShellStoredProviderConfig) {
   return {
     namespace: "provider" satisfies ConfigNamespace,
     providerId: config.providerId,

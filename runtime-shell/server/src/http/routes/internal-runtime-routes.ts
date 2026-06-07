@@ -17,6 +17,7 @@ import { stopRuntimeLeaseAutoRenew } from "../../services/runtime-governance/run
 import { resetSessionRuntime } from "../../services/session/session-lifecycle-service"
 import { recordRuntimeFailure } from "../../services/runtime-governance/runtime-failure-service"
 import { auditService, sessionService } from "../../services/store/store-singleton"
+import { extractUpstreamError } from "../../runtime/runtime-capabilities"
 
 type RuntimeEventPushBody = {
   event: SessionEvent
@@ -140,8 +141,9 @@ export function registerInternalRuntimeRoutes(app: Hono) {
       await auditSandboxExit(body.event)
     }
 
-    await syncSessionStatusForSyntheticEvent(body.event)
-    await persistAndFanout(body.event)
+    const persistedEvent = normalizeRuntimeEvent(body.event)
+    await syncSessionStatusForSyntheticEvent(persistedEvent)
+    await persistAndFanout(persistedEvent)
     return c.json(jsonOk({ success: true }, reqId))
   })
 }
@@ -260,4 +262,17 @@ function readSyntheticSessionStatus(event: SessionEvent) {
     return "failed" as const
   }
   return null
+}
+
+function normalizeRuntimeEvent(event: SessionEvent): SessionEvent {
+  if (event.eventType !== "session_info_update") return event
+  const upstreamError = extractUpstreamError(event.payload)
+  if (!upstreamError) return event
+  // 中文/English: keep remote worker event semantics aligned with the local ACP path,
+  // so upstream model/provider failures surface as a visible session_error event.
+  return {
+    ...event,
+    eventType: "session_error",
+    payload: { error: upstreamError },
+  }
 }

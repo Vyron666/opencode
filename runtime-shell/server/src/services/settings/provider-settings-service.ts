@@ -6,6 +6,8 @@ import { previewPlatformProviderImpact, previewUserPrivateProviderImpact } from 
 import {
   createMaskedProviderSummary,
   listVisibleProviderConfigs,
+  listPlatformStoredProviderConfigs,
+  listUserPrivateStoredProviderConfigs,
   removePlatformProviderConfig,
   removeUserPrivateProviderConfig,
   resolveSettingsSnapshot,
@@ -50,14 +52,8 @@ export async function saveProviderConfigForUser(input: {
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
 
   const snapshotBeforeSave = await resolveSettingsSnapshot(input.user)
-  const normalizedConfig = {
-    ...input.config,
-    ...(input.config.apiKey?.trim() ? { apiKey: input.config.apiKey.trim() } : {}),
-    apiKeyMasked: maskApiKey(input.config.apiKey),
-    apiKeyConfigured: Boolean(input.config.apiKey?.trim()),
-  }
-
   if (input.user.role === "admin") {
+    const normalizedConfig = await normalizeProviderConfigInput(input.user, input.config, "platform_shared")
     const affected = await previewPlatformProviderImpact({
       tenantId: input.user.tenantId,
       organizationId: input.user.organizationId,
@@ -107,6 +103,7 @@ export async function saveProviderConfigForUser(input: {
     }
   }
 
+  const normalizedConfig = await normalizeProviderConfigInput(input.user, input.config, "user_private")
   const saved = await saveUserPrivateProviderConfig({
     user: input.user,
     requestId: input.requestId,
@@ -163,6 +160,34 @@ export async function saveProviderConfigForUser(input: {
     providerId: normalizedConfig.providerId,
     reloadedSessionCount: affectedSessions.length,
   }
+}
+
+async function normalizeProviderConfigInput(
+  user: User,
+  config: ProviderConfigInput,
+  source: "platform_shared" | "user_private",
+) {
+  const nextApiKey = await resolveProviderApiKey(user, config.providerId, config.apiKey, source)
+  return {
+    ...config,
+    ...(nextApiKey ? { apiKey: nextApiKey } : {}),
+    apiKeyMasked: maskApiKey(nextApiKey),
+    apiKeyConfigured: Boolean(nextApiKey),
+  }
+}
+
+async function resolveProviderApiKey(
+  user: User,
+  providerId: string,
+  apiKey: string | undefined,
+  source: "platform_shared" | "user_private",
+) {
+  const trimmedApiKey = apiKey?.trim()
+  if (trimmedApiKey) return trimmedApiKey
+  const providers = source === "platform_shared"
+    ? await listPlatformStoredProviderConfigs(user)
+    : await listUserPrivateStoredProviderConfigs(user)
+  return providers.find((item) => item.providerId === providerId)?.apiKey?.trim() || ""
 }
 
 export async function removeProviderConfigForUser(input: {
