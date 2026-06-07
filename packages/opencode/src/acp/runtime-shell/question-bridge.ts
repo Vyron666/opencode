@@ -7,6 +7,10 @@ import type {
 import type { OpencodeClient } from "@opencode-ai/sdk/v2"
 import { Question } from "@/question"
 
+function questionRequestID(question: Question.Request) {
+  return String(question.id)
+}
+
 // 中文/English: keep runtime-shell question customization in one small module
 // so agent.ts only owns the event switch and session queue wiring.
 export async function handleRuntimeShellQuestion(input: {
@@ -18,7 +22,7 @@ export async function handleRuntimeShellQuestion(input: {
   if (!input.connection.unstable_createElicitation) {
     await input.sdk.question.reject(
       {
-        requestID: input.question.id,
+        requestID: questionRequestID(input.question),
         directory: input.directory,
       },
       { throwOnError: true },
@@ -54,15 +58,13 @@ function buildQuestionElicitationSchema(question: Question.Request) {
     properties: Object.fromEntries(
       question.questions.map((item, index) => [
         `question_${index}`,
-        item.multiple
-          ? buildMultiSelectQuestionProperty(item)
-          : buildSingleQuestionProperty(item),
+        item.multiple ? buildMultiSelectQuestionProperty(item) : buildSingleQuestionProperty(item),
       ]),
     ),
     required: question.questions.map((_, index) => `question_${index}`),
     _meta: {
       opencode: {
-        questionId: question.id,
+        questionId: questionRequestID(question),
         mode: "opencode-question",
         prompts: question.questions.map((item, index) => ({
           id: `question_${index}`,
@@ -126,7 +128,7 @@ async function replyQuestion(
   if (response.action === "decline" || response.action === "cancel") {
     // 中文/English: question reply/reject must target the same workspace-routed
     // opencode instance, otherwise the pending request cannot be found.
-    await sdk.question.reject({ requestID: question.id, directory }, { throwOnError: true })
+    await sdk.question.reject({ requestID: questionRequestID(question), directory }, { throwOnError: true })
     return
   }
 
@@ -144,7 +146,7 @@ async function replyQuestion(
 
   await sdk.question.reply(
     {
-      requestID: question.id,
+      requestID: questionRequestID(question),
       directory,
       answers,
     },

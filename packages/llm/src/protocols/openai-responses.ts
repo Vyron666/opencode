@@ -320,7 +320,10 @@ const lowerToolResultOutput = Effect.fn("OpenAIResponses.lowerToolResultOutput")
   // Text/json/error results are encoded as a plain string for backward
   // compatibility with existing cassettes and provider expectations.
   if (part.result.type !== "content") return ProviderShared.toolResultText(part)
-  return yield* Effect.forEach(part.result.value, lowerToolResultContentItem)
+  // 中文/English: preserve the narrowed content item type across package boundaries
+  // so Effect.forEach does not widen the array element to unknown during typecheck.
+  const content: ReadonlyArray<ToolResultContentPart> = part.result.value
+  return yield* Effect.forEach(content, lowerToolResultContentItem)
 })
 
 const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (request: LLMRequest) {
@@ -898,13 +901,14 @@ export const protocol = Protocol.make({
   },
   stream: {
     event: Protocol.jsonEvent(OpenAIResponsesEvent),
-    initial: (request) => ({
+    initial: (request) =>
+      ({
       hasFunctionCall: false,
       tools: ToolStream.empty<string>(),
       lifecycle: Lifecycle.initial(),
       reasoningItems: {},
       store: OpenAIOptions.store(request),
-    }),
+      }) satisfies ParserState,
     step,
     terminal: (event) => TERMINAL_TYPES.has(event.type),
   },

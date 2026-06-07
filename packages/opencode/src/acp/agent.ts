@@ -51,6 +51,7 @@ import type { AssistantMessage, Event, OpencodeClient, SessionMessageResponse, T
 import { applyPatch } from "diff"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { ShellID } from "@/tool/shell/id"
+import { Question } from "@/question"
 import { handleRuntimeShellQuestion } from "./runtime-shell/question-bridge"
 
 type ModeOption = { id: string; name: string; description?: string }
@@ -69,7 +70,7 @@ async function getContextLimit(
 ): Promise<number | null> {
   const providers = await sdk.config
     .providers({ directory })
-    .then((x) => x.data.providers)
+    .then((x) => x.data?.providers ?? [])
     .catch((error) => {
       log.error("failed to get providers for context limit", { error })
       return []
@@ -280,7 +281,9 @@ export class Agent implements ACPAgent {
       // 中文/English: bridge opencode's internal question queue into ACP elicitation
       // so runtime-shell can render interactive inline question cards and send answers back.
       case "question.asked": {
-        const question = event.properties
+        // 中文/English: ACP bridge expects the branded internal question type,
+        // while streamed SDK events surface the same payload with plain strings.
+        const question = event.properties as unknown as Question.Request
         const session = this.sessionManager.tryGet(question.sessionID)
         if (!session) return
         const prev = this.questionQueues.get(question.sessionID) ?? Promise.resolve()
