@@ -23,6 +23,12 @@ import {
 } from "../web/src/store/runtime-phase.js"
 import { shouldStreamAssistantChunk } from "../web/src/store/sse/sse-runtime.js"
 import { loadSessionSummaries } from "../web/src/store/actions/session-list-sync-support.js"
+import { rebuildMissingAcpSessionFromRuntimeHome } from "../server/src/services/runtime/runtime-session-rebuild-service.ts"
+import { recoverMissingAcpSessionForTest } from "../server/src/runtime/runtime-manager.ts"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import path from "node:path"
+import { tmpdir } from "node:os"
+import { Database } from "bun:sqlite"
 
 type ConversationBlock = Record<string, any>
 
@@ -116,6 +122,24 @@ try {
 
     await verifyActivateFailureClearsPendingSessionAction()
     result.assertions.activate_failure_clears_pending_session_action = true
+
+    await verifyOrphanedSessionWithBindingResumesInsteadOfOpening()
+    result.assertions.orphaned_session_with_binding_resumes_instead_of_opening = true
+
+    await verifyMissingAcpSessionRebuildsFromRuntimeHome()
+    result.assertions.missing_acp_session_rebuilds_from_runtime_home = true
+
+    await verifyMissingAcpSessionRebuildPreservesStableOrdering()
+    result.assertions.missing_acp_session_rebuild_preserves_stable_ordering = true
+
+    await verifyMissingAcpSessionPrefersNewestRuntimeHomeReplica()
+    result.assertions.missing_acp_session_prefers_newest_runtime_home_replica = true
+
+    await verifyRuntimeManagerLocalMissingSessionRebuildsAndBinds()
+    result.assertions.runtime_manager_local_missing_session_rebuilds_and_binds = true
+
+    await verifyRuntimeManagerRemoteMissingSessionRebuildsAndBinds()
+    result.assertions.runtime_manager_remote_missing_session_rebuilds_and_binds = true
 
     await verifyStaleActivateFailureDoesNotClearNewSelectionPending()
     result.assertions.stale_activate_failure_does_not_clear_new_selection_pending = true
@@ -1002,6 +1026,550 @@ async function verifyActivateFailureClearsPendingSessionAction() {
   )
 }
 
+async function verifyOrphanedSessionWithBindingResumesInsteadOfOpening() {
+  const calls: string[] = []
+  const state = createActivationState({
+    currentSessionId: "bs_orphaned",
+    sessions: [
+      {
+        id: "bs_orphaned",
+        title: "Recoverable session",
+        status: "orphaned",
+        binding: { acpSessionId: "ses_existing" },
+      },
+    ],
+  })
+
+  await activateCurrentSession(
+    createActivationInput(state, {
+      openSession: async () => {
+        calls.push("open")
+        return { success: true }
+      },
+      resumeSession: async () => {
+        calls.push("resume")
+        return { success: true }
+      },
+    }) as never,
+  )
+
+  assert(calls.length === 1 && calls[0] === "resume", "recoverable orphaned session should resume the persisted ACP session instead of opening a fresh one")
+}
+
+async function verifyMissingAcpSessionRebuildsFromRuntimeHome() {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-shell-rebuild-"))
+  try {
+    const runtimeHomeRootDir = path.join(root, ".runtime-home")
+    const dbDir = path.join(runtimeHomeRootDir, "worker_local", "runtime", "ws_rebuild", ".local", "share", "opencode")
+    await mkdir(dbDir, { recursive: true })
+    const dbPath = path.join(dbDir, "opencode.db")
+    const db = new Database(dbPath)
+    try {
+      db.exec(`create table session (
+        id text primary key,
+        project_id text not null,
+        workspace_id text,
+        parent_id text,
+        slug text not null,
+        directory text not null,
+        path text,
+        title text not null,
+        version text not null,
+        share_url text,
+        summary_additions integer,
+        summary_deletions integer,
+        summary_files integer,
+        summary_diffs text,
+        cost real not null default 0,
+        tokens_input integer not null default 0,
+        tokens_output integer not null default 0,
+        tokens_reasoning integer not null default 0,
+        tokens_cache_read integer not null default 0,
+        tokens_cache_write integer not null default 0,
+        revert text,
+        permission text,
+        agent text,
+        model text,
+        time_created integer not null,
+        time_updated integer not null,
+        time_compacting integer,
+        time_archived integer
+      )`)
+      db.exec("create table message (id text primary key, session_id text not null, time_created integer not null, time_updated integer not null, data text not null)")
+      db.exec("create table part (id text primary key, message_id text not null, session_id text not null, time_created integer not null, time_updated integer not null, data text not null)")
+      db.exec("create table session_message (id text primary key, session_id text not null, type text not null, time_created integer not null, time_updated integer not null, data text not null)")
+      db.exec("create table todo (session_id text not null, content text not null, status text not null, priority text not null, position integer not null, time_created integer not null, time_updated integer not null, primary key(session_id, position))")
+      db.exec(`
+        insert into session (
+          id, project_id, workspace_id, parent_id, slug, directory, path, title, version,
+          revert, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+          time_created, time_updated, time_compacting
+        ) values (
+          'ses_missing_history', 'proj_1', 'ws_rebuild', null, 'slug_1', '/workspace', null, 'History', '1.0.0',
+          json('{"messageID":"msg_old","partID":"prt_old"}'), 0, 0, 0, 0, 0, 0, 1, 2, 999
+        )
+      `)
+      db.query("insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)").run(
+        "msg_old",
+        "ses_missing_history",
+        10,
+        10,
+        JSON.stringify({
+          role: "user",
+          sessionID: "ses_missing_history",
+          model: { providerID: "openai", modelID: "gpt-5" },
+        }),
+      )
+      db.query("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+        "prt_old",
+        "msg_old",
+        "ses_missing_history",
+        10,
+        10,
+        JSON.stringify({
+          type: "text",
+          text: "hello",
+          sessionID: "ses_missing_history",
+          messageID: "msg_old",
+        }),
+      )
+      db.query("insert into session_message (id, session_id, type, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+        "evt_old",
+        "ses_missing_history",
+        "prompted",
+        11,
+        11,
+        JSON.stringify({
+          sessionID: "ses_missing_history",
+          messageID: "msg_old",
+        }),
+      )
+      db.query("insert into todo (session_id, content, status, priority, position, time_created, time_updated) values (?, ?, ?, ?, ?, ?, ?)").run(
+        "ses_missing_history",
+        "rebuild",
+        "pending",
+        "medium",
+        0,
+        12,
+        12,
+      )
+    } finally {
+      db.close(false)
+    }
+
+    const rebuilt = await rebuildMissingAcpSessionFromRuntimeHome({
+      session: {
+        id: "bs_1",
+        tenantId: "t_1",
+        organizationId: "o_1",
+        workspaceId: "ws_rebuild",
+        title: "Recoverable",
+        projectId: "proj_1",
+        workspacePath: "/workspace",
+        workerId: "worker_local",
+        status: "orphaned",
+        createdBy: "u_1",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      missingAcpSessionId: "ses_missing_history",
+      runtimeHomeRootDir,
+    })
+
+    assert(rebuilt.sessionId !== "ses_missing_history", "rebuilt ACP session should get a fresh session id")
+
+    const verifyDb = new Database(dbPath, { readonly: true })
+    try {
+      const rebuiltSession = verifyDb.query("select id, title, revert, time_compacting from session where id = ?").get(rebuilt.sessionId) as Record<string, unknown> | null
+      const rebuiltMessage = verifyDb.query("select session_id, data from message where session_id = ?").get(rebuilt.sessionId) as Record<string, unknown> | null
+      const rebuiltPart = verifyDb.query("select session_id, message_id, data from part where session_id = ?").get(rebuilt.sessionId) as Record<string, unknown> | null
+      const rebuiltTodo = verifyDb.query("select content from todo where session_id = ?").get(rebuilt.sessionId) as Record<string, unknown> | null
+      assert(Boolean(rebuiltSession), "rebuilt session row should exist")
+      assert(rebuiltSession?.title === "History", "rebuilt session should preserve session metadata")
+      assert(Boolean(rebuiltMessage), "rebuilt message row should exist")
+      assert(Boolean(rebuiltPart), "rebuilt part row should exist")
+      assert(Boolean(rebuiltTodo), "rebuilt todo row should exist")
+      const rebuiltPartData = JSON.parse(String(rebuiltPart?.data))
+      const rebuiltRevert = rebuiltSession?.revert ? JSON.parse(String(rebuiltSession.revert)) : null
+      assert(rebuiltMessage?.session_id === rebuilt.sessionId, "rebuilt message row should point to the new session id")
+      assert(rebuiltPart?.session_id === rebuilt.sessionId, "rebuilt part row should point to the new session id")
+      assert(rebuiltPart?.message_id !== "msg_old", "rebuilt part row should point to the remapped message id")
+      assert(rebuiltPartData.messageID !== "msg_old", "rebuilt part data should point to the remapped message id")
+      assert(rebuiltRevert?.messageID !== "msg_old", "rebuilt revert should point to the remapped message id")
+      assert(rebuiltRevert?.partID !== "prt_old", "rebuilt revert should point to the remapped part id")
+      assert(rebuiltSession?.time_compacting == null, "rebuilt session should not preserve an in-progress compaction flag")
+    } finally {
+      verifyDb.close(false)
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function verifyMissingAcpSessionRebuildPreservesStableOrdering() {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-shell-order-"))
+  try {
+    const runtimeHomeRootDir = path.join(root, ".runtime-home")
+    const dbDir = path.join(runtimeHomeRootDir, "worker_local", "runtime", "ws_rebuild", ".local", "share", "opencode")
+    await mkdir(dbDir, { recursive: true })
+    const dbPath = path.join(dbDir, "opencode.db")
+    const db = new Database(dbPath)
+    try {
+      db.exec(`create table session (
+        id text primary key,
+        project_id text not null,
+        workspace_id text,
+        parent_id text,
+        slug text not null,
+        directory text not null,
+        path text,
+        title text not null,
+        version text not null,
+        share_url text,
+        summary_additions integer,
+        summary_deletions integer,
+        summary_files integer,
+        summary_diffs text,
+        cost real not null default 0,
+        tokens_input integer not null default 0,
+        tokens_output integer not null default 0,
+        tokens_reasoning integer not null default 0,
+        tokens_cache_read integer not null default 0,
+        tokens_cache_write integer not null default 0,
+        revert text,
+        permission text,
+        agent text,
+        model text,
+        time_created integer not null,
+        time_updated integer not null,
+        time_compacting integer,
+        time_archived integer
+      )`)
+      db.exec("create table message (id text primary key, session_id text not null, time_created integer not null, time_updated integer not null, data text not null)")
+      db.exec("create table part (id text primary key, message_id text not null, session_id text not null, time_created integer not null, time_updated integer not null, data text not null)")
+      db.exec("create table session_message (id text primary key, session_id text not null, type text not null, time_created integer not null, time_updated integer not null, data text not null)")
+      db.exec("create table todo (session_id text not null, content text not null, status text not null, priority text not null, position integer not null, time_created integer not null, time_updated integer not null, primary key(session_id, position))")
+      db.exec(`
+        insert into session (
+          id, project_id, workspace_id, parent_id, slug, directory, path, title, version,
+          cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+          time_created, time_updated
+        ) values (
+          'ses_missing_history', 'proj_1', 'ws_rebuild', null, 'slug_1', '/workspace', null, 'History', '1.0.0',
+          0, 0, 0, 0, 0, 0, 1, 100
+        )
+      `)
+      db.query("insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)").run(
+        "msg_b",
+        "ses_missing_history",
+        10,
+        10,
+        JSON.stringify({
+          role: "user",
+          sessionID: "ses_missing_history",
+          model: { providerID: "openai", modelID: "gpt-5" },
+        }),
+      )
+      db.query("insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)").run(
+        "msg_a",
+        "ses_missing_history",
+        10,
+        10,
+        JSON.stringify({
+          role: "assistant",
+          sessionID: "ses_missing_history",
+          parentID: "msg_b",
+          model: { providerID: "openai", modelID: "gpt-5" },
+        }),
+      )
+      db.query("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+        "prt_b",
+        "msg_a",
+        "ses_missing_history",
+        20,
+        20,
+        JSON.stringify({
+          type: "text",
+          text: "second",
+          sessionID: "ses_missing_history",
+          messageID: "msg_a",
+        }),
+      )
+      db.query("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+        "prt_a",
+        "msg_a",
+        "ses_missing_history",
+        20,
+        20,
+        JSON.stringify({
+          type: "compaction",
+          auto: true,
+          tail_start_id: "msg_b",
+          sessionID: "ses_missing_history",
+          messageID: "msg_a",
+        }),
+      )
+      db.query("insert into session_message (id, session_id, type, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+        "evt_b",
+        "ses_missing_history",
+        "assistant",
+        30,
+        30,
+        JSON.stringify({
+          messageID: "msg_b",
+          sessionID: "ses_missing_history",
+          time: { created: 30 },
+        }),
+      )
+      db.query("insert into session_message (id, session_id, type, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+        "evt_a",
+        "ses_missing_history",
+        "compaction",
+        30,
+        30,
+        JSON.stringify({
+          messageID: "msg_a",
+          sessionID: "ses_missing_history",
+          time: { created: 30 },
+        }),
+      )
+    } finally {
+      db.close(false)
+    }
+
+    const rebuilt = await rebuildMissingAcpSessionFromRuntimeHome({
+      session: {
+        id: "bs_1",
+        tenantId: "t_1",
+        organizationId: "o_1",
+        workspaceId: "ws_rebuild",
+        title: "Recoverable",
+        projectId: "proj_1",
+        workspacePath: "/workspace",
+        workerId: "worker_local",
+        status: "orphaned",
+        createdBy: "u_1",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      missingAcpSessionId: "ses_missing_history",
+      runtimeHomeRootDir,
+    })
+
+    const verifyDb = new Database(dbPath, { readonly: true })
+    try {
+      const rebuiltMessages = verifyDb.query("select id, data from message where session_id = ? order by time_created asc, id asc").all(rebuilt.sessionId) as Array<Record<string, unknown>>
+      const rebuiltParts = verifyDb.query("select id, message_id, data from part where session_id = ? order by message_id asc, id asc").all(rebuilt.sessionId) as Array<Record<string, unknown>>
+      const rebuiltSessionMessages = verifyDb.query("select id, data from session_message where session_id = ? order by time_created asc, id asc").all(rebuilt.sessionId) as Array<Record<string, unknown>>
+
+      assertJsonEqual(
+        rebuiltMessages.map((row) => row.id),
+        [
+          "msg_000000000000_" + rebuilt.sessionId.slice(4),
+          "msg_000000000001_" + rebuilt.sessionId.slice(4),
+        ],
+        "rebuilt messages should get deterministic ordered ids so same-timestamp ordering stays stable",
+      )
+
+      const rebuiltMessageData = rebuiltMessages.map((row) => ({
+        id: String(row.id),
+        data: JSON.parse(String(row.data)) as Record<string, unknown>,
+      }))
+      const rebuiltAssistantMessage = rebuiltMessageData.find((row) => row.data.role === "assistant")
+      const rebuiltUserMessage = rebuiltMessageData.find((row) => row.data.role === "user")
+      assert(
+        rebuiltAssistantMessage?.data.parentID === rebuiltUserMessage?.id,
+        "rebuilt message parentID should remap forward message references to the deterministic rebuilt message id",
+      )
+
+      assertJsonEqual(
+        rebuiltParts.map((row) => row.id),
+        [
+          "prt_000000000000_" + rebuilt.sessionId.slice(4),
+          "prt_000000000001_" + rebuilt.sessionId.slice(4),
+        ],
+        "rebuilt parts should get deterministic ordered ids so same-timestamp ordering stays stable",
+      )
+
+      const rebuiltCompactionPart = JSON.parse(String(rebuiltParts[0]?.data))
+      const rebuiltTextPart = JSON.parse(String(rebuiltParts[1]?.data))
+      assert(
+        rebuiltCompactionPart.tail_start_id === rebuiltUserMessage?.id,
+        "rebuilt compaction part should remap tail_start_id to the rebuilt message id",
+      )
+      assert(
+        rebuiltTextPart.messageID === rebuiltAssistantMessage?.id,
+        "rebuilt text part should point at the rebuilt assistant message id",
+      )
+
+      assertJsonEqual(
+        rebuiltSessionMessages.map((row) => row.id),
+        [
+          "evt_000000000000_" + rebuilt.sessionId.slice(4),
+          "evt_000000000001_" + rebuilt.sessionId.slice(4),
+        ],
+        "rebuilt session messages should get deterministic ordered ids so same-timestamp ordering stays stable",
+      )
+    } finally {
+      verifyDb.close(false)
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function verifyMissingAcpSessionPrefersNewestRuntimeHomeReplica() {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-shell-replica-"))
+  try {
+    const runtimeHomeRootDir = path.join(root, ".runtime-home")
+    const coldDbDir = path.join(runtimeHomeRootDir, "worker_local", "runtime", "ws_rebuild", ".local", "share", "opencode")
+    const warmDbDir = path.join(runtimeHomeRootDir, "worker_local", "warm", "warm_slot_latest", ".local", "share", "opencode")
+    await mkdir(coldDbDir, { recursive: true })
+    await mkdir(warmDbDir, { recursive: true })
+    const coldDbPath = path.join(coldDbDir, "opencode.db")
+    const warmDbPath = path.join(warmDbDir, "opencode.db")
+
+    seedReplicaDatabase(coldDbPath, {
+      title: "older",
+      sessionUpdatedAt: 10,
+      messageText: "old history",
+    })
+    seedReplicaDatabase(warmDbPath, {
+      title: "latest",
+      sessionUpdatedAt: 99,
+      messageText: "new history",
+    })
+
+    const rebuilt = await rebuildMissingAcpSessionFromRuntimeHome({
+      session: {
+        id: "bs_1",
+        tenantId: "t_1",
+        organizationId: "o_1",
+        workspaceId: "ws_rebuild",
+        title: "Recoverable",
+        projectId: "proj_1",
+        workspacePath: "/workspace",
+        workerId: "worker_local",
+        status: "orphaned",
+        createdBy: "u_1",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      missingAcpSessionId: "ses_missing_history",
+      runtimeHomeRootDir,
+    })
+
+    const verifyWarmDb = new Database(warmDbPath, { readonly: true })
+    try {
+      const rebuiltSession = verifyWarmDb.query("select title from session where id = ?").get(rebuilt.sessionId) as Record<string, unknown> | null
+      const rebuiltTodo = verifyWarmDb.query("select content from todo where session_id = ?").get(rebuilt.sessionId) as Record<string, unknown> | null
+      assert(rebuiltSession?.title === "latest", "rebuild should choose the newest runtime-home replica")
+      assert(rebuiltTodo?.content === "new history", "rebuilt history should come from the newest replica")
+    } finally {
+      verifyWarmDb.close(false)
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function verifyRuntimeManagerLocalMissingSessionRebuildsAndBinds() {
+  const calls: string[] = []
+  let boundResponse: Record<string, unknown> | undefined
+  const session = createRecoverableBusinessSession()
+
+  await recoverMissingAcpSessionForTest({
+    session,
+    acpSessionId: "ses_missing_history",
+    step: "loadSession",
+    client: {
+      loadSession: async (cwd, sessionId) => {
+        calls.push(`load:${cwd}:${sessionId}`)
+        return {
+          configOptions: [{ id: "history", value: "on" }],
+          models: [{ id: "gpt-5", name: "GPT-5" }],
+          modes: [{ id: "build", name: "Build" }],
+        } as never
+      },
+      getSessionId: () => "",
+    },
+    rebuildMissingAcpSession: async ({ missingAcpSessionId }) => {
+      calls.push(`rebuild-db:${missingAcpSessionId}`)
+      return { sessionId: "ses_rebuilt_local" }
+    },
+    bindRecoveredRuntime: async (_targetSession, _targetClient, response) => {
+      boundResponse = response as Record<string, unknown>
+      calls.push(`bind:${String(response.sessionId)}`)
+      return { client: null, transport: "real" } as never
+    },
+  })
+
+  assertJsonEqual(
+    calls,
+    [
+      "rebuild-db:ses_missing_history",
+      "load:/workspace:ses_rebuilt_local",
+      "bind:ses_rebuilt_local",
+    ],
+    "local missing-session recovery should rebuild from runtime-home, load the rebuilt ACP session, then bind it",
+  )
+  assert(boundResponse?.sessionId === "ses_rebuilt_local", "local recovery should bind the rebuilt ACP session id")
+  assertJsonEqual(
+    boundResponse?.configOptions,
+    [{ id: "history", value: "on" }],
+    "local recovery should preserve loaded config options when rebinding",
+  )
+}
+
+async function verifyRuntimeManagerRemoteMissingSessionRebuildsAndBinds() {
+  const calls: string[] = []
+  let boundResponse: Record<string, unknown> | undefined
+  const session = createRecoverableBusinessSession()
+
+  await recoverMissingAcpSessionForTest({
+    session,
+    acpSessionId: "ses_missing_history",
+    step: "resumeSession",
+    client: {
+      loadSession: async () => {
+        throw new Error("remote recovery should not fall back to loadSession when rebuildSession is available")
+      },
+      rebuildSession: async (cwd, sessionId) => {
+        calls.push(`rebuild-remote:${cwd}:${sessionId}`)
+        return {
+          configOptions: [{ id: "history", value: "remote" }],
+          models: [{ id: "gpt-5", name: "GPT-5" }],
+          modes: [{ id: "plan", name: "Plan" }],
+        } as never
+      },
+      getSessionId: () => "ses_rebuilt_remote",
+    },
+    rebuildMissingAcpSession: async () => {
+      throw new Error("remote recovery should not rebuild the ACP session from the shell-side runtime-home")
+    },
+    bindRecoveredRuntime: async (_targetSession, _targetClient, response) => {
+      boundResponse = response as Record<string, unknown>
+      calls.push(`bind:${String(response.sessionId)}`)
+      return { client: null, transport: "real" } as never
+    },
+  })
+
+  assertJsonEqual(
+    calls,
+    [
+      "rebuild-remote:/workspace:ses_missing_history",
+      "bind:ses_rebuilt_remote",
+    ],
+    "remote missing-session recovery should let the worker rebuild the ACP session, then bind the returned session id",
+  )
+  assert(boundResponse?.sessionId === "ses_rebuilt_remote", "remote recovery should bind the worker-returned ACP session id")
+  assertJsonEqual(
+    boundResponse?.configOptions,
+    [{ id: "history", value: "remote" }],
+    "remote recovery should preserve rebuilt remote config options when rebinding",
+  )
+}
+
 async function verifyStaleActivateFailureDoesNotClearNewSelectionPending() {
   const state = createActivationState({
     currentSessionId: "bs_old",
@@ -1290,6 +1858,123 @@ function createLifecycleState(overrides: Record<string, unknown>) {
 
 function createEvent(eventId: string, eventType: string, payload: Record<string, unknown>) {
   return { eventId, eventType, payload }
+}
+
+function createRecoverableBusinessSession() {
+  return {
+    id: "bs_1",
+    tenantId: "t_1",
+    organizationId: "o_1",
+    workspaceId: "ws_rebuild",
+    title: "Recoverable",
+    projectId: "proj_1",
+    workspacePath: "/workspace",
+    workerId: "worker_local",
+    status: "orphaned",
+    createdBy: "u_1",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function seedReplicaDatabase(
+  dbPath: string,
+  input: {
+    title: string
+    sessionUpdatedAt: number
+    messageText: string
+  },
+) {
+  const db = new Database(dbPath)
+  try {
+    db.exec(`create table session (
+      id text primary key,
+      project_id text not null,
+      workspace_id text,
+      parent_id text,
+      slug text not null,
+      directory text not null,
+      path text,
+      title text not null,
+      version text not null,
+      share_url text,
+      summary_additions integer,
+      summary_deletions integer,
+      summary_files integer,
+      summary_diffs text,
+      cost real not null default 0,
+      tokens_input integer not null default 0,
+      tokens_output integer not null default 0,
+      tokens_reasoning integer not null default 0,
+      tokens_cache_read integer not null default 0,
+      tokens_cache_write integer not null default 0,
+      revert text,
+      permission text,
+      agent text,
+      model text,
+      time_created integer not null,
+      time_updated integer not null,
+      time_compacting integer,
+      time_archived integer
+    )`)
+    db.exec("create table message (id text primary key, session_id text not null, time_created integer not null, time_updated integer not null, data text not null)")
+    db.exec("create table part (id text primary key, message_id text not null, session_id text not null, time_created integer not null, time_updated integer not null, data text not null)")
+    db.exec("create table session_message (id text primary key, session_id text not null, type text not null, time_created integer not null, time_updated integer not null, data text not null)")
+    db.exec("create table todo (session_id text not null, content text not null, status text not null, priority text not null, position integer not null, time_created integer not null, time_updated integer not null, primary key(session_id, position))")
+    db.exec(`
+      insert into session (
+        id, project_id, workspace_id, parent_id, slug, directory, path, title, version,
+        revert, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+        time_created, time_updated
+      ) values (
+        'ses_missing_history', 'proj_1', 'ws_rebuild', null, 'slug_1', '/workspace', null, '${input.title}', '1.0.0',
+        json('{"messageID":"msg_old","partID":"prt_old"}'), 0, 0, 0, 0, 0, 0, 1, ${input.sessionUpdatedAt}
+      )
+    `)
+    db.query("insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)").run(
+      "msg_old",
+      "ses_missing_history",
+      input.sessionUpdatedAt,
+      input.sessionUpdatedAt,
+      JSON.stringify({
+        role: "user",
+        model: { providerID: "openai", modelID: "gpt-5" },
+      }),
+    )
+    db.query("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+      "prt_old",
+      "msg_old",
+      "ses_missing_history",
+      input.sessionUpdatedAt,
+      input.sessionUpdatedAt,
+      JSON.stringify({
+        type: "text",
+        text: input.messageText,
+        messageID: "msg_old",
+      }),
+    )
+    db.query("insert into session_message (id, session_id, type, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+      "evt_old",
+      "ses_missing_history",
+      "prompted",
+      input.sessionUpdatedAt,
+      input.sessionUpdatedAt,
+      JSON.stringify({
+        messageID: "msg_old",
+      }),
+    )
+    db.query("insert into todo (session_id, content, status, priority, position, time_created, time_updated) values (?, ?, ?, ?, ?, ?, ?)").run(
+      "ses_missing_history",
+      input.messageText,
+      "pending",
+      "medium",
+      0,
+      input.sessionUpdatedAt,
+      input.sessionUpdatedAt,
+    )
+  } finally {
+    db.close(false)
+  }
 }
 
 function assert(condition: unknown, message: string): asserts condition {

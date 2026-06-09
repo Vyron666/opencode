@@ -5,5 +5,10 @@
   "capacity": 8,
   // 中文/English: keep one warm slot per worker so open latency improves without
   // reserving too much local machine capacity.
-  "warmPoolTarget": 3
+  "warmPoolTarget": 3,
+  // 中文/English: smaller sandbox quotas keep local concurrent cold starts from
+  // overwhelming Docker before worker-side backpressure takes effect.
+  "sandboxMemoryBytes": 1610612736,
+  "sandboxNanoCpus": 1000000000,
+  "sandboxPidsLimit": 256
 }

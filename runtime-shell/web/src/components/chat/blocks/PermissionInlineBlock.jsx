@@ -12,7 +12,7 @@ export function PermissionInlineBlock({ block }) {
 
   return (
     <div className="flex justify-center px-4">
-      <div className="grid w-full max-w-[680px] gap-3 rounded-[18px] border border-[#f1e1b4] bg-[#fff9e9] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="grid w-full gap-3 rounded-[18px] border border-[#f1e1b4] bg-[#fff9e9] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <div className="flex items-start gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ffe9b8] text-sm font-bold text-[#8c6b18]">
             权

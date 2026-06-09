@@ -110,6 +110,19 @@ export class RemoteRuntimeClient implements ManagedRuntimeClient {
     }
   }
 
+  async rebuildSession(cwd: string, sessionId: string): Promise<LoadSessionResponse> {
+    const response = await this.post<RemoteRuntimeBootstrap>("/runtime/rebuild-session", {
+      ...await this.buildSessionRequest(cwd),
+      acpSessionId: sessionId,
+    })
+    this.bindRemote(response)
+    return {
+      configOptions: response.configOptions ?? [],
+      models: response.models,
+      modes: response.modes,
+    }
+  }
+
   async prompt(parts: ContentBlock[]): Promise<PromptResponse> {
     this.activePromptCount += 1
     try {

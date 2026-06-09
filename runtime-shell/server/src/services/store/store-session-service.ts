@@ -76,6 +76,18 @@ export class StoreSessionService {
     return SessionRepo.patchSession(sessionId, patch)
   }
 
+  async markClientConnected(sessionId: string, timestamp: string) {
+    return SessionRepo.markSessionClientConnected(sessionId, timestamp)
+  }
+
+  async markClientHeartbeat(sessionId: string, timestamp: string) {
+    return SessionRepo.markSessionClientHeartbeat(sessionId, timestamp)
+  }
+
+  async markClientDisconnected(sessionId: string, timestamp: string) {
+    return SessionRepo.markSessionClientDisconnected(sessionId, timestamp)
+  }
+
   async softDeleteSessionsByWorkspaceId(input: {
     workspaceId: string
     deletedBy: string

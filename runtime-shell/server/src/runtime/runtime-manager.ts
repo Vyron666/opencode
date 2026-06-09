@@ -2,8 +2,9 @@ import { sessionService } from "../services/store/store-singleton"
 import type { BusinessSession, SessionEvent } from "../types"
 import { bindRuntime, createClient } from "./runtime-binding"
 import { persistAndFanout } from "./runtime-events"
-import type { RuntimeEntry } from "./runtime-types"
+import type { RuntimeEntry, SessionBootstrap } from "./runtime-types"
 import { buildSessionConfigOverride } from "../services/configuration/configuration-service"
+import { rememberWarmRuntimeDemand } from "../services/sandbox/warm-runtime-demand-service"
 import { userService } from "../services/store/store-singleton"
 import {
   clearPendingPermissionsBySession,
@@ -23,6 +24,8 @@ import { createLogger } from "../log"
 import { closeRemoteRuntimeBinding } from "./remote-runtime-client"
 import { RemoteRuntimeClient } from "./remote-runtime-client"
 import { buildRuntimeConfigContent } from "./runtime-config-content"
+import { rebuildMissingAcpSessionFromRuntimeHome } from "../services/runtime/runtime-session-rebuild-service"
+import type { ManagedRuntimeClient } from "./runtime-client"
 
 export { getRuntime, listPendingPermissions, resolvePendingPermission, listPendingQuestions, subscribeRuntimeEvents }
 
@@ -70,15 +73,17 @@ export async function loadRealRuntime(session: BusinessSession) {
   if (!sessionId) throw new Error("acp session is not bound")
   return withPendingRuntimeLoad(session, async () => {
     const client = await createClientWithConfig(session)
-    return client.loadSession(session.workspacePath, sessionId)
-      .then((loaded) =>
-        bindRuntime(session, client, {
-          sessionId,
-          configOptions: loaded.configOptions,
-          models: loaded.models,
-          modes: loaded.modes,
-        }, "loaded"))
-      .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "loadSession"))
+    try {
+      const loaded = await client.loadSession(session.workspacePath, sessionId)
+      return bindRuntime(session, client, {
+        sessionId,
+        configOptions: loaded.configOptions,
+        models: loaded.models,
+        modes: loaded.modes,
+      }, "loaded")
+    } catch (error) {
+      return recoverMissingAcpSession(session, client, sessionId, error, "loadSession")
+    }
   })
 }
 
@@ -87,15 +92,17 @@ export async function resumeRealRuntime(session: BusinessSession) {
   if (!sessionId) throw new Error("acp session is not bound")
   return withPendingRuntimeLoad(session, async () => {
     const client = await createClientWithConfig(session)
-    return client.resumeSession(session.workspacePath, sessionId)
-      .then((resumed) =>
-        bindRuntime(session, client, {
-          sessionId,
-          configOptions: resumed.configOptions,
-          models: resumed.models,
-          modes: resumed.modes,
-        }, "resumed"))
-      .catch((error) => recoverMissingAcpSession(session, client, sessionId, error, "resumeSession"))
+    try {
+      const resumed = await client.resumeSession(session.workspacePath, sessionId)
+      return bindRuntime(session, client, {
+        sessionId,
+        configOptions: resumed.configOptions,
+        models: resumed.models,
+        modes: resumed.modes,
+      }, "resumed")
+    } catch (error) {
+      return recoverMissingAcpSession(session, client, sessionId, error, "resumeSession")
+    }
   })
 }
 
@@ -123,6 +130,7 @@ async function createClientWithConfig(session: BusinessSession) {
     $schema: "https://opencode.ai/config.json",
     ...override,
   })
+  rememberWarmRuntimeDemand(configContent)
   return createClient(session, configContent)
 }
 
@@ -144,23 +152,69 @@ async function recoverMissingAcpSession(
   step: "loadSession" | "resumeSession",
 ) {
   if (!isAcpSessionNotFound(error)) throw error
-  log.warn("persisted ACP session missing, opening a fresh runtime session", {
+  log.warn("persisted ACP session missing, rebuilding it from runtime home history", {
     businessSessionId: session.id,
     workerId: session.workerId,
     workspacePath: session.workspacePath,
     acpSessionId,
     step,
   })
-  // 中文/English: rebuilding images or switching sandbox workspaces can leave a
-  // business session pointing at an ACP session that no longer exists on disk.
-  // Keep the business history, but bind a fresh ACP session so capabilities reload.
-  const created = await client.newSession(session.workspacePath)
-  return bindRuntime(session, client, {
-    sessionId: created.sessionId,
-    configOptions: created.configOptions,
-    models: created.models,
-    modes: created.modes,
-  }, "opened")
+  return recoverMissingAcpSessionForTest({
+    session,
+    client,
+    acpSessionId,
+    step,
+    rebuildMissingAcpSession: (input) => rebuildMissingAcpSessionFromRuntimeHome(input),
+    bindRecoveredRuntime: (targetSession, targetClient, response) =>
+      bindRuntime(targetSession, targetClient, response, "loaded"),
+  })
+}
+
+type RecoverMissingAcpSessionClient = Pick<ManagedRuntimeClient, "loadSession" | "getSessionId"> &
+  Partial<Pick<ManagedRuntimeClient, "rebuildSession">>
+
+type RecoverMissingAcpSessionInput = {
+  session: BusinessSession
+  client: RecoverMissingAcpSessionClient
+  acpSessionId: string
+  step: "loadSession" | "resumeSession"
+  rebuildMissingAcpSession: (input: {
+    session: BusinessSession
+    missingAcpSessionId: string
+  }) => Promise<{ sessionId: string }>
+  bindRecoveredRuntime: (
+    session: BusinessSession,
+    client: ManagedRuntimeClient,
+    response: SessionBootstrap,
+  ) => Promise<RuntimeEntry>
+}
+
+export async function recoverMissingAcpSessionForTest(input: RecoverMissingAcpSessionInput) {
+  if (typeof input.client.rebuildSession === "function") {
+    const loaded = await input.client.rebuildSession(input.session.workspacePath, input.acpSessionId)
+    // 中文/English: remote workers rebuild from their own runtime-home snapshot,
+    // so the shell must not require a local DB clone before rebinding.
+    return input.bindRecoveredRuntime(input.session, input.client as ManagedRuntimeClient, {
+      sessionId: input.client.getSessionId() || input.acpSessionId,
+      configOptions: loaded.configOptions,
+      models: loaded.models,
+      modes: loaded.modes,
+    })
+  }
+
+  const rebuilt = await input.rebuildMissingAcpSession({
+    session: input.session,
+    missingAcpSessionId: input.acpSessionId,
+  })
+  const loaded = await input.client.loadSession(input.session.workspacePath, rebuilt.sessionId)
+  // 中文/English: bind the recovered ACP session back onto the original business
+  // session so history, tool state, and follow-up turns stay on one session line.
+  return input.bindRecoveredRuntime(input.session, input.client as ManagedRuntimeClient, {
+    sessionId: input.client.getSessionId() || rebuilt.sessionId,
+    configOptions: loaded.configOptions,
+    models: loaded.models,
+    modes: loaded.modes,
+  })
 }
 
 function isAcpSessionNotFound(error: unknown) {
@@ -172,11 +226,9 @@ export async function cancelRuntimePrompt(sessionId: string) {
   const runtime = getRuntime(sessionId)
   if (!runtime) return false
   if (!runtime.client.hasActivePrompt()) return false
-  ////////////// runtime-shell customization start //////////////
   // 中文/English: wait until ACP accepts the cancel request so transport errors
   // surface immediately. The turn still ends only on real upstream stop events.
   await runtime.client.cancel()
-  ////////////// runtime-shell customization end //////////////
   return true
 }
 

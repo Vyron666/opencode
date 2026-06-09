@@ -26,6 +26,7 @@ export async function createSession(input: {
     createdAt: timestamp,
     updatedAt: timestamp,
     lastEventAt: timestamp,
+    clientConnectedCount: 0,
     capabilityState: {},
   }
   await getRuntimeDatabaseClient().execute(
@@ -42,13 +43,16 @@ export async function createSession(input: {
         created_by,
         workspace_path,
         last_event_at,
+        client_connected_count,
+        last_client_seen_at,
+        last_client_disconnected_at,
         created_at,
         updated_at,
         updated_by,
         deleted_at,
         binding_json,
         capability_state_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       session.id,
@@ -62,6 +66,9 @@ export async function createSession(input: {
       session.createdBy,
       session.workspacePath,
       session.lastEventAt || null,
+      session.clientConnectedCount || 0,
+      session.lastClientSeenAt || null,
+      session.lastClientDisconnectedAt || null,
       session.createdAt,
       session.updatedAt,
       session.createdBy,
@@ -89,6 +96,7 @@ export async function forkSession(input: { source: BusinessSession; title: strin
     createdAt: timestamp,
     updatedAt: timestamp,
     lastEventAt: timestamp,
+    clientConnectedCount: 0,
     capabilityState: {
       modelId: input.source.capabilityState?.modelId,
       modeId: input.source.capabilityState?.modeId,
@@ -114,13 +122,16 @@ export async function forkSession(input: { source: BusinessSession; title: strin
         created_by,
         workspace_path,
         last_event_at,
+        client_connected_count,
+        last_client_seen_at,
+        last_client_disconnected_at,
         created_at,
         updated_at,
         updated_by,
         deleted_at,
         binding_json,
         capability_state_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       session.id,
@@ -134,6 +145,9 @@ export async function forkSession(input: { source: BusinessSession; title: strin
       session.createdBy,
       session.workspacePath,
       session.lastEventAt || null,
+      session.clientConnectedCount || 0,
+      session.lastClientSeenAt || null,
+      session.lastClientDisconnectedAt || null,
       session.createdAt,
       session.updatedAt,
       session.createdBy,
@@ -155,20 +169,26 @@ export async function patchSession(sessionId: string, patch: BusinessSessionPatc
     capabilityState: patch.capabilityState === undefined ? current.capabilityState : patch.capabilityState,
     binding: patch.binding === undefined ? current.binding : patch.binding || undefined,
   }
-  const updates = [
-    patch.workspaceId !== undefined ? ["workspace_binding_id = ?", session.workspaceId] : null,
-    patch.workerId !== undefined ? ["worker_node_id = ?", session.workerId] : null,
-    patch.title !== undefined ? ["title = ?", session.title] : null,
-    patch.status !== undefined ? ["status = ?", session.status] : null,
-    patch.workspacePath !== undefined ? ["workspace_path = ?", session.workspacePath] : null,
-    patch.lastEventAt !== undefined ? ["last_event_at = ?", session.lastEventAt || null] : null,
-    patch.binding !== undefined ? ["binding_json = ?", session.binding ? stringifySessionJson(session.binding) : null] : null,
-    patch.capabilityState !== undefined
-      ? ["capability_state_json = ?", stringifySessionJson(session.capabilityState)]
-      : null,
-    ["updated_at = ?", session.updatedAt],
-    ["updated_by = ?", session.createdBy],
-  ].filter((item): item is [string, string | null] => Boolean(item))
+  const updates: Array<[string, string | null]> = []
+  if (patch.workspaceId !== undefined) updates.push(["workspace_binding_id = ?", session.workspaceId])
+  if (patch.workerId !== undefined) updates.push(["worker_node_id = ?", session.workerId])
+  if (patch.title !== undefined) updates.push(["title = ?", session.title])
+  if (patch.status !== undefined) updates.push(["status = ?", session.status])
+  if (patch.workspacePath !== undefined) updates.push(["workspace_path = ?", session.workspacePath])
+  if (patch.lastEventAt !== undefined) updates.push(["last_event_at = ?", session.lastEventAt || null])
+  if (patch.clientConnectedCount !== undefined) updates.push(["client_connected_count = ?", String(session.clientConnectedCount || 0)])
+  if (patch.lastClientSeenAt !== undefined) updates.push(["last_client_seen_at = ?", session.lastClientSeenAt || null])
+  if (patch.lastClientDisconnectedAt !== undefined) {
+    updates.push(["last_client_disconnected_at = ?", session.lastClientDisconnectedAt || null])
+  }
+  if (patch.binding !== undefined) {
+    updates.push(["binding_json = ?", session.binding ? stringifySessionJson(session.binding) : null])
+  }
+  if (patch.capabilityState !== undefined) {
+    updates.push(["capability_state_json = ?", stringifySessionJson(session.capabilityState)])
+  }
+  updates.push(["updated_at = ?", session.updatedAt])
+  updates.push(["updated_by = ?", session.createdBy])
   await getRuntimeDatabaseClient().execute(
     `
       UPDATE business_session
@@ -183,6 +203,63 @@ export async function patchSession(sessionId: string, patch: BusinessSessionPatc
     ],
   )
   return session
+}
+
+export async function markSessionClientConnected(sessionId: string, timestamp: string) {
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE business_session
+      SET
+        client_connected_count = client_connected_count + 1,
+        last_client_seen_at = ?,
+        updated_at = ?,
+        last_client_disconnected_at = CASE
+          WHEN client_connected_count + 1 > 0 THEN NULL
+          ELSE last_client_disconnected_at
+        END
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    [timestamp, timestamp, sessionId],
+  )
+  return findSession(sessionId)
+}
+
+export async function markSessionClientHeartbeat(sessionId: string, timestamp: string) {
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE business_session
+      SET
+        last_client_seen_at = ?,
+        updated_at = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    [timestamp, timestamp, sessionId],
+  )
+  return findSession(sessionId)
+}
+
+export async function markSessionClientDisconnected(sessionId: string, timestamp: string) {
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE business_session
+      SET
+        client_connected_count = CASE
+          WHEN client_connected_count > 0 THEN client_connected_count - 1
+          ELSE 0
+        END,
+        last_client_disconnected_at = CASE
+          WHEN client_connected_count <= 1 THEN ?
+          ELSE last_client_disconnected_at
+        END,
+        updated_at = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    [timestamp, timestamp, sessionId],
+  )
+  return findSession(sessionId)
 }
 
 export async function softDeleteSessionsByWorkspaceId(input: {

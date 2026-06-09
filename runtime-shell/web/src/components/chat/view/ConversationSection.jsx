@@ -46,7 +46,7 @@ export const ConversationSection = memo(function ConversationSection({ currentSe
       <div
         ref={timelineRef}
         onScroll={handleScroll}
-        className="relative h-full overflow-y-auto overflow-x-hidden px-6 py-5 max-[1024px]:px-4"
+        className="relative h-full overflow-y-auto overflow-x-hidden px-4 py-4 max-[1024px]:px-3"
         style={{ background: 'linear-gradient(180deg, #ffffff 0%, #fbfcff 100%)' }}
       >
         {showDebug ? <DebugConversationTimeline /> : <ConversationTimeline blocks={blocks} currentSessionId={currentSessionId} />}

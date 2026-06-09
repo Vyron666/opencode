@@ -156,11 +156,7 @@ export async function refreshWorkerLoad(workerId: string) {
         session.status === "cancelling" ||
         session.status === "closing"),
   ).length
-  const nextStatus = activeSessionCount >= worker.capacity ? "busy" : worker.status === "busy" ? "ready" : worker.status
-  return workerService.touchWorker(workerId, {
-    activeSessionCount,
-    status: nextStatus,
-  })
+  return workerService.refreshWorkerLoad(workerId, activeSessionCount)
 }
 
 export function releaseWorkerSelectionReservation(reservationId: string) {
@@ -210,9 +206,6 @@ async function resolveWorkspacePinnedWorker(input: {
 }
 
 function compareWorkers(left: WorkerNode, right: WorkerNode) {
-  const leftWarmRuntimeSpare = readWarmRuntimeSpare(left)
-  const rightWarmRuntimeSpare = readWarmRuntimeSpare(right)
-  if (leftWarmRuntimeSpare !== rightWarmRuntimeSpare) return rightWarmRuntimeSpare - leftWarmRuntimeSpare
   if (left.activeSessionCount !== right.activeSessionCount) {
     return left.activeSessionCount - right.activeSessionCount
   }
@@ -225,6 +218,9 @@ function compareWorkers(left: WorkerNode, right: WorkerNode) {
   const leftSpare = left.capacity - left.activeSessionCount
   const rightSpare = right.capacity - right.activeSessionCount
   if (leftSpare !== rightSpare) return rightSpare - leftSpare
+  const leftWarmRuntimeSpare = readWarmRuntimeSpare(left)
+  const rightWarmRuntimeSpare = readWarmRuntimeSpare(right)
+  if (leftWarmRuntimeSpare !== rightWarmRuntimeSpare) return rightWarmRuntimeSpare - leftWarmRuntimeSpare
   return 0
 }
 
@@ -266,7 +262,6 @@ function pickWorkerWithRoundRobin(candidates: WorkerNode[]) {
 }
 
 function isWorkerPressureEquivalent(left: WorkerNode, right: WorkerNode) {
-  if (Math.abs(readWarmRuntimeSpare(left) - readWarmRuntimeSpare(right)) > 0) return false
   if (left.activeSessionCount !== right.activeSessionCount) return false
   const leftRunningSandboxes = left.resourceSummary?.runningSandboxCount ?? left.activeSessionCount
   const rightRunningSandboxes = right.resourceSummary?.runningSandboxCount ?? right.activeSessionCount
@@ -276,7 +271,8 @@ function isWorkerPressureEquivalent(left: WorkerNode, right: WorkerNode) {
   if (Math.abs(leftQueue - rightQueue) > 1) return false
   const leftSpare = left.capacity - left.activeSessionCount
   const rightSpare = right.capacity - right.activeSessionCount
-  return Math.abs(leftSpare - rightSpare) <= 1
+  if (Math.abs(leftSpare - rightSpare) > 1) return false
+  return Math.abs(readWarmRuntimeSpare(left) - readWarmRuntimeSpare(right)) <= 1
 }
 
 function readWarmRuntimeSpare(worker: WorkerNode) {

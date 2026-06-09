@@ -14,7 +14,7 @@ import {
 } from "../sandbox/sandbox-workspace-service"
 import { markRuntimeBindingLost } from "./runtime-binding-service"
 import { recordRuntimeFailure } from "./runtime-failure-service"
-import { listExpiredRuntimeLeases, releaseRuntimeLease } from "./runtime-lease-service"
+import { listExpiredRuntimeLeases, releaseRuntimeLease, renewRuntimeLeaseForSession } from "./runtime-lease-service"
 import { hasWorkerHeartbeat } from "./worker-heartbeat-query-service"
 import type { RuntimeOperationQueueItem } from "../../types"
 
@@ -35,6 +35,12 @@ export function startRuntimeGovernanceLoop() {
       })
     })
   }, Config.runtimeGovernanceIntervalMs)
+}
+
+export function stopRuntimeGovernanceLoop() {
+  if (!runtimeGovernanceTimer) return
+  clearInterval(runtimeGovernanceTimer)
+  runtimeGovernanceTimer = undefined
 }
 
 export async function runRuntimeGovernanceTick() {
@@ -59,10 +65,9 @@ async function markHeartbeatExpiredWorkersOffline() {
   })
   for (const worker of expiredWorkers) {
     if (!(await hasWorkerHeartbeat(worker.id))) continue
+    const markedOffline = await workerService.markWorkerOfflineIfHeartbeatExpired(worker.id, expireBefore)
+    if (!markedOffline) continue
     if (worker.status !== "offline") {
-      await workerService.touchWorker(worker.id, {
-        status: "offline",
-      })
       await recordRuntimeFailure({
         workerId: worker.id,
         failureType: "worker_offline",
@@ -109,6 +114,12 @@ async function cleanupExpiredRuntimeLeases() {
   const expiredLeases = await listExpiredRuntimeLeases()
   for (const lease of expiredLeases) {
     const session = await sessionService.getSession(lease.businessSessionId)
+    if (session && shouldKeepSessionLeaseAlive(session)) {
+      // 中文/English: a healthy interactive session should not be orphaned merely
+      // because lease renewal lagged for a period while the frontend reconnects.
+      await renewExpiredLeaseBestEffort(session.id)
+      continue
+    }
     // 中文/English: lease expiry means the current runtime ownership is no longer
     // trusted, so close any live runtime before clearing persisted ownership metadata.
     await closeRuntimeForGovernance(lease.businessSessionId, "lease_expired")
@@ -143,6 +154,30 @@ async function closeRuntimeForGovernance(
       error: error instanceof Error ? error.message : String(error),
     })
   }
+}
+
+function shouldKeepSessionLeaseAlive(session: NonNullable<Awaited<ReturnType<typeof sessionService.getSession>>>) {
+  if (!session.binding?.runtimeKey || !session.workerId) return false
+  if (hasRecentClientPresence(session)) return true
+  return session.status === "active" || session.status === "waiting_input" || session.status === "cancelling"
+}
+
+async function renewExpiredLeaseBestEffort(sessionId: string) {
+  try {
+    await renewRuntimeLeaseForSession(sessionId)
+  } catch (error) {
+    log.warn("failed to renew expired runtime lease in governance", {
+      businessSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function hasRecentClientPresence(session: NonNullable<Awaited<ReturnType<typeof sessionService.getSession>>>) {
+  if ((session.clientConnectedCount || 0) > 0) return true
+  const lastSeenAt = session.lastClientSeenAt || session.lastClientDisconnectedAt
+  if (!lastSeenAt) return false
+  return Date.now() - new Date(lastSeenAt).getTime() < Config.sessionClientPresenceGraceMs
 }
 
 async function hasRecordedWorkerOfflineFailure(sessionId: string) {

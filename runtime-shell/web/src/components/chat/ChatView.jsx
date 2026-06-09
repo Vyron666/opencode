@@ -20,9 +20,13 @@ export default function ChatView({ settingsOpen, settingsSection, onOpenSettings
 
   return (
     <main className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white max-[1024px]:h-auto">
-      <ConversationHeader currentSessionId={currentSessionId} sessionTitle={sessionTitle} />
+      <ConversationHeader
+        currentSessionId={currentSessionId}
+        sessionTitle={sessionTitle}
+        onOpenSettings={onOpenSettings}
+      />
       {flash ? (
-        <div className="mx-6 mt-4 shrink-0 rounded-[12px] border border-brand/15 bg-brand/10 px-4 py-3 text-xs text-[var(--text-dim)] animate-slide-down max-[1024px]:mx-4">
+        <div className="mx-6 mt-4 shrink-0 animate-slide-down rounded-[12px] border border-brand/15 bg-brand/10 px-4 py-3 text-xs text-[var(--text-dim)] max-[1024px]:mx-4">
           {flash}
         </div>
       ) : null}

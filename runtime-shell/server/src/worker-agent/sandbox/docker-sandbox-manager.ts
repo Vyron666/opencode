@@ -6,6 +6,8 @@ import { hasRuntimeActivityByWorkspaceId } from "../worker-agent-store"
 import type { SandboxManager } from "./sandbox-manager"
 import type { SandboxHandle } from "./sandbox-types"
 import {
+  isWorkerAgentShuttingDown,
+  pendingWarmPoolCleanupByWorker,
   pendingWarmPoolReconcileByWorker,
   pendingWarmPoolEnsureByWorker,
   warmPoolByWorker,
@@ -21,6 +23,7 @@ import { buildColdRuntimeHomePath } from "./docker-sandbox-runtime-home"
 import {
   cleanupOrphanRuntimeContainers,
   cleanupOrphanWarmPoolContainers,
+  countReadyWarmRuntimeSlots,
   createWarmPoolSlot,
   destroyWarmPoolSlot,
   prepareWarmPoolWorkspace,
@@ -80,6 +83,10 @@ export function createDockerSandboxManager(): SandboxManager {
 export async function ensureDockerWarmPool(input: {
   workerId: string
   target: number
+  warmRuntimeBuckets?: Array<{
+    configFingerprint: string
+    configContent?: string
+  }>
 }) {
   const pending = pendingWarmPoolEnsureByWorker.get(input.workerId)
   if (pending) {
@@ -101,7 +108,20 @@ export async function ensureDockerWarmPool(input: {
 async function doEnsureDockerWarmPool(input: {
   workerId: string
   target: number
+  warmRuntimeBuckets?: Array<{
+    configFingerprint: string
+    configContent?: string
+  }>
 }) {
+  if (isWorkerAgentShuttingDown()) {
+    return {
+      workerId: input.workerId,
+      target: 0,
+      totalCount: 0,
+      readyCount: 0,
+      leasedCount: 0,
+    }
+  }
   if (Config.sandboxBackend === "local-process") {
     return {
       workerId: input.workerId,
@@ -116,8 +136,7 @@ async function doEnsureDockerWarmPool(input: {
   // 中文/English: worker heartbeats call `ensureDockerWarmPool()` continuously, so
   // orphan runtime containers must be reclaimed here as well. Otherwise old
   // `runtime-shell-acp-*` sandboxes can survive rebuilds/restarts indefinitely.
-  await cleanupOrphanRuntimeContainers(input.workerId)
-  await cleanupOrphanWarmPoolContainers(input.workerId)
+  scheduleWarmPoolCleanup(input.workerId)
   const workerPool = readWarmPool(input.workerId)
   await reclaimStaleLeasedWarmPoolSlots(input.workerId)
   await pruneMissingWarmPoolSlots(workerPool)
@@ -128,7 +147,17 @@ function countManagedWarmPoolSlots(slots: Array<unknown>) {
   return slots.length
 }
 
+function countManagedWarmPoolDemand(workerId: string) {
+  const slots = readWarmPool(workerId)
+  // 中文/English: warm-pool reconcile owns shell capacity, not materialized ACP
+  // runtime count. After idle warm-runtime materialization was removed, using
+  // ready-runtime count here would make the reconcile loop think it is always
+  // under target and spin forever on an already-full warm shell pool.
+  return slots.length
+}
+
 function scheduleWarmPoolReconcile(workerId: string) {
+  if (isWorkerAgentShuttingDown()) return
   if (pendingWarmPoolReconcileByWorker.has(workerId)) return
   const task = reconcileWarmPool(workerId)
     .catch(() => {})
@@ -136,30 +165,49 @@ function scheduleWarmPoolReconcile(workerId: string) {
       if (pendingWarmPoolReconcileByWorker.get(workerId) === task) {
         pendingWarmPoolReconcileByWorker.delete(workerId)
       }
+      if (isWorkerAgentShuttingDown()) return
       const target = warmPoolTargetByWorker.get(workerId) ?? 0
-      const totalCount = countManagedWarmPoolSlots(readWarmPool(workerId))
-      if (totalCount === target) return
+      if (countManagedWarmPoolDemand(workerId) >= target) return
       scheduleWarmPoolReconcile(workerId)
     })
   pendingWarmPoolReconcileByWorker.set(workerId, task)
 }
 
 async function reconcileWarmPool(workerId: string) {
+  if (isWorkerAgentShuttingDown()) return
   const workerPool = readWarmPool(workerId)
   const target = warmPoolTargetByWorker.get(workerId) ?? 0
-  while (countManagedWarmPoolSlots(workerPool) < target) {
+  while (!isWorkerAgentShuttingDown() && countManagedWarmPoolSlots(workerPool) < target) {
     await createWarmPoolSlot(workerId)
   }
   // 中文/English: worker heartbeat only needs the warm shell capacity to be ready.
   // Materializing long-lived ACP warm runtimes continues in background so control
   // plane calls return promptly instead of waiting on plugin/provider bootstrap.
-  void backfillReadyWarmRuntimeSlots(workerId).catch(() => {})
+  if (!isWorkerAgentShuttingDown()) {
+    void backfillReadyWarmRuntimeSlots(workerId).catch(() => {})
+  }
   const removable = workerPool.filter((slot) => slot.ready && !slot.leased)
   while (workerPool.length > target && removable.length > 0) {
     const slot = removable.pop()
     if (!slot) break
     await destroyWarmPoolSlot(slot)
   }
+}
+
+function scheduleWarmPoolCleanup(workerId: string) {
+  if (isWorkerAgentShuttingDown()) return
+  if (pendingWarmPoolCleanupByWorker.has(workerId)) return
+  const task = (async () => {
+    await cleanupOrphanRuntimeContainers(workerId)
+    await cleanupOrphanWarmPoolContainers(workerId)
+  })()
+    .catch(() => {})
+    .finally(() => {
+      if (pendingWarmPoolCleanupByWorker.get(workerId) === task) {
+        pendingWarmPoolCleanupByWorker.delete(workerId)
+      }
+    })
+  pendingWarmPoolCleanupByWorker.set(workerId, task)
 }
 
 export async function cleanupDockerWarmPool(input: {
@@ -209,6 +257,7 @@ export async function cleanupDockerWarmPoolProcessExit() {
       await destroyWarmPoolSlot(slot)
     }
     warmPoolByWorker.delete(workerId)
+    pendingWarmPoolCleanupByWorker.delete(workerId)
     pendingWarmPoolEnsureByWorker.delete(workerId)
     pendingWarmPoolReconcileByWorker.delete(workerId)
     warmPoolTargetByWorker.delete(workerId)

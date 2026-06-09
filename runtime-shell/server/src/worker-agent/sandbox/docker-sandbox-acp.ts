@@ -65,21 +65,22 @@ async function bootContainer(input: {
     await ensureDockerReady()
     const runtimeSessionCwd = input.handle.runtimeCwd || input.runtimeClientOptions.cwd
     if (input.handle.poolSlotId) {
-      // 中文/English: warm-pool hits should wait only on workspace sync instead
-      // of joining the cold-container boot gate again.
+      // 中文/English: warm-pool hits only need workspace sync and should not
+      // re-enter the cold container boot gate.
       await prepareWarmPoolWorkspace(input.handle)
     } else {
-      await runColdStartContainerBoot(async () => {
+      const container = await runColdStartContainerBoot(async () => {
         const container = await ensureContainer({
           containerName: input.handle.containerName!,
           cwd: runtimeSessionCwd,
           handle: input.handle,
         })
         await startContainerIfNeeded(container)
-        void followContainerStderr(container, input.stderr)
-        void waitDockerSandboxExit(container).then((result) => {
-          input.exitState.settle(result)
-        })
+        return container
+      })
+      void followContainerStderr(container, input.stderr)
+      void waitDockerSandboxExit(container).then((result) => {
+        input.exitState.settle(result)
       })
     }
     const socket = await connectSandboxBridge(docker.getContainer(input.handle.containerName!))

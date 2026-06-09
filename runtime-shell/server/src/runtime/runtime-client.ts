@@ -24,6 +24,7 @@ export type ManagedRuntimeClient = {
   loadSession: (cwd: string, sessionId: string) => Promise<LoadSessionResponse>
   resumeSession: (cwd: string, sessionId: string) => Promise<ResumeSessionResponse>
   forkSession: (cwd: string, sessionId: string, source?: RuntimeForkSource) => Promise<ForkSessionResponse>
+  rebuildSession?: (cwd: string, sessionId: string) => Promise<LoadSessionResponse>
   prompt: (parts: ContentBlock[]) => Promise<PromptResponse>
   flushPendingEvents: () => Promise<void>
   cancel: () => Promise<void>

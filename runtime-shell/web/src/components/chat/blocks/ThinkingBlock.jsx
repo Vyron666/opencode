@@ -5,7 +5,7 @@ export function ThinkingBlock({ block }) {
   const preview = block.message.slice(0, 120)
 
   return (
-    <div className="max-w-[780px] overflow-hidden rounded-[24px] border border-[#dde7fb] bg-[linear-gradient(180deg,#fbfcff_0%,#f5f8ff_100%)] shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+    <div className="w-full overflow-hidden rounded-[24px] border border-[#dde7fb] bg-[linear-gradient(180deg,#fbfcff_0%,#f5f8ff_100%)] shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}

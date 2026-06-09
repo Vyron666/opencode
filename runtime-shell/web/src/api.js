@@ -160,6 +160,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(config),
       }),
+    remove: (payload) =>
+      request('/api/provider-config/delete', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
   },
   mcpConfig: {
     get: () => request('/api/mcp-config'),

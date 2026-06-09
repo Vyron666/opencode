@@ -3,7 +3,9 @@ import { type ParseError, applyEdits, modify, parse } from "jsonc-parser"
 
 const CONFIG_FILE_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
 const DEFAULT_RUNTIME_CONFIG = '{\n  "$schema": "https://opencode.ai/config.json"\n}\n'
+const BUILTIN_MODELS_FILE = path.resolve(process.cwd(), "./config/models-api.json")
 const CONFIG_TEMPLATE_FILE = path.resolve(process.cwd(), "./config/opencode.example.jsonc")
+const RUNTIME_MODELS_FILE = path.resolve(process.cwd(), "./config/models-api.runtime.json")
 const DEFAULT_WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../..")
 
 export type RuntimeShellProviderModel = {
@@ -50,13 +52,88 @@ type SaveProviderInput = {
 }
 
 export async function listProviderConfigs() {
-  const builtin = await listStoredProviderConfigs()
-  return builtin.map((item) => toVisibleProviderConfig(item))
+  const file = Bun.file(BUILTIN_MODELS_FILE)
+  if (!(await file.exists())) return []
+  const payload = await file.json().catch(() => ({}))
+  if (!isRecord(payload)) return []
+
+  return Object.entries(payload)
+    .flatMap(([providerId, raw]) => {
+      if (!isRecord(raw)) return []
+      const models = isRecord(raw.models) ? raw.models : {}
+      const visibleModels = Object.entries(models)
+        .map(([modelId, modelRaw]) => ({
+          id: modelId,
+          name: isRecord(modelRaw) && typeof modelRaw.name === "string" ? modelRaw.name : modelId,
+          api: readProviderModelApiId(modelRaw),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name))
+      if (visibleModels.length === 0) return []
+
+      const defaultModel = `${providerId}/${visibleModels[0]?.id || ""}`
+      if (!defaultModel.endsWith("/")) {
+        return [{
+          providerId,
+          name: typeof raw.name === "string" ? raw.name : providerId,
+          npm: typeof raw.npm === "string" && raw.npm.trim() ? raw.npm.trim() : undefined,
+          api: typeof raw.npm === "string" && raw.npm.trim() ? raw.npm.trim() : "",
+          baseURL: typeof raw.api === "string" ? raw.api : "",
+          apiKeyMasked: "",
+          apiKeyConfigured: false,
+          defaultModel,
+          models: visibleModels,
+        } satisfies RuntimeShellProviderConfig]
+      }
+
+      return []
+    })
+    .sort((left, right) => left.name.localeCompare(right.name))
 }
 
 export async function listStoredProviderConfigs() {
   const text = await readBuiltinProviderConfigText()
   return parseProviderConfigs(text)
+}
+
+export async function listRuntimeFreeProviderConfigs() {
+  const file = Bun.file(RUNTIME_MODELS_FILE)
+  if (!(await file.exists())) return []
+  const payload = await file.json().catch(() => ({}))
+  if (!isRecord(payload)) return []
+
+  return Object.entries(payload)
+    .flatMap(([providerId, raw]) => {
+      if (!isRecord(raw)) return []
+      const models = isRecord(raw.models) ? raw.models : {}
+      const visibleModels = Object.entries(models)
+        .map(([modelId, modelRaw]) => ({
+          id: modelId,
+          name: isRecord(modelRaw) && typeof modelRaw.name === "string" ? modelRaw.name : modelId,
+          api: readProviderModelApiId(modelRaw),
+        }))
+        .filter((item) => item.id.includes("-free"))
+        .sort((left, right) => left.name.localeCompare(right.name))
+
+      if (visibleModels.length === 0) return []
+
+      const defaultModel =
+        visibleModels.find((item) => item.id === "deepseek-v4-flash-free")?.id ||
+        visibleModels[0]?.id ||
+        ""
+      if (!defaultModel) return []
+
+      return [{
+        providerId,
+        name: typeof raw.name === "string" ? raw.name : providerId,
+        npm: typeof raw.npm === "string" && raw.npm.trim() ? raw.npm.trim() : undefined,
+        api: typeof raw.npm === "string" && raw.npm.trim() ? raw.npm.trim() : "",
+        baseURL: typeof raw.api === "string" ? raw.api : "",
+        apiKeyMasked: "",
+        apiKeyConfigured: false,
+        defaultModel: `${providerId}/${defaultModel}`,
+        models: visibleModels,
+      } satisfies RuntimeShellProviderConfig]
+    })
 }
 
 export async function saveProviderConfig(input: SaveProviderInput) {

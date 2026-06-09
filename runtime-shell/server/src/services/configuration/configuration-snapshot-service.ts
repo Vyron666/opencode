@@ -1,3 +1,4 @@
+import { Config } from "../../config"
 import type { User } from "../../types"
 import { listVisibleMcpServers } from "./mcp-configuration-service"
 import { listVisibleProviderConfigs, listVisibleStoredProviderConfigs } from "./provider-configuration-service"
@@ -61,7 +62,7 @@ export async function buildSessionConfigOverride(user: User) {
       ? {
           skills: {
             ...(skills.paths?.length ? { paths: skills.paths } : {}),
-            ...(skills.urls?.length ? { urls: skills.urls } : {}),
+            ...(skills.urls?.length ? { urls: skills.urls.map(rewriteSkillUrlForSandbox) } : {}),
           },
         }
       : {}),
@@ -89,4 +90,10 @@ export async function buildSessionConfigOverride(user: User) {
         }
       : {}),
   }
+}
+
+function rewriteSkillUrlForSandbox(url: string) {
+  if (!url) return url
+  if (!url.startsWith(Config.publicBaseUrl)) return url
+  return `${Config.internalBaseUrl}${url.slice(Config.publicBaseUrl.length)}`
 }

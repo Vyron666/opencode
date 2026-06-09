@@ -151,6 +151,13 @@ export async function createEventStreamForUser(input: {
       let replayingHistory = true
       const seenEventIds = new Set<string>()
       const queuedEvents: SessionEvent[] = []
+      const markClientSeen = () => {
+        // 中文/English: SSE is the authoritative browser presence signal for a
+        // business session, so governance can distinguish idle tabs from closed tabs.
+        void sessionService.markClientHeartbeat(result.session.id, new Date().toISOString()).catch(() => {})
+      }
+
+      void sessionService.markClientConnected(result.session.id, new Date().toISOString()).catch(() => {})
 
       // 中文/English: subscribe first, then replay persisted history, so no event is lost in between.
       const cleanupRuntime = subscribeRuntimeEvents(result.session.id, (event) => {
@@ -176,8 +183,12 @@ export async function createEventStreamForUser(input: {
       })
 
       writeSsePayload(controller, encoder, { type: "heartbeat", sessionId: result.session.id })
+      markClientSeen()
       const timer = setInterval(
-        () => writeSsePayload(controller, encoder, { type: "heartbeat", sessionId: result.session.id }),
+        () => {
+          writeSsePayload(controller, encoder, { type: "heartbeat", sessionId: result.session.id })
+          markClientSeen()
+        },
         5000,
       )
 
@@ -186,6 +197,7 @@ export async function createEventStreamForUser(input: {
         closed = true
         clearInterval(timer)
         cleanupRuntime()
+        void sessionService.markClientDisconnected(result.session.id, new Date().toISOString()).catch(() => {})
         controller.close()
       })
     },

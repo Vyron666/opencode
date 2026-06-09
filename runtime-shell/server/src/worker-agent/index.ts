@@ -6,6 +6,7 @@ import {
   ensureDockerWarmPool,
   getDockerWarmPoolSnapshot,
 } from "./sandbox/docker-sandbox-manager"
+import { markWorkerAgentShuttingDown } from "./sandbox/docker-sandbox-state"
 import { queryFailure, queryHeartbeat, queryLease, queryRuntime } from "./worker-agent-query"
 import { createRuntimeHandlers } from "./worker-agent-runtime"
 
@@ -62,6 +63,9 @@ const server = Bun.serve({
       if (url.pathname === "/runtime/resume-session") {
         return json(await runtimeHandlers.resumeSession(await request.json()))
       }
+      if (url.pathname === "/runtime/rebuild-session") {
+        return json(await runtimeHandlers.rebuildSession(await request.json()))
+      }
       if (url.pathname === "/runtime/fork-session") {
         return json(await runtimeHandlers.forkSession(await request.json()))
       }
@@ -80,9 +84,23 @@ const server = Bun.serve({
         const body = await request.json() as Record<string, unknown>
         const workerId = typeof body.workerId === "string" ? body.workerId : ""
         const target = typeof body.target === "number" ? body.target : Number(body.target || 0)
+        const warmRuntimeBuckets = Array.isArray(body.warmRuntimeBuckets)
+          ? body.warmRuntimeBuckets
+            .flatMap((item) => {
+              if (!item || typeof item !== "object") return []
+              const configFingerprint = typeof item.configFingerprint === "string" ? item.configFingerprint : ""
+              if (!configFingerprint) return []
+              return [{
+                configFingerprint,
+                configContent: typeof item.configContent === "string" ? item.configContent : undefined,
+                lastUsedAt: typeof item.lastUsedAt === "number" ? item.lastUsedAt : undefined,
+              }]
+            })
+          : undefined
         return json(await ensureDockerWarmPool({
           workerId,
           target: Number.isFinite(target) && target >= 0 ? target : 0,
+          warmRuntimeBuckets,
         }))
       }
       if (url.pathname === "/runtime/pool/close-slot") {
@@ -160,6 +178,7 @@ function registerGracefulShutdown() {
     if (shutdownPromise) return
     shutdownPromise = (async () => {
       log.info("worker agent shutting down", { signal })
+      markWorkerAgentShuttingDown()
       try {
         // 中文/English: warm slots are pure acceleration state, so reclaim them on
         // process exit to avoid leaking detached containers after compose down/restart.

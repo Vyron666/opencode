@@ -107,6 +107,34 @@ export async function findLatestBindingBySessionId(sessionId: string) {
   return toRuntimeBinding(row)
 }
 
+export async function findLatestRecoverableBindingBySessionId(sessionId: string) {
+  const db = getRuntimeDatabaseClient()
+  const row = await db.queryFirst<SessionRuntimeBindingRow>(
+    `
+      SELECT
+        id,
+        business_session_id,
+        worker_node_id,
+        acp_session_id,
+        runtime_key,
+        binding_status,
+        bound_at,
+        released_at,
+        created_at,
+        updated_at
+      FROM business_session_runtime_binding
+      WHERE business_session_id = ?
+        AND acp_session_id IS NOT NULL
+        AND runtime_key IS NOT NULL
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [sessionId],
+  )
+  if (!row) return
+  return toRuntimeBinding(row)
+}
+
 export async function createBinding(input: {
   businessSessionId: string
   workerId: string

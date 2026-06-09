@@ -3,7 +3,7 @@ export function UserMessageBlock({ block }) {
 
   return (
     <div className="group flex min-w-0 justify-end">
-      <div className="relative grid min-w-0 max-w-[76%] justify-items-end gap-2.5">
+      <div className="relative grid min-w-0 max-w-[min(72%,760px)] justify-items-end gap-2.5">
         <div className="flex items-center gap-2 text-[11px] text-[#8a96ab]">
           <span className="rounded-full bg-[#eef4ff] px-2.5 py-1 font-semibold tracking-[0.04em] text-[#3566df]">你</span>
           <span>{timestampLabel}</span>

@@ -68,6 +68,9 @@ export const Config = {
   host: process.env.RUNTIME_SHELL_HOST || "0.0.0.0",
   port: Number(process.env.RUNTIME_SHELL_PORT || "3000"),
   publicBaseUrl: (process.env.RUNTIME_SHELL_PUBLIC_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, ""),
+  // 中文/English: sandboxed ACP must call runtime-shell through the Docker network,
+  // not the browser-facing loopback URL published on the host.
+  internalBaseUrl: (process.env.RUNTIME_SHELL_INTERNAL_BASE_URL || process.env.RUNTIME_SHELL_PUBLIC_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, ""),
   adminUsername: process.env.RUNTIME_SHELL_ADMIN_USERNAME || "admin",
   adminPassword: process.env.RUNTIME_SHELL_ADMIN_PASSWORD || "change-me",
   sessionCookie: process.env.RUNTIME_SHELL_SESSION_COOKIE || "runtime_shell_session",
@@ -95,9 +98,11 @@ export const Config = {
   sandboxDockerWorkspaceHostRoot: process.env.RUNTIME_SHELL_SANDBOX_WORKSPACE_HOST_ROOT || "",
   sandboxDockerSeccompProfile: process.env.RUNTIME_SHELL_SANDBOX_SECCOMP_PROFILE || "",
   sandboxDockerAppArmorProfile: process.env.RUNTIME_SHELL_SANDBOX_APPARMOR_PROFILE || "",
-  sandboxDockerMemoryBytes: Number(process.env.RUNTIME_SHELL_SANDBOX_MEMORY_BYTES || `${4 * 1024 * 1024 * 1024}`),
-  sandboxDockerNanoCpus: Number(process.env.RUNTIME_SHELL_SANDBOX_NANO_CPUS || `${2 * 1_000_000_000}`),
-  sandboxDockerPidsLimit: Number(process.env.RUNTIME_SHELL_SANDBOX_PIDS_LIMIT || "512"),
+  // 中文/English: keep default sandbox resources modest so local multi-user bursts
+  // queue under governance instead of exhausting the Docker host outright.
+  sandboxDockerMemoryBytes: Number(process.env.RUNTIME_SHELL_SANDBOX_MEMORY_BYTES || `${1536 * 1024 * 1024}`),
+  sandboxDockerNanoCpus: Number(process.env.RUNTIME_SHELL_SANDBOX_NANO_CPUS || `${1_000_000_000}`),
+  sandboxDockerPidsLimit: Number(process.env.RUNTIME_SHELL_SANDBOX_PIDS_LIMIT || "256"),
   sandboxWorkspaceMountMode: process.env.RUNTIME_SHELL_SANDBOX_WORKSPACE_MOUNT_MODE || "rw",
   sandboxRuntimeHomeDir: process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_HOME_DIR || "/tmp/runtime-shell-home",
   sandboxRuntimeClass: process.env.RUNTIME_SHELL_SANDBOX_RUNTIME_CLASS || "",
@@ -115,4 +120,5 @@ export const Config = {
   // reopening the same session/workspace usually continues without manual recovery.
   runtimeLeaseDurationMs: Number(process.env.RUNTIME_SHELL_RUNTIME_LEASE_DURATION_MS || "600000"),
   runtimeGovernanceIntervalMs: Number(process.env.RUNTIME_SHELL_RUNTIME_GOVERNANCE_INTERVAL_MS || "5000"),
+  sessionClientPresenceGraceMs: Number(process.env.RUNTIME_SHELL_SESSION_CLIENT_PRESENCE_GRACE_MS || "1800000"),
 }

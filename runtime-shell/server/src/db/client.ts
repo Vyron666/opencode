@@ -26,7 +26,6 @@ export function createDatabaseClient(config: DatabaseConfig): DatabaseClient {
     })
     return {
       async execute(statement, params: DbParam[] = []) {
-        // 中文/English: runtime-shell keeps one SQL shape and rewrites placeholders for PostgreSQL.
         await sql.unsafe(toPostgresStatement(statement), params)
       },
       async queryRows<T extends Record<string, unknown>>(statement: string, params: DbParam[] = []) {

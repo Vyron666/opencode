@@ -3,6 +3,7 @@ import path from "node:path"
 import { Config } from "../../config"
 import { ensureSandboxUserOwnership } from "../../lib/sandbox-user-ownership"
 import { createConcurrencyGate } from "../../lib/concurrency-gate"
+import { isSystemWarmPoolSandboxInstance } from "../../lib/sandbox-instance-kind"
 import {
   deleteSandboxInstanceByWorkspaceId,
   findSandboxInstanceByWorkspaceId,
@@ -278,7 +279,7 @@ export async function cleanupStalePreparedSandboxWorkspaces(limit = 100) {
   }> = []
   for (const sandbox of sandboxes) {
     if (results.length >= limit) break
-    if (sandbox.detail?.source === "warm_pool") continue
+    if (isSystemWarmPoolSandboxInstance(sandbox)) continue
     if (sandbox.status !== "ready" && sandbox.status !== "preparing" && sandbox.status !== "failed") continue
     if (Date.now() - new Date(sandbox.updatedAt).getTime() < STALE_PREPARED_SANDBOX_GRACE_MS) continue
     const session = await sessionService.getSession(sandbox.businessSessionId)
@@ -324,7 +325,7 @@ export async function cleanupStaleInactiveSandboxInstances(limit = 100) {
   }> = []
   for (const sandbox of sandboxes) {
     if (results.length >= limit) break
-    if (sandbox.detail?.source === "warm_pool") continue
+    if (isSystemWarmPoolSandboxInstance(sandbox)) continue
     if (sandbox.status === "warm" || sandbox.status === "leased") continue
     if (sandbox.status === "ready" || sandbox.status === "preparing") continue
     if (Date.now() - new Date(sandbox.updatedAt).getTime() < STALE_INACTIVE_SANDBOX_GRACE_MS) continue

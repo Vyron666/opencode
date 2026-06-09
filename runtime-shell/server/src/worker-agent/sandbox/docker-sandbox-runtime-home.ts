@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { cp, mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { spawn } from "node:child_process"
+import { createHash } from "node:crypto"
 import { Database } from "bun:sqlite"
 import { Config } from "../../config"
 import { ensureSandboxUserOwnership } from "../../lib/sandbox-user-ownership"
@@ -11,8 +12,9 @@ const RUNTIME_HOME_ROOT = path.join(Config.workspaceRootDir, ".runtime-home")
 const RUNTIME_HOME_DATA_DIR = path.join(".local", "share", "opencode")
 const RUNTIME_HOME_PRIMARY_DB_NAME = "opencode.db"
 const RUNTIME_HOME_SEED_TIMEOUT_MS = 60_000
-const RUNTIME_HOME_LAYOUT_VERSION_PREFIX = "runtime-home-v2"
+const RUNTIME_HOME_LAYOUT_VERSION_PREFIX = "runtime-home-v3"
 const RUNTIME_HOME_LAYOUT_MARKER = ".runtime-shell-layout-version"
+const DEFAULT_RUNTIME_HOME_DATA_MIGRATIONS = ["session_usage_from_messages"]
 
 const runtimeHomeSeedPromiseByWorker = new Map<string, Promise<string>>()
 const runtimeHomePreparationPromiseByTarget = new Map<string, Promise<string>>()
@@ -223,6 +225,10 @@ async function createRuntimeHomeSeed(workerId: string) {
       OPENCODE_DB: process.env.OPENCODE_DB || RUNTIME_HOME_PRIMARY_DB_NAME,
       OPENCODE_CONFIG: process.env.OPENCODE_CONFIG || path.join(Config.sandboxDockerSpawnCwd, "runtime-shell", "config", "opencode.example.jsonc"),
       OPENCODE_MODELS_PATH: process.env.OPENCODE_MODELS_PATH || Config.sandboxDockerModelsPath,
+      // 中文/English: runtime-home seed only needs the ACP core schema/runtime path.
+      // Disabling builtin default plugins keeps copied warm/cold runtime homes aligned
+      // with the slimmer sandbox ACP process that will later attach to them.
+      OPENCODE_DISABLE_DEFAULT_PLUGINS: process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS || "1",
       OPENCODE_DISABLE_PROJECT_CONFIG: process.env.OPENCODE_DISABLE_PROJECT_CONFIG || "1",
       OPENCODE_DISABLE_MODELS_FETCH: process.env.OPENCODE_DISABLE_MODELS_FETCH || "1",
     }
@@ -230,7 +236,10 @@ async function createRuntimeHomeSeed(workerId: string) {
       process.execPath,
       [Config.sandboxDockerAcpEntry, "acp", `--cwd=${buildRuntimeHomeSeedCwd(workerId)}`],
       {
-        cwd: Config.sandboxDockerSpawnCwd,
+        // 中文/English: seed bootstrap should use the same instance cwd as the
+        // runtime-home payload it is creating, otherwise upstream can spend time
+        // bootstrapping the repo root and polluting the seed with wrong state.
+        cwd: buildRuntimeHomeSeedCwd(workerId),
         env,
         stdio: ["ignore", "ignore", "pipe"],
       },
@@ -239,16 +248,37 @@ async function createRuntimeHomeSeed(workerId: string) {
     const timer = setTimeout(() => {
       finish(new Error("runtime home seed bootstrap timed out"))
     }, RUNTIME_HOME_SEED_TIMEOUT_MS)
+    const readinessPoll = setInterval(() => {
+      void confirmRuntimeHomeSeedReady(seedDir)
+        .then((ready) => {
+          if (ready) finish()
+        })
+        .catch((error) => {
+          finish(error instanceof Error ? error : new Error(String(error)))
+        })
+    }, 200)
     proc.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8")
-      if (text.includes("sqlite-migration:done") || text.includes("Database migration complete.")) {
-        finish()
+      // 中文/English: the seed is only truly reusable after ACP background
+      // data-migration state is durable in the worker-local runtime-home DB.
+      if (text.includes("failed to run data migrations")) {
+        finish(new Error("runtime home seed data migration failed"))
       }
     })
     proc.on("exit", (code) => {
       if (settled) return
-      if (code === 0 && hasRuntimeHomeDatabase(seedDir)) {
-        finish()
+      if (code === 0) {
+        void confirmRuntimeHomeSeedReady(seedDir)
+          .then((ready) => {
+            if (ready) {
+              finish()
+              return
+            }
+            finish(new Error("runtime home seed exited before data migration completed"))
+          })
+          .catch((error) => {
+            finish(error instanceof Error ? error : new Error(String(error)))
+          })
         return
       }
       finish(new Error(`runtime home seed bootstrap exited early: ${code ?? "unknown"}`))
@@ -261,6 +291,7 @@ async function createRuntimeHomeSeed(workerId: string) {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearInterval(readinessPoll)
       proc.kill("SIGTERM")
       setTimeout(() => {
         proc.kill("SIGKILL")
@@ -330,7 +361,8 @@ function readRuntimeHomeLayoutVersion() {
     .at(-1)
   // 中文/English: sandbox ACP skips per-process migrations only when the copied
   // runtime-home seed matches the current upstream migration directory.
-  return `${RUNTIME_HOME_LAYOUT_VERSION_PREFIX}:${latestMigration || "unknown"}`
+  const dataMigrationVersion = readRuntimeHomeDataMigrationVersion()
+  return `${RUNTIME_HOME_LAYOUT_VERSION_PREFIX}:${latestMigration || "unknown"}:${dataMigrationVersion}`
 }
 
 async function ensureRuntimeHomeOwnership(runtimeHomePath: string) {
@@ -369,4 +401,59 @@ function readRuntimeHomeDbSize(dbPath: string) {
   } catch {
     return 0
   }
+}
+
+async function confirmRuntimeHomeSeedReady(runtimeHomePath: string) {
+  if (!hasRuntimeHomeDatabase(runtimeHomePath)) return false
+  return hasCompletedRuntimeHomeDataMigrations(runtimeHomePath)
+}
+
+function hasCompletedRuntimeHomeDataMigrations(runtimeHomePath: string) {
+  const dbPath = findRuntimeHomeDbPath(runtimeHomePath)
+  if (!dbPath) return false
+  const requiredNames = readRuntimeHomeDataMigrationNames()
+  if (requiredNames.length === 0) return true
+  const db = new Database(dbPath, { readonly: true })
+  try {
+    db.exec("PRAGMA busy_timeout = 1000")
+    const hasMigrationTable = db
+      .query("select 1 from sqlite_master where type = 'table' and name = 'data_migration' limit 1")
+      .get()
+    if (!hasMigrationTable) return false
+    const completedNames = new Set(
+      (db.query("select name from data_migration").all() as Array<{ name: string }>)
+        .map((row) => row.name)
+        .filter(Boolean),
+    )
+    return requiredNames.every((name) => completedNames.has(name))
+  } catch {
+    return false
+  } finally {
+    db.close(false)
+  }
+}
+
+function readRuntimeHomeDataMigrationNames() {
+  try {
+    const source = readFileSync(readRuntimeHomeDataMigrationSourcePath(), "utf8")
+    const names = [...source.matchAll(/name:\s*"([^"]+)"/g)]
+      .map((match) => match[1]?.trim())
+      .filter((name): name is string => Boolean(name))
+    return names.length > 0 ? [...new Set(names)] : DEFAULT_RUNTIME_HOME_DATA_MIGRATIONS
+  } catch {
+    return DEFAULT_RUNTIME_HOME_DATA_MIGRATIONS
+  }
+}
+
+function readRuntimeHomeDataMigrationVersion() {
+  try {
+    const source = readFileSync(readRuntimeHomeDataMigrationSourcePath(), "utf8")
+    return createHash("sha1").update(source).digest("hex").slice(0, 12)
+  } catch {
+    return "unknown"
+  }
+}
+
+function readRuntimeHomeDataMigrationSourcePath() {
+  return path.join(Config.sandboxDockerSpawnCwd, "packages", "opencode", "src", "data-migration.ts")
 }

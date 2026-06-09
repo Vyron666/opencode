@@ -84,25 +84,14 @@ export async function listVisibleStoredProviderConfigs(user: User) {
 }
 
 export async function listVisibleProviderConfigs(user: User) {
-  const [platformProviders, privateProviders, builtinProviders] = await Promise.all([
+  const [platformProviders, privateProviders] = await Promise.all([
     listPlatformProviderConfigs(user),
     listUserPrivateProviderConfigs(user),
-    listProviderConfigs(),
   ])
   const platformIds = new Set(platformProviders.map((item) => item.providerId))
-  const visibleConfigured = [
+  return [
     ...platformProviders,
     ...privateProviders.filter((item) => !platformIds.has(item.providerId)),
-  ]
-  const visibleConfiguredIds = new Set(visibleConfigured.map((item) => item.providerId))
-  return [
-    ...visibleConfigured,
-    ...builtinProviders
-      .filter((item) => !visibleConfiguredIds.has(item.providerId))
-      .map((item) => ({
-        ...item,
-        source: "platform_shared" as const,
-      })),
   ]
 }
 
@@ -121,6 +110,10 @@ export async function listReservedPlatformProviderConfigs(user: User) {
         source: "platform_shared" as const,
       })),
   ]
+}
+
+export async function listBuiltinProviderConfigs() {
+  return listProviderConfigs()
 }
 
 export async function savePlatformProviderConfig(input: {

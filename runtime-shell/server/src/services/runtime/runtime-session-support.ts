@@ -1,5 +1,5 @@
 import type { BusinessSession } from "../../types"
-import { getLatestRuntimeBinding } from "../runtime-governance/runtime-binding-service"
+import { getLatestRecoverableRuntimeBinding } from "../runtime-governance/runtime-binding-service"
 import { markSessionActive, markSessionFailed } from "../session/session-status-machine-service"
 import { sessionService } from "../store/store-singleton"
 
@@ -32,7 +32,7 @@ export function isPromptAborted(error: unknown) {
 
 export async function restoreSessionBindingForHistory(session: BusinessSession) {
   if (session.binding?.acpSessionId) return session
-  const latestBinding = await getLatestRuntimeBinding(session.id)
+  const latestBinding = await getLatestRecoverableRuntimeBinding(session.id)
   if (!latestBinding?.acpSessionId || !latestBinding.runtimeKey) return session
   if (session.workerId !== latestBinding.workerId) {
     await sessionService.updateSession(session.id, {
@@ -49,4 +49,9 @@ export async function restoreSessionBindingForHistory(session: BusinessSession) 
       transport: "real" as const,
     },
   }
+}
+
+export async function hasRecoverableSessionBinding(session: BusinessSession) {
+  if (session.binding?.acpSessionId && session.binding.runtimeKey) return true
+  return Boolean(await getLatestRecoverableRuntimeBinding(session.id))
 }

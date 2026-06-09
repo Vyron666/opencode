@@ -22,6 +22,10 @@ export async function getLatestRuntimeBinding(sessionId: string) {
   return SessionRuntimeBindingRepo.findLatestBindingBySessionId(sessionId)
 }
 
+export async function getLatestRecoverableRuntimeBinding(sessionId: string) {
+  return SessionRuntimeBindingRepo.findLatestRecoverableBindingBySessionId(sessionId)
+}
+
 export async function markRuntimeBindingBound(input: {
   sessionId: string
   acpSessionId: string

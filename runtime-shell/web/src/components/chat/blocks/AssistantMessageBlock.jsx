@@ -101,7 +101,7 @@ export const AssistantMessageBlock = memo(function AssistantMessageBlock({ block
 
   return (
     <div className="group flex min-w-0">
-      <div className="relative grid min-w-0 max-w-[84%] gap-2.5">
+      <div className="relative grid min-w-0 w-full max-w-[min(100%,1180px)] gap-2.5">
         <div className="flex items-center gap-2 text-[11px] text-[#8a96ab]">
           <span className="rounded-full bg-[#eef4ff] px-2.5 py-1 font-semibold tracking-[0.04em] text-[#3566df]">助手</span>
           {block.streaming ? <span className="text-[10px] font-medium text-[#6f7f99]">流式输出中...</span> : null}

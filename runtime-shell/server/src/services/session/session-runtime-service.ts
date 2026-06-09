@@ -1,7 +1,8 @@
-import { getRuntime, openRealRuntime, prewarmRealRuntime } from "../../acp-runtime-manager"
+import { getRuntime, loadRealRuntime, openRealRuntime, prewarmRealRuntime, resumeRealRuntime } from "../../acp-runtime-manager"
 import { createLogger } from "../../log"
 import type { BusinessSession } from "../../types"
 import { renewRuntimeLeaseForSession } from "../runtime-governance/runtime-lease-service"
+import { restoreSessionBindingForHistory } from "../runtime/runtime-session-support"
 import { markSessionActive } from "./session-status-machine-service"
 import { sessionService } from "../store/store-singleton"
 
@@ -18,20 +19,40 @@ export async function openSessionWithFallback(session: BusinessSession) {
     await renewRuntimeLeaseForSession(session.id)
     return (await sessionService.getSession(session.id)) || session
   }
-  // 中文/English: runtime-shell only supports a real ACP runtime; workspace
-  // binding validation must already be completed before this runtime bridge runs.
+
+  const recoverableSession = await restoreSessionBindingForHistory(session)
   try {
-    await openRealRuntime(session)
+    // 中文/English: the same business session must keep reusing its persisted ACP
+    // session whenever possible; opening a fresh ACP session here would silently
+    // cut off prior dialog memory, tool state, and summary continuity.
+    if (recoverableSession.binding?.acpSessionId) {
+      try {
+        await resumeRealRuntime(recoverableSession)
+      } catch (resumeError) {
+        log.warn("session resume failed, retrying persisted load", {
+          businessSessionId: recoverableSession.id,
+          workerId: recoverableSession.workerId,
+          workspacePath: recoverableSession.workspacePath,
+          message: resumeError instanceof Error ? resumeError.message : String(resumeError),
+        })
+        await loadRealRuntime(recoverableSession)
+      }
+    } else {
+      // 中文/English: only sessions without any persisted ACP binding should create
+      // a brand-new runtime conversation boundary.
+      await openRealRuntime(recoverableSession)
+    }
   } catch (error) {
     log.warn("session open failed", {
-      businessSessionId: session.id,
-      workerId: session.workerId,
-      workspacePath: session.workspacePath,
+      businessSessionId: recoverableSession.id,
+      workerId: recoverableSession.workerId,
+      workspacePath: recoverableSession.workspacePath,
       message: error instanceof Error ? error.message : String(error),
     })
     throw error
   }
-  return (await sessionService.getSession(session.id)) || session
+
+  return (await sessionService.getSession(recoverableSession.id)) || recoverableSession
 }
 
 export async function ensureSessionRuntimePrewarmed(session: BusinessSession) {

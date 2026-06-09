@@ -12,6 +12,7 @@ const CONTAINER_LABEL_WORKER_ID = "runtime-shell.worker_id"
 const CONTAINER_LABEL_BUSINESS_SESSION_ID = "runtime-shell.business_session_id"
 const CONTAINER_LABEL_WORKSPACE_ID = "runtime-shell.workspace_id"
 const CONTAINER_LABEL_POOL_SLOT_ID = "runtime-shell.pool_slot_id"
+const CONTAINER_LABEL_OWNER_INSTANCE_ID = "runtime-shell.owner_instance_id"
 const SANDBOX_SHARED_CONFIG_DIR = path.join(Config.workspaceRootDir, ".runtime-shell-config")
 const SANDBOX_SHARED_CONFIG_TARGET = path.join(Config.sandboxDockerSpawnCwd, "runtime-shell", "config")
 const SANDBOX_SHARED_MODELS_FILE = path.basename(Config.sandboxDockerModelsPath)
@@ -23,7 +24,8 @@ export async function ensureContainer(input: {
   containerName: string
   handle: SandboxHandle
   cwd: string
-}) {
+  ownerInstanceId?: string
+}): Promise<Docker.Container> {
   const existingContainer = await findReusableContainer(input.containerName)
   const [workspaceMount, sharedConfigMount, runtimeHomeMount] = await Promise.all([
     toWorkspaceMount(input.handle, input.cwd),
@@ -58,6 +60,7 @@ export async function ensureContainer(input: {
     Labels: {
       [CONTAINER_LABEL_KIND]: input.handle.poolSlotId ? "warm_pool" : "runtime",
       [CONTAINER_LABEL_WORKER_ID]: input.handle.workerId || "",
+      [CONTAINER_LABEL_OWNER_INSTANCE_ID]: input.ownerInstanceId || "",
       ...(input.handle.businessSessionId
         ? { [CONTAINER_LABEL_BUSINESS_SESSION_ID]: input.handle.businessSessionId }
         : {}),
@@ -80,7 +83,7 @@ export async function ensureContainer(input: {
       NanoCpus: Config.sandboxDockerNanoCpus,
       PidsLimit: Config.sandboxDockerPidsLimit,
       Tmpfs: {
-        "/tmp": "rw,noexec,nosuid,size=256m",
+        "/tmp": "rw,noexec,nosuid,size=128m",
       },
       // 中文/English: sandbox ACP must read the same builtin config + model catalog
       // as the worker runtime; mount them explicitly instead of assuming the sandbox image contains them.
@@ -161,10 +164,12 @@ export function readWarmPoolContainerIdentity(container: Docker.ContainerInfo, c
   const labeledWorkerId = container.Labels?.[CONTAINER_LABEL_WORKER_ID]
   const labeledSlotId = container.Labels?.[CONTAINER_LABEL_POOL_SLOT_ID]
   const labeledKind = container.Labels?.[CONTAINER_LABEL_KIND]
+  const ownerInstanceId = container.Labels?.[CONTAINER_LABEL_OWNER_INSTANCE_ID]
   if (labeledKind === "warm_pool" && labeledWorkerId && labeledSlotId) {
     return {
       workerId: labeledWorkerId,
       slotId: labeledSlotId,
+      ownerInstanceId,
     }
   }
   if (!containerName) return
@@ -177,6 +182,7 @@ export function readWarmPoolContainerIdentity(container: Docker.ContainerInfo, c
   return {
     workerId: suffix.slice(0, slotIndex),
     slotId: suffix.slice(slotIndex + 1),
+    ownerInstanceId,
   }
 }
 
@@ -211,7 +217,11 @@ function buildSandboxEnv() {
     "OPENCODE_DB=opencode.db",
     // 中文/English: sandbox runtime homes are copied from a versioned, pre-migrated seed.
     // Skipping per-process schema migration checks keeps cold ACP startup on the fast path.
-    "OPENCODE_SKIP_MIGRATIONS=1",
+    "OPENCODE_SKIP_MIGRATIONS=true",
+    // 中文/English: sandbox ACP does not need builtin auth/provider plugins.
+    // Keeping them disabled trims the long-lived warm runtime heap without
+    // affecting session-scoped provider/MCP/skill config content.
+    "OPENCODE_DISABLE_DEFAULT_PLUGINS=1",
     "OPENCODE_DISABLE_MODELS_FETCH=1",
     "OPENCODE_DISABLE_PROJECT_CONFIG=1",
     `OPENCODE_CONFIG=${path.join(SANDBOX_SHARED_CONFIG_TARGET, "opencode.example.jsonc")}`,
@@ -312,7 +322,7 @@ function readDockerRuntime() {
   return undefined
 }
 
-async function findReusableContainer(containerName: string) {
+async function findReusableContainer(containerName: string): Promise<Docker.Container | undefined> {
   try {
     const container = docker.getContainer(containerName)
     const inspect = await container.inspect()

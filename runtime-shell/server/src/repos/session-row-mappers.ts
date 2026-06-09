@@ -12,6 +12,9 @@ export type SessionRow = {
   created_by: string
   workspace_path: string
   last_event_at: string | null
+  client_connected_count: number | null
+  last_client_seen_at: string | null
+  last_client_disconnected_at: string | null
   created_at: string
   updated_at: string
   binding_json: string | null
@@ -38,6 +41,9 @@ export function toBusinessSession(row: SessionRow): BusinessSession {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastEventAt: row.last_event_at || undefined,
+    clientConnectedCount: Number(row.client_connected_count || 0),
+    lastClientSeenAt: row.last_client_seen_at || undefined,
+    lastClientDisconnectedAt: row.last_client_disconnected_at || undefined,
     binding: parseJson(row.binding_json),
     capabilityState: parseJson(row.capability_state_json) || {},
   }

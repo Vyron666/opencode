@@ -25,7 +25,7 @@ export function registerSessionSettingsRoutes(app: Hono) {
     if (!result.ok) {
       return c.json(jsonError("forbidden", 403, reqId), 403)
     }
-    return c.json(jsonOk({ items: result.items }, reqId))
+    return c.json(jsonOk({ items: result.items, builtinItems: result.builtinItems, freeItems: result.freeItems }, reqId))
   })
 
   app.get("/api/mcp-config", async (c) => {

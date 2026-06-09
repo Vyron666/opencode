@@ -1,10 +1,11 @@
 import { closeRuntime } from "../../acp-runtime-manager"
-import { listProviderConfigs } from "../../provider-config"
+import { listRuntimeFreeProviderConfigs } from "../../provider-config"
 import type { User } from "../../types"
 import { authorizeSettingsAction } from "../access/authorization-service"
 import { previewPlatformProviderImpact, previewUserPrivateProviderImpact } from "../config-impact/config-impact-service"
 import {
   createMaskedProviderSummary,
+  listBuiltinProviderConfigs,
   listVisibleProviderConfigs,
   listPlatformStoredProviderConfigs,
   listUserPrivateStoredProviderConfigs,
@@ -26,16 +27,16 @@ export async function listProviderConfigsForUser(user: User) {
     action: "list",
   })
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
-  const configured = await listVisibleProviderConfigs(user)
-  if (configured.length > 0) {
-    return {
-      ok: true as const,
-      items: configured,
-    }
-  }
+  const [items, freeItems] = await Promise.all([
+    listVisibleProviderConfigs(user),
+    listRuntimeFreeProviderConfigs(),
+  ])
+  const builtinItems = await listBuiltinProviderConfigs()
   return {
     ok: true as const,
-    items: await listProviderConfigs(),
+    items,
+    builtinItems,
+    freeItems,
   }
 }
 

@@ -8,7 +8,7 @@ export function ErrorBlock({ block }) {
 
   return (
     <div className="flex justify-center px-4">
-      <div className="w-full max-w-[620px] rounded-[16px] border border-[#efc4c4] bg-[#fff3f3] px-4 py-3">
+      <div className="w-full rounded-[16px] border border-[#efc4c4] bg-[#fff3f3] px-4 py-3">
         <div className="text-[12px] leading-6 text-[#cf4040]">{block.message}</div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {currentSessionId ? (

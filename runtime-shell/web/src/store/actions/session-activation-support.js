@@ -24,12 +24,7 @@ export async function activateCurrentSession(input) {
       () => undefined,
       createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, '加载历史失败'),
     )
-  } else if (
-    !session.binding?.acpSessionId ||
-    session.status === 'created' ||
-    session.status === 'orphaned' ||
-    session.status === 'failed'
-  ) {
+  } else if (!session.binding?.acpSessionId || session.status === 'created') {
     await input.api.openSession(currentSessionId).then(
       () => undefined,
       createSessionSelectionFailureHandler(input, currentSessionId, sessionSelectionVersion, { pendingSessionAction: '' }, '打开会话失败'),

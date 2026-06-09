@@ -173,7 +173,9 @@ function useConfiguredProviderModels() {
         api.providerConfig.get().then(
           (data) => {
             configuredProviderModelsRequest = null
-            return primeConfiguredProviderModels(data.items)
+            // 中文/English: chat model fallback may only use saved provider configs
+            // plus the platform's directly callable free models, never raw builtin templates.
+            return primeConfiguredProviderModels([...(data.items || []), ...(data.freeItems || [])])
           },
           () => {
             configuredProviderModelsRequest = null

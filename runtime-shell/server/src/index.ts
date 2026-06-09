@@ -2,9 +2,8 @@ import { Hono } from "hono"
 import { Config } from "./config"
 import { createLogger } from "./log"
 import { ensureRuntimeConfigInitialized } from "./provider-config"
-import { startRuntimeGovernanceLoop } from "./services/runtime-governance/runtime-governance-loop"
+import { startBackgroundLoopLeader } from "./services/system/background-loop-leader"
 import { runtimeStore } from "./services/store/store-singleton"
-import { startLocalWorkerHeartbeatLoop } from "./services/worker/local-worker-heartbeat-loop"
 import { registerStaticRoutes } from "./http/routes/static-routes"
 import { registerAuthRoutes } from "./http/routes/auth-routes"
 import { registerSystemRoutes } from "./http/routes/system-routes"
@@ -24,8 +23,7 @@ registerInternalRuntimeRoutes(app)
 
 await runtimeStore.load()
 await ensureRuntimeConfigInitialized()
-startLocalWorkerHeartbeatLoop()
-startRuntimeGovernanceLoop()
+startBackgroundLoopLeader()
 
 log.info("server started", { host: Config.host, port: Config.port })
 

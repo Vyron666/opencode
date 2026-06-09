@@ -1,7 +1,9 @@
 import { Config } from "../../config"
+import { isSystemWarmPoolSandboxInstance } from "../../lib/sandbox-instance-kind"
 import { createLogger } from "../../log"
 import * as RuntimeOperationQueueRepo from "../../repos/runtime-operation-queue-repo"
 import * as SandboxInstanceRepo from "../../repos/sandbox-instance-repo"
+import { listWarmRuntimeDemandBuckets } from "../sandbox/warm-runtime-demand-service"
 import type { SandboxInstance } from "../../types"
 import { recordWorkerHeartbeat } from "../runtime-governance/worker-heartbeat-service"
 import { readSandboxBackend } from "../sandbox/sandbox-backend"
@@ -27,6 +29,12 @@ export function startLocalWorkerHeartbeatLoop() {
   }, readHeartbeatIntervalMs())
 }
 
+export function stopLocalWorkerHeartbeatLoop() {
+  if (!localWorkerHeartbeatTimer) return
+  clearInterval(localWorkerHeartbeatTimer)
+  localWorkerHeartbeatTimer = undefined
+}
+
 export async function refreshLocalWorkersNow() {
   await runLocalWorkerHeartbeat()
 }
@@ -49,7 +57,10 @@ async function beatLocalWorker() {
               user: adminUser,
               workerId: localWorker.id,
               nodeCode: localWorker.workerCode,
-              endpoint: localWorker.baseUrl,
+              endpoint:
+                Config.workerExecutionMode === "remote"
+                  ? (localWorker.agentBaseUrl || localWorker.baseUrl)
+                  : localWorker.baseUrl,
               version: localWorker.version,
               capacityTotal: localWorker.capacity,
               name: localWorker.name,
@@ -69,10 +80,6 @@ async function beatLocalWorker() {
       if (!(await isLocalWorkerReachable(localWorker))) {
         // 中文/English: when the real worker endpoint is down, do not refresh heartbeat
         // timestamps here, otherwise governance can never observe the node as stale/offline.
-        await workerService.touchWorker(localWorker.id, {
-          activeSessionCount,
-          status: "offline",
-        })
         return
       }
       const configuredWarmPoolTarget = localWorker.warmPoolTarget ?? worker.warmPoolTarget ?? 0
@@ -240,6 +247,7 @@ async function ensureRemoteWarmPool(
     }
   }
   try {
+    const warmRuntimeBuckets = listWarmRuntimeDemandBuckets(target || 1)
     const response = await fetch(`${agentBaseUrl}/runtime/pool/ensure`, {
       method: "POST",
       headers: {
@@ -249,6 +257,7 @@ async function ensureRemoteWarmPool(
       body: JSON.stringify({
         workerId: worker.id,
         target,
+        warmRuntimeBuckets,
       }),
       // 中文/English: warm-pool ensure is a bounded control-plane operation, not a
       // liveness probe. It needs a longer timeout than `/healthz`, otherwise the
@@ -323,7 +332,7 @@ async function syncWarmPoolSandboxInstances(
   const existing = await SandboxInstanceRepo.listSandboxInstancesByWorker(worker.id)
   const warmIds = new Set(snapshot.slots.map((slot) => `warm_${worker.id}_${slot.slotId}`))
   await Promise.all(existing
-    .filter((item) => item.detail?.source === "warm_pool" && !warmIds.has(item.id))
+    .filter((item) => isSystemWarmPoolSandboxInstance(item) && !warmIds.has(item.id))
     .map((item) => SandboxInstanceRepo.deleteSandboxInstanceById(item.id)))
   const now = new Date().toISOString()
   await Promise.all(snapshot.slots.map((slot) => {

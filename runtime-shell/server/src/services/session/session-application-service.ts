@@ -22,6 +22,7 @@ import {
 } from "./session-worker-assignment-service"
 import { releaseWorkerSelectionReservation } from "../scheduler/scheduler-service"
 import { closeSandboxWorkspace, ensureSandboxWorkspace, markSandboxWorkspaceClosing, markSandboxWorkspaceRunning } from "../sandbox/sandbox-workspace-service"
+import { hasRecoverableSessionBinding, restoreSessionBindingForHistory } from "../runtime/runtime-session-support"
 
 const log = createLogger("session-application-service")
 const sessionOpenRequests = new Map<string, ReturnType<typeof openSessionForUserInner>>()
@@ -272,7 +273,9 @@ async function openSessionForUserInner(input: {
 
   // 中文/English: concurrent open/load clicks for the same business session should
   // converge on one runtime bootstrap instead of racing duplicate binding records.
-  const recoverableSession = await prepareSessionForOpen(input.session)
+  const preparedSession = await prepareSessionForOpen(input.session)
+  const requiresHistoryRecovery = await hasRecoverableSessionBinding(preparedSession)
+  const recoverableSession = await restoreSessionBindingForHistory(preparedSession)
   try {
     await markRuntimeOperationStage({
       operationId: operation.id,
@@ -295,7 +298,7 @@ async function openSessionForUserInner(input: {
       message: error instanceof Error ? error.message : String(error),
     })
     await markRuntimeOperationFailed(operation.id, error instanceof Error ? error.message : String(error))
-    await resetSessionRuntime(recoverableSession.id, "created")
+    await resetSessionRuntime(recoverableSession.id, requiresHistoryRecovery ? "orphaned" : "created")
     return { ok: false as const, reason: "open_failed" }
   }
   await markSessionOpening(recoverableSession.id)
@@ -307,6 +310,7 @@ async function openSessionForUserInner(input: {
   const worker = await ensureWorkerForSessionOpen({
     user: input.user,
     session: recoverableSession,
+    requireCurrentWorker: requiresHistoryRecovery,
   }).catch(async (error) => {
     log.warn("session worker assignment failed", {
       businessSessionId: recoverableSession.id,
@@ -315,7 +319,7 @@ async function openSessionForUserInner(input: {
       message: error instanceof Error ? error.message : String(error),
     })
     await markRuntimeOperationFailed(operation.id, error instanceof Error ? error.message : String(error))
-    await resetSessionRuntime(recoverableSession.id, "created")
+    await resetSessionRuntime(recoverableSession.id, requiresHistoryRecovery ? "orphaned" : "created")
     return undefined
   })
   if (!worker) {
@@ -325,7 +329,7 @@ async function openSessionForUserInner(input: {
       workerId: recoverableSession.workerId,
     })
     await markRuntimeOperationFailed(operation.id, "worker not found")
-    await resetSessionRuntime(recoverableSession.id, "created")
+    await resetSessionRuntime(recoverableSession.id, requiresHistoryRecovery ? "orphaned" : "created")
     return { ok: false as const, reason: "worker_not_found" }
   }
   await markRuntimeOperationRunning(operation.id, worker.id)
@@ -359,13 +363,18 @@ async function openSessionForUserInner(input: {
     })
     return undefined
   })
-  const opened = firstOpenAttempt || await retrySessionOpenOnAnotherWorker({
-    user: input.user,
-    session: reopenedSession,
-    failedWorkerId: worker.id,
-  })
+  const opened = firstOpenAttempt || (
+    requiresHistoryRecovery
+      ? undefined
+      : await retrySessionOpenOnAnotherWorker({
+          user: input.user,
+          session: reopenedSession,
+          failedWorkerId: worker.id,
+        })
+  )
   if (!opened) {
     await markRuntimeOperationFailed(operation.id, "session open failed")
+    await resetSessionRuntime(reopenedSession.id, requiresHistoryRecovery ? "orphaned" : "created")
     return { ok: false as const, reason: "open_failed" }
   }
 
@@ -375,7 +384,7 @@ async function openSessionForUserInner(input: {
   })
   if (!openedWorker) {
     await markRuntimeOperationFailed(operation.id, "worker not found")
-    await resetSessionRuntime(opened.id, "created")
+    await resetSessionRuntime(opened.id, requiresHistoryRecovery ? "orphaned" : "created")
     return { ok: false as const, reason: "worker_not_found" }
   }
   await markSandboxWorkspaceRunning(opened)

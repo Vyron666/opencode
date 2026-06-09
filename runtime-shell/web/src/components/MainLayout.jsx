@@ -28,7 +28,7 @@ export default function MainLayout() {
 
   return (
     <div className="h-dvh w-full overflow-hidden bg-[#eef2f8]">
-      <div className="grid h-full min-h-0 w-full grid-cols-[328px_minmax(0,1fr)] overflow-hidden bg-white max-[1024px]:grid-cols-1">
+      <div className="grid h-full min-h-0 w-full grid-cols-[308px_minmax(0,1fr)] overflow-hidden bg-white max-[1024px]:grid-cols-1">
         <LeftSidebar onOpenSettings={openSettings} />
         <ChatView
           settingsOpen={settingsOpen}

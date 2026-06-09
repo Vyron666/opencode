@@ -21,6 +21,7 @@ export async function assignWorkerForNewSessionWithReservation(user: User, reser
 export async function ensureWorkerForSessionOpen(input: {
   user: User
   session: BusinessSession
+  requireCurrentWorker?: boolean
 }) {
   const reservationId = toSessionOpenReservationId(input.session.id)
   const stickyWorker = await resolveStickyWorkerForSession(input.session)
@@ -33,6 +34,16 @@ export async function ensureWorkerForSessionOpen(input: {
     })
     await ensureRuntimeBindingForWorker(input.session.id, stickyWorker.id)
     return stickyWorker
+  }
+
+  if (input.requireCurrentWorker) {
+    releaseWorkerSelectionReservation(reservationId)
+    log.warn("session open refused worker failover because ACP history must stay on the original worker", {
+      businessSessionId: input.session.id,
+      workerId: input.session.workerId,
+      workspacePath: input.session.workspacePath,
+    })
+    return
   }
 
   const worker = await selectWorkerForNewSession(

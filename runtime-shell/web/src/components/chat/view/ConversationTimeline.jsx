@@ -8,7 +8,7 @@ export function ConversationTimeline({ blocks, currentSessionId }) {
   if (blocks.length === 0) return <EmptyConversation currentSessionId={currentSessionId} />
 
   return (
-    <div className="mx-auto grid min-w-0 max-w-[1120px] content-start gap-3.5 pb-6">
+    <div className="grid min-w-0 w-full content-start gap-3.5 pb-6">
       {blocks.map((block) => (
         <ConversationBlockRow key={block.key} block={block} />
       ))}
@@ -55,7 +55,7 @@ export function DebugConversationTimeline() {
   if (blocks.length === 0) return <EmptyConversation currentSessionId={useStore.getState().currentSessionId} />
 
   return (
-    <div className="mx-auto grid min-w-0 max-w-[1120px] content-start gap-3.5 pb-6">
+    <div className="grid min-w-0 w-full content-start gap-3.5 pb-6">
       {blocks.map((block) => (
         <ConversationBlockRow key={block.key} block={block} />
       ))}
@@ -73,7 +73,7 @@ const ConversationBlockRow = memo(function ConversationBlockRow({ block }) {
 
 function EmptyConversation({ currentSessionId }) {
   return (
-    <div className="mx-auto grid min-h-full max-w-[1120px] content-start gap-3.5 pb-6">
+    <div className="grid min-h-full w-full content-start gap-3.5 pb-6">
       <div className="flex justify-end">
         <div className="max-w-[420px] rounded-[16px] rounded-tr-[8px] bg-[#3566df] px-5 py-3 text-sm text-white shadow-[0_12px_30px_rgba(53,102,223,0.16)]">
           帮我开始一个新任务，或者继续某个历史会话。

@@ -22,10 +22,14 @@ import {
   removeRuntimeHome,
 } from "./docker-sandbox-runtime-home"
 import {
+  getWorkerAgentStartedAtMs,
+  getWorkerAgentInstanceId,
+  isWorkerAgentShuttingDown,
   WARM_POOL_RUNTIME_CWD,
   WARM_SLOT_RUNTIME_MISSING_GRACE_MS,
   docker,
   log,
+  pendingWarmPoolCreateCountByWorker,
   runWithWarmPoolCopyGate,
   warmPoolByWorker,
   warmPoolTargetByWorker,
@@ -139,6 +143,10 @@ export async function createWarmPoolSlot(
   configFingerprint?: string,
 ): Promise<WarmPoolSlot> {
   return runColdStartWarmSlotCreate(async () => {
+    if (isWorkerAgentShuttingDown()) {
+      throw new Error("worker agent is shutting down")
+    }
+    pendingWarmPoolCreateCountByWorker.set(workerId, (pendingWarmPoolCreateCountByWorker.get(workerId) ?? 0) + 1)
     const slotId = `warm_${crypto.randomUUID().replace(/-/g, "")}`
     const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, slotId)
     const runtimeHomePath = buildWarmRuntimeHomePath({ workerId, slotId })
@@ -157,6 +165,7 @@ export async function createWarmPoolSlot(
     const slot = {
       id: slotId,
       workerId,
+      ownerInstanceId: getWorkerAgentInstanceId(),
       containerName,
       visiblePath,
       runtimeHomePath,
@@ -179,12 +188,20 @@ export async function createWarmPoolSlot(
         containerName,
         handle,
         cwd: visiblePath,
+        ownerInstanceId: slot.ownerInstanceId,
       })
       await startContainerIfNeeded(container)
       return slot
     } catch (error) {
       await destroyWarmPoolSlot(slot).catch(() => {})
       throw error
+    } finally {
+      const nextPendingCreateCount = Math.max(0, (pendingWarmPoolCreateCountByWorker.get(workerId) ?? 1) - 1)
+      if (nextPendingCreateCount === 0) {
+        pendingWarmPoolCreateCountByWorker.delete(workerId)
+      } else {
+        pendingWarmPoolCreateCountByWorker.set(workerId, nextPendingCreateCount)
+      }
     }
   })
 }
@@ -210,6 +227,7 @@ function leaseWarmPoolSlot(
 }
 
 async function createReservableWarmPoolSlot(workerId: string, configFingerprint: string, targetHint?: number) {
+  if (isWorkerAgentShuttingDown()) return
   if (!warmPoolTargetByWorker.has(workerId) && targetHint !== undefined) {
     // 中文/English: session prewarm can beat the first heartbeat after restart;
     // use the scheduler-known target only to initialize that empty worker view.
@@ -218,7 +236,8 @@ async function createReservableWarmPoolSlot(workerId: string, configFingerprint:
   const pool = readWarmPool(workerId)
   while (!findReadyWarmPoolSlot(pool, configFingerprint, { allowGeneric: true })) {
     const target = warmPoolTargetByWorker.get(workerId) ?? 0
-    if (target <= 0 || pool.length >= target) return
+    const pendingCreateCount = pendingWarmPoolCreateCountByWorker.get(workerId) ?? 0
+    if (target <= 0 || pool.length + pendingCreateCount >= target) return
     // 中文/English: reserve is already serialized per worker, so create directly
     // inside the configured warm target instead of keeping a second create queue.
     await createWarmPoolSlot(workerId)
@@ -245,11 +264,20 @@ export async function destroyWarmPoolSlot(slot: WarmPoolSlot) {
 export async function cleanupOrphanWarmPoolContainers(workerId: string) {
   const containers = await docker.listContainers({ all: true })
   let cleaned = 0
+  const ownerInstanceId = getWorkerAgentInstanceId()
+  const workerStartedAtMs = getWorkerAgentStartedAtMs()
+  const liveSlotIds = new Set<string>()
   for (const container of containers) {
     const matchedName = readContainerName(container)
     const identity = readWarmPoolContainerIdentity(container, matchedName)
     if (!matchedName || !identity || identity.workerId !== workerId) continue
+    liveSlotIds.add(identity.slotId)
     if (readWarmPool(workerId).some((slot) => slot.containerName === matchedName)) continue
+    if (
+      identity.ownerInstanceId
+      && identity.ownerInstanceId !== ownerInstanceId
+      && Number(container.Created || 0) * 1000 >= workerStartedAtMs
+    ) continue
     const visiblePath = path.join(Config.workspaceRootDir, ".warm-pool", workerId, identity.slotId)
     const runtimeHomePath = buildWarmRuntimeHomePath({ workerId, slotId: identity.slotId })
     log.info("cleaning orphan warm pool container", {
@@ -263,7 +291,7 @@ export async function cleanupOrphanWarmPoolContainers(workerId: string) {
     await removeRuntimeHome(runtimeHomePath)
     cleaned += 1
   }
-  cleaned += await cleanupOrphanWarmPoolArtifacts(workerId)
+  cleaned += await cleanupOrphanWarmPoolArtifacts(workerId, liveSlotIds)
   return cleaned
 }
 
@@ -460,23 +488,24 @@ async function isDirectoryEmpty(targetDir: string) {
   return entries.length === 0
 }
 
-async function cleanupOrphanWarmPoolArtifacts(workerId: string) {
+async function cleanupOrphanWarmPoolArtifacts(workerId: string, liveSlotIds: Set<string>) {
   const trackedSlotIds = new Set(readWarmPool(workerId).map((slot) => slot.id))
   const visibleRoot = path.join(Config.workspaceRootDir, ".warm-pool", workerId)
   const runtimeHomeRoot = buildWarmRuntimeHomeRoot(workerId)
   const [cleanedVisibleCount, cleanedRuntimeHomeCount] = await Promise.all([
-    cleanupWarmPoolArtifactDir(visibleRoot, trackedSlotIds),
-    cleanupWarmPoolArtifactDir(runtimeHomeRoot, trackedSlotIds),
+    cleanupWarmPoolArtifactDir(visibleRoot, trackedSlotIds, liveSlotIds),
+    cleanupWarmPoolArtifactDir(runtimeHomeRoot, trackedSlotIds, liveSlotIds),
   ])
   return cleanedVisibleCount + cleanedRuntimeHomeCount
 }
 
-async function cleanupWarmPoolArtifactDir(rootDir: string, trackedSlotIds: Set<string>) {
+async function cleanupWarmPoolArtifactDir(rootDir: string, trackedSlotIds: Set<string>, liveSlotIds: Set<string>) {
   const entries = await readdir(rootDir, { withFileTypes: true }).catch(() => [])
   let cleaned = 0
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     if (trackedSlotIds.has(entry.name)) continue
+    if (liveSlotIds.has(entry.name)) continue
     await rm(path.join(rootDir, entry.name), { recursive: true, force: true }).catch(() => {})
     cleaned += 1
   }
@@ -530,11 +559,22 @@ function countReadyWarmPoolSlots(slots: WarmPoolSlot[]) {
   return slots.filter((slot) => slot.ready && !slot.leased && !slot.preparingRuntime).length
 }
 
-function countReadyWarmRuntimeSlots(slots: WarmPoolSlot[]) {
+export function countReadyWarmRuntimeSlots(slots: WarmPoolSlot[]) {
   return slots.filter((slot) =>
     slot.ready &&
     !slot.leased &&
     !slot.preparingRuntime &&
     Boolean(slot.runtimeClient),
+  ).length
+}
+
+export function countReadyGenericWarmPoolSlots(slots: WarmPoolSlot[]) {
+  return slots.filter((slot) =>
+    slot.ready
+    && !slot.leased
+    && !slot.preparingRuntime
+    && !slot.runtimeClient
+    && !slot.runtimeClientPromise
+    && !slot.configFingerprint,
   ).length
 }

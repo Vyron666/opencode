@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { api } from '../../../api'
 import { useStore } from '../../../store'
 import {
   disposeAttachmentPreprocessResources,
@@ -26,6 +27,8 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
   const attachmentsRef = useRef([])
   const fileInputRef = useRef(null)
   const [promptText, setPromptText] = useState('')
+  const [skillStatusLabel, setSkillStatusLabel] = useState('未配置')
+  const [mcpStatusLabel, setMcpStatusLabel] = useState('未配置')
   const sessionPreparing = Boolean(pendingSessionAction)
   const settingsUpdating = Boolean(pendingSettingsAction)
   const hasPendingAttachment = attachments.some((item) => item.status === 'pending' || item.status === 'parsing')
@@ -35,13 +38,35 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
   const currentModelId = capabilities.modelId || capabilities.models?.[0]?.id || ''
   const hasProviderConfigured = capabilities.models?.length > 0 || capabilities.availableCommands?.length > 0
   const shouldShowProviderHint = Boolean(currentSessionId) && !sessionPreparing && !settingsUpdating && !hasProviderConfigured
-  const skillCount = capabilities.availableCommands?.length || 0
-  const skillStatusLabel = skillCount > 0 ? `${skillCount} 项` : '未配置'
-  const mcpStatusLabel = capabilities.availableCommands?.length > 0 ? '已接入' : '未配置'
 
   useEffect(() => {
     attachmentsRef.current = attachments
   }, [attachments])
+
+  useEffect(() => {
+    if (pendingSettingsAction) return
+
+    let disposed = false
+    void Promise.all([
+      api.skillPackage.list().catch(() => ({ items: [] })),
+      api.skillConfig.get().catch(() => ({ items: [] })),
+      api.mcpConfig.get().catch(() => ({ items: [] })),
+    ]).then(([skillPackageData, skillConfigData, mcpConfigData]) => {
+      if (disposed) return
+      // 中文/English: the composer must reflect real configured runtime resources,
+      // not session command counts or builtin templates.
+      const skillPackageCount = Array.isArray(skillPackageData.items) ? skillPackageData.items.length : 0
+      const skillConfigCount = Array.isArray(skillConfigData.items) ? skillConfigData.items.length : 0
+      const skillCount = skillPackageCount > 0 ? skillPackageCount : skillConfigCount
+      const mcpCount = Array.isArray(mcpConfigData.items) ? mcpConfigData.items.length : 0
+      setSkillStatusLabel(skillCount > 0 ? `${skillCount} 项` : '未配置')
+      setMcpStatusLabel(mcpCount > 0 ? `${mcpCount} 项` : '未配置')
+    })
+
+    return () => {
+      disposed = true
+    }
+  }, [pendingSettingsAction])
 
   const cancelAttachment = useCallback((attachmentId) => {
     setAttachments((current) => {
@@ -187,7 +212,7 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
   )
 
   return (
-    <section className="shrink-0 border-t border-[#eef2ff] bg-white px-6 pb-5 pt-4 max-[1024px]:px-4">
+    <section className="shrink-0 border-t border-[#eef2ff] bg-white px-4 pb-4 pt-3 max-[1024px]:px-3">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 pb-3">
           {attachments.map((attachment) => (
@@ -252,7 +277,7 @@ export const ComposerSection = memo(function ComposerSection({ currentSessionId,
                   ? '会话正在打开或恢复，稍后即可发送'
                   : '输入消息...'
             }
-            className="min-h-[72px] max-h-[220px] w-full resize-y border-0 bg-transparent px-1 py-1 text-sm leading-6 text-[#18233b] outline-none placeholder:text-[#97a4ba]"
+            className="min-h-[88px] max-h-[240px] w-full resize-y border-0 bg-transparent px-1 py-1 text-sm leading-6 text-[#18233b] outline-none placeholder:text-[#97a4ba]"
             onDragOver={(event) => event.preventDefault()}
             onDrop={handleDrop}
             onKeyDown={(event) => {

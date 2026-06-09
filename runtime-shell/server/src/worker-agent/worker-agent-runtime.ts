@@ -28,6 +28,7 @@ import { runAcpBootstrapGate } from "./sandbox/docker-sandbox-cold-start"
 import { createLogger } from "../log"
 import { buildRuntimeConfigContext } from "../runtime/runtime-config-content"
 import { Config } from "../config"
+import { rebuildMissingAcpSessionFromRuntimeHome } from "../services/runtime/runtime-session-rebuild-service"
 
 const log = createLogger("worker-agent-runtime")
 const pendingRuntimeBootstraps = new Map<string, Promise<ReturnType<typeof toBootstrap>>>()
@@ -62,6 +63,7 @@ export function createRuntimeHandlers(input: {
     openSession,
     loadSession,
     resumeSession,
+    rebuildSession,
     forkSession,
     sendPrompt,
     cancelPrompt,
@@ -112,6 +114,25 @@ export function createRuntimeHandlers(input: {
       matchesExisting: (entry) => entry.client.getSessionId() === request.acpSessionId,
       warmStart: (entry, cwd) => entry.client.resumeSession(cwd, request.acpSessionId),
       coldStart: (entry) => entry.client.resumeSession(request.sandboxPath, request.acpSessionId),
+    })
+  }
+
+  async function rebuildSession(body: Record<string, unknown>) {
+    const request = readSessionResumeRequest(body)
+    const rebuilt = await rebuildMissingAcpSessionFromRuntimeHome({
+      session: {
+        id: request.businessSessionId,
+        workerId: request.workerId,
+        workspaceId: request.workspaceId,
+      },
+      missingAcpSessionId: request.acpSessionId,
+    })
+    request.acpSessionId = rebuilt.sessionId
+    return openManagedSession(input, request, {
+      action: "load",
+      matchesExisting: (entry) => entry.client.getSessionId() === request.acpSessionId,
+      warmStart: (entry, cwd) => entry.client.loadSession(cwd, request.acpSessionId),
+      coldStart: (entry) => entry.client.loadSession(request.sandboxPath, request.acpSessionId),
     })
   }
 

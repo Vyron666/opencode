@@ -4,6 +4,7 @@ import { createLogger } from "../log"
 import { computeRuntimeConfigFingerprint } from "../runtime/runtime-config-content"
 import { attachDockerSandboxAcp } from "./sandbox/docker-sandbox-acp"
 import {
+  countReadyGenericWarmPoolSlots,
   destroyWarmPoolSlot,
   getLeasedWarmPoolSlot,
   getWarmPoolSlotById,
@@ -15,18 +16,24 @@ import {
   takeWarmPoolSlot,
 } from "./sandbox/docker-sandbox-warm-pool"
 import { runAcpBootstrapGate } from "./sandbox/docker-sandbox-cold-start"
-import { WARM_POOL_RUNTIME_CWD, type WarmPoolSlot } from "./sandbox/docker-sandbox-state"
+import {
+  WARM_POOL_RUNTIME_CWD,
+  isWorkerAgentShuttingDown,
+  warmPoolTargetByWorker,
+  runWithWarmRuntimeMaterializeGate,
+  type WarmPoolSlot,
+} from "./sandbox/docker-sandbox-state"
 import type { SandboxHandle } from "./sandbox/sandbox-types"
 import { createBoundRuntimeEntryFromClient } from "./worker-agent-runtime-support"
 
 const log = createLogger("worker-agent-warm-runtime")
 const pendingWarmRuntimeBySession = new Map<string, Promise<void>>()
 const pendingWarmRuntimeBackfillByWorker = new Map<string, Promise<void>>()
-const WARM_RUNTIME_PREWARM_GRACE_MS = 3_000
 const WARM_RUNTIME_OPEN_BACKFILL_GRACE_MS = 2_000
 const WARM_RUNTIME_STEP_TIMEOUT_MS = Math.max(1_000, Config.workerAgentRequestTimeoutMs - 1_000)
 const GENERIC_WARM_SLOT_RESERVE = 1
 const WARM_RUNTIME_DEMAND_TTL_MS = 30 * 60 * 1000
+const WARM_RUNTIME_IDLE_COOLDOWN_MS = 5 * 60 * 1000
 const warmRuntimeDemandByWorker = new Map<string, Map<string, {
   configContent?: string
   hitCount: number
@@ -50,6 +57,7 @@ type WarmRuntimeRequest = {
 }
 
 export async function prewarmSessionRuntimeOnWorker(input: WarmRuntimeRequest) {
+  if (isWorkerAgentShuttingDown()) return
   rememberWarmRuntimeDemand(
     input.workerId,
     computeRuntimeConfigFingerprint(input.configContent),
@@ -69,15 +77,11 @@ export async function prewarmSessionRuntimeOnWorker(input: WarmRuntimeRequest) {
 }
 
 export async function waitForWarmRuntimePrewarm(businessSessionId: string) {
-  const pending = pendingWarmRuntimeBySession.get(businessSessionId)
-  if (!pending) return
-  await Promise.race([
-    pending.catch(() => {}),
-    Bun.sleep(WARM_RUNTIME_PREWARM_GRACE_MS),
-  ])
+  await pendingWarmRuntimeBySession.get(businessSessionId)?.catch(() => {})
 }
 
 export async function backfillReadyWarmRuntimeSlots(workerId: string) {
+  if (isWorkerAgentShuttingDown()) return
   const pending = pendingWarmRuntimeBackfillByWorker.get(workerId)
   if (pending) return pending
   const task = doBackfillReadyWarmRuntimeSlots(workerId)
@@ -92,6 +96,7 @@ export async function backfillReadyWarmRuntimeSlots(workerId: string) {
 }
 
 export async function tryOpenWarmRuntimeEntry(input: WarmRuntimeRequest) {
+  if (isWorkerAgentShuttingDown()) return
   await waitForWarmRuntimePrewarm(input.businessSessionId)
   const configFingerprint = computeRuntimeConfigFingerprint(input.configContent)
   rememberWarmRuntimeDemand(input.workerId, configFingerprint, input.configContent)
@@ -101,8 +106,8 @@ export async function tryOpenWarmRuntimeEntry(input: WarmRuntimeRequest) {
     workspaceId: input.workspaceId,
   })
   if (staleLease && staleLease.configFingerprint !== configFingerprint) {
-    // 中文/English: if the visible provider/MCP/skill config changed between
-    // prewarm and open, the old warm runtime must be discarded instead of reused.
+    // 中文/English: config changed between prewarm and open, so the old warm runtime
+    // must be discarded instead of crossing provider/MCP/skill boundaries.
     await destroyWarmPoolSlot(staleLease).catch(() => {})
   }
   if (!hasReadyWarmRuntimeSlot(input.workerId, configFingerprint)) {
@@ -139,8 +144,8 @@ export async function tryOpenWarmRuntimeEntry(input: WarmRuntimeRequest) {
 async function releaseWarmRuntimeSession(client: AcpProcessClient, handle: SandboxHandle) {
   try {
     await client.closeActiveSession()
-    // 中文/English: drain close-session side effects before returning the long-lived
-    // runtime to the pool, otherwise late events can leak into the next lease.
+    // 中文/English: drain close-session side effects before returning the runtime
+    // to the pool, otherwise late events can leak into the next lease.
     await client.flushPendingEvents()
   } catch (error) {
     handle.invalidPoolSlot = true
@@ -149,6 +154,7 @@ async function releaseWarmRuntimeSession(client: AcpProcessClient, handle: Sandb
 }
 
 async function doPrewarmSessionRuntime(input: WarmRuntimeRequest) {
+  if (isWorkerAgentShuttingDown()) return
   const configFingerprint = computeRuntimeConfigFingerprint(input.configContent)
   const reservedSlot = await reserveWarmPoolSlot({
     workerId: input.workerId,
@@ -168,6 +174,7 @@ async function doPrewarmSessionRuntime(input: WarmRuntimeRequest) {
       reservedSlot,
       "warm runtime prewarm timed out",
       async () => {
+        await prepareWarmPoolWorkspace(toWarmSandboxHandle(reservedSlot, input))
         await runAcpBootstrapGate(() => ensureWarmRuntimeClient(reservedSlot, {
           businessSessionId: input.businessSessionId,
           workspaceId: input.workspaceId,
@@ -198,6 +205,9 @@ async function ensureWarmRuntimeClient(slot: WarmPoolSlot, input: {
   configContent?: string
   warmSessionBootstrap?: boolean
 }) {
+  if (isWorkerAgentShuttingDown()) {
+    throw new Error("worker agent is shutting down")
+  }
   if (slot.runtimeClient) return slot.runtimeClient
   if (slot.runtimeClientPromise) return slot.runtimeClientPromise
   const handle = createWarmRuntimeClientHandle(slot, input)
@@ -209,8 +219,8 @@ async function ensureWarmRuntimeClient(slot: WarmPoolSlot, input: {
         workerId: input.workerId,
         configContent: input.configContent,
         onEvent: async () => {
-          // 中文/English: warm runtime prewarm keeps the process hot without
-          // binding business-session event delivery until a real open/load happens.
+          // 中文/English: prewarm keeps the ACP process hot without binding event
+          // delivery until a real business session leases the runtime.
         },
       },
       () => Promise.resolve(),
@@ -256,38 +266,20 @@ async function ensureWarmRuntimeClient(slot: WarmPoolSlot, input: {
 }
 
 async function doBackfillReadyWarmRuntimeSlots(workerId: string) {
+  if (isWorkerAgentShuttingDown()) return
   const warmRuntimeBuckets = listWarmRuntimeBuckets(workerId)
+  const target = Math.max(0, warmPoolTargetByWorker.get(workerId) ?? 0)
+  const desiredReadyWarmRuntimeCount = readDesiredReadyWarmRuntimeCount(target, warmRuntimeBuckets)
+  await coolDownExtraWarmRuntimeSlots(workerId, desiredReadyWarmRuntimeCount)
   if (!warmRuntimeBuckets.length) return
-  const slots = readWarmPool(workerId)
-  const genericSlots = slots.filter((slot) =>
-    slot.ready
-    && !slot.leased
-    && !slot.preparingRuntime
-    && !slot.runtimeClient
-    && !slot.runtimeClientPromise
-    && !slot.configFingerprint,
-  )
-  const hasReadyMaterializedSlot = warmRuntimeBuckets.some((bucket) =>
-    slots.some((slot) =>
-      slot.ready
-      && !slot.leased
-      && !slot.preparingRuntime
-      && slot.runtimeClient
-      && slot.configFingerprint === bucket.configFingerprint,
-    ),
-  )
-  const genericReserve = warmRuntimeBuckets.length > 1 || !hasReadyMaterializedSlot
-    ? GENERIC_WARM_SLOT_RESERVE
-    : 0
-  const materializableSlots = genericSlots.slice(0, Math.max(0, genericSlots.length - genericReserve))
-  if (!materializableSlots.length) return
-  await Promise.all(materializableSlots.map((slot, index) => {
-    const bucket = warmRuntimeBuckets[index % warmRuntimeBuckets.length]
-    if (!bucket) return Promise.resolve()
-    // 中文/English: materialize multiple warm runtimes in parallel so a single
-    // worker can consume its whole warm budget before concurrent open arrives.
-    return materializeWarmRuntimeSlot(slot, bucket).catch(() => {})
-  }))
+  while (!isWorkerAgentShuttingDown() && countReadyWarmRuntimeSlots(workerId) < desiredReadyWarmRuntimeCount) {
+    const slots = readWarmPool(workerId)
+    const slot = selectGenericWarmSlotForMaterialize(slots, warmRuntimeBuckets, target)
+    if (!slot) return
+    const bucket = selectWarmRuntimeBucketForMaterialize(slots, warmRuntimeBuckets)
+    if (!bucket) return
+    await materializeWarmRuntimeSlot(slot, bucket).catch(() => {})
+  }
 }
 
 async function materializeWarmRuntimeSlot(
@@ -295,42 +287,95 @@ async function materializeWarmRuntimeSlot(
   bucket: {
     configFingerprint: string
     configContent?: string
+    lastUsedAt?: number
   },
 ) {
+  if (isWorkerAgentShuttingDown()) return
   if (slot.runtimeClient || slot.runtimeClientPromise || slot.preparingRuntime || slot.leased) return
-  slot.configFingerprint = bucket.configFingerprint
-  try {
-    await runAcpBootstrapGate(() => ensureWarmRuntimeClient(slot, {
-      businessSessionId: `warm_pool_${slot.id}`,
-      workspaceId: `warm_pool_${slot.id}`,
-      workerId: slot.workerId,
-      configContent: bucket.configContent,
-      warmSessionBootstrap: true,
-    }))
-    log.info("warm runtime materialized", {
-      workerId: slot.workerId,
-      slotId: slot.id,
-      configFingerprint: slot.configFingerprint,
-    })
-  } catch (error) {
-    log.warn("warm runtime materialize failed", {
-      workerId: slot.workerId,
-      slotId: slot.id,
-      configFingerprint: bucket.configFingerprint,
-      message: error instanceof Error ? error.message : String(error),
-    })
-    await destroyWarmPoolSlot(slot).catch(() => {})
-    throw error
+  await runWithWarmRuntimeMaterializeGate(async () => {
+    if (isWorkerAgentShuttingDown()) return
+    if (slot.runtimeClient || slot.runtimeClientPromise || slot.preparingRuntime || slot.leased) return
+    slot.configFingerprint = bucket.configFingerprint
+    try {
+      await runAcpBootstrapGate(() => ensureWarmRuntimeClient(slot, {
+        businessSessionId: `warm_pool_${slot.id}`,
+        workspaceId: `warm_pool_${slot.id}`,
+        workerId: slot.workerId,
+        configContent: bucket.configContent,
+        warmSessionBootstrap: true,
+      }))
+      log.info("warm runtime materialized", {
+        workerId: slot.workerId,
+        slotId: slot.id,
+        configFingerprint: slot.configFingerprint,
+      })
+    } catch (error) {
+      log.warn("warm runtime materialize failed", {
+        workerId: slot.workerId,
+        slotId: slot.id,
+        configFingerprint: bucket.configFingerprint,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      await destroyWarmPoolSlot(slot).catch(() => {})
+      throw error
+    }
+  })
+}
+
+async function coolDownExtraWarmRuntimeSlots(workerId: string, desiredReadyWarmRuntimeCount: number) {
+  const idleMaterializedSlots = readWarmPool(workerId).filter((slot) =>
+    slot.ready &&
+    !slot.leased &&
+    !slot.preparingRuntime &&
+    Boolean(slot.runtimeClient),
+  )
+  const activeFingerprints = new Set(
+    listWarmRuntimeBuckets(workerId)
+      .filter((bucket) => isWarmRuntimeBucketRecentlyActive(bucket.lastUsedAt))
+      .map((bucket) => bucket.configFingerprint),
+  )
+  const expiredIdleSlots = idleMaterializedSlots.filter((slot) =>
+    slot.configFingerprint && !activeFingerprints.has(slot.configFingerprint),
+  )
+  while (expiredIdleSlots.length > 0) {
+    const slot = expiredIdleSlots.pop()
+    if (!slot?.runtimeClient) continue
+    await coolDownWarmRuntimeSlot(slot)
+  }
+  const eligibleIdleSlots = idleMaterializedSlots.filter((slot) =>
+    !slot.configFingerprint || activeFingerprints.has(slot.configFingerprint),
+  )
+  while (eligibleIdleSlots.length > desiredReadyWarmRuntimeCount) {
+    const slot = eligibleIdleSlots.pop()
+    if (!slot?.runtimeClient) continue
+    await coolDownWarmRuntimeSlot(slot)
   }
 }
 
+async function coolDownWarmRuntimeSlot(slot: WarmPoolSlot) {
+  const client = slot.runtimeClient
+  if (!client || slot.leased || slot.preparingRuntime) return
+  // 中文/English: cooling down an idle warm runtime should keep the warm shell
+  // container/workspace but release the ACP process memory back to the worker.
+  slot.runtimeClient = undefined
+  slot.runtimeClientPromise = undefined
+  slot.configFingerprint = undefined
+  await client.close().catch(() => {})
+}
+
 async function warmMaterializedRuntimeClient(slot: WarmPoolSlot, client: AcpProcessClient) {
-  if (slot.leased) return
-  // 中文/English: pre-open one short-lived ACP session in the background so the
-  // first real user lease does not pay plugin/provider/skill bootstrap again.
+  if (slot.leased && (slot.leaseRefCount ?? 0) > 0) return
+  // 中文/English: pre-open one short-lived ACP session so the first real lease
+  // avoids repeating plugin/provider/skill bootstrap.
+  // 中文/English: session prewarm reserves a warm slot with `leased=true` but
+  // `leaseRefCount=0`. That reservation is not a live session yet, so it still
+  // must execute one bootstrap newSession/closeSession pair here.
   slot.preparingRuntime = true
   try {
-    await client.newSession(WARM_POOL_RUNTIME_CWD)
+    // 中文/English: bootstrap against the slot's mounted workspace layer rather
+    // than the repo root, otherwise ACP pays an unnecessary project bootstrap on
+    // `/workspace` before any real business session uses the slot.
+    await client.newSession(slot.visiblePath)
   } finally {
     try {
       await client.closeActiveSession()
@@ -417,7 +462,19 @@ function rememberWarmRuntimeDemand(workerId: string, configFingerprint: string, 
 }
 
 function listWarmRuntimeBuckets(workerId: string) {
-  return [...(warmRuntimeDemandByWorker.get(workerId)?.entries() || [])]
+  const localBuckets = mapDemandBuckets(warmRuntimeDemandByWorker.get(workerId))
+  if (localBuckets.length > 0) return localBuckets
+  return []
+}
+
+function mapDemandBuckets(
+  buckets: Map<string, {
+    configContent?: string
+    hitCount: number
+    lastUsedAt: number
+  }> | undefined,
+) {
+  return [...(buckets?.entries() || [])]
     .map(([configFingerprint, bucket]) => ({
       configFingerprint,
       configContent: bucket.configContent,
@@ -437,6 +494,113 @@ function hasReadyWarmRuntimeSlot(workerId: string, configFingerprint: string) {
     Boolean(slot.runtimeClient) &&
     slot.configFingerprint === configFingerprint,
   )
+}
+
+function countReadyWarmRuntimeSlots(workerId: string) {
+  return readWarmPool(workerId).filter((slot) =>
+    slot.ready &&
+    !slot.leased &&
+    !slot.preparingRuntime &&
+    Boolean(slot.runtimeClient),
+  ).length
+}
+
+function selectGenericWarmSlotForMaterialize(
+  slots: WarmPoolSlot[],
+  buckets: Array<{
+    configFingerprint: string
+    configContent?: string
+    lastUsedAt?: number
+  }>,
+  target: number,
+) {
+  const genericSlots = slots.filter((slot) =>
+    slot.ready
+    && !slot.leased
+    && !slot.preparingRuntime
+    && !slot.runtimeClient
+    && !slot.runtimeClientPromise
+    && !slot.configFingerprint,
+  )
+  if (!genericSlots.length) return
+  const genericReserve = readGenericWarmSlotReserve(slots, buckets, target)
+  return genericSlots.slice(0, Math.max(0, genericSlots.length - genericReserve))[0]
+}
+
+function readGenericWarmSlotReserve(
+  slots: WarmPoolSlot[],
+  buckets: Array<{
+    configFingerprint: string
+    configContent?: string
+    lastUsedAt?: number
+  }>,
+  target: number,
+) {
+  if (target <= 1) return 0
+  const readyGenericCount = countReadyGenericWarmPoolSlots(slots)
+  if (readyGenericCount <= 1) return 0
+  const hasReadyMaterializedSlot = buckets.some((bucket) =>
+    slots.some((slot) =>
+      slot.ready
+      && !slot.leased
+      && !slot.preparingRuntime
+      && Boolean(slot.runtimeClient)
+      && slot.configFingerprint === bucket.configFingerprint,
+    ),
+  )
+  if (buckets.length > 1) return GENERIC_WARM_SLOT_RESERVE
+  if (!hasReadyMaterializedSlot) return GENERIC_WARM_SLOT_RESERVE
+  return 0
+}
+
+function readDesiredReadyWarmRuntimeCount(
+  target: number,
+  buckets: Array<{
+    configFingerprint: string
+    configContent?: string
+    lastUsedAt?: number
+  }>,
+) {
+  // 中文/English: idle workers should keep warm shells only. Materialized ACP
+  // runtimes are created only after real config demand appears, otherwise each
+  // worker eagerly burns memory at startup before any user traffic arrives.
+  const activeBuckets = buckets.filter((bucket) => isWarmRuntimeBucketRecentlyActive(bucket.lastUsedAt))
+  if (!activeBuckets.length) return 0
+  // 中文/English: keep at most one long-lived materialized runtime per worker.
+  // Additional capacity stays as warm shells so we preserve quick container
+  // reuse without multiplying hundreds of MB of idle ACP heap per worker.
+  return Math.min(target, activeBuckets.length, 1)
+}
+
+function selectWarmRuntimeBucketForMaterialize(
+  slots: WarmPoolSlot[],
+  buckets: Array<{
+    configFingerprint: string
+    configContent?: string
+    lastUsedAt?: number
+  }>,
+) {
+  return buckets
+    .filter((bucket) => isWarmRuntimeBucketRecentlyActive(bucket.lastUsedAt))
+    .map((bucket) => ({
+      bucket,
+      readyCount: slots.filter((slot) =>
+        slot.ready &&
+        !slot.leased &&
+        !slot.preparingRuntime &&
+        Boolean(slot.runtimeClient) &&
+        slot.configFingerprint === bucket.configFingerprint,
+      ).length,
+    }))
+    .sort((left, right) => left.readyCount - right.readyCount)
+    .at(0)?.bucket
+}
+
+function isWarmRuntimeBucketRecentlyActive(lastUsedAt?: number) {
+  if (!lastUsedAt) return false
+  // 中文/English: only recently used configs keep a materialized ACP runtime.
+  // Long-idle workers fall back to warm shells so idle heap does not accumulate.
+  return Date.now() - lastUsedAt <= WARM_RUNTIME_IDLE_COOLDOWN_MS
 }
 
 async function withWarmRuntimeStepTimeout<T>(

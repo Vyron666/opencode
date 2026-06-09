@@ -46,7 +46,9 @@ const server = net.createServer((socket) => {
     }
     let childStopTimer
     let child = spawn("bun", [process.env.RUNTIME_SHELL_ACP_ENTRY, "acp", "--print-logs", "--cwd=" + (handshake.cwd || "${WARM_POOL_RUNTIME_CWD}")], {
-      cwd: process.env.RUNTIME_SHELL_ACP_SPAWN_CWD,
+      // 中文/English: start ACP inside the target sandbox workspace so upstream
+      // bootstrap does not materialize a separate repo-root instance first.
+      cwd: handshake.cwd || process.env.RUNTIME_SHELL_ACP_SPAWN_CWD,
       env: childEnv,
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -67,8 +69,8 @@ const server = net.createServer((socket) => {
       if (childStopTimer) clearTimeout(childStopTimer)
       socket.end()
     })
-    // 中文/English: a warm container can outlive many ACP sessions, so when the
-    // bridge socket goes away we must also stop the child process or memory drifts upward.
+    // 中文/English: warm containers can outlive many ACP sessions, so closing the
+    // bridge socket must also stop the child process to avoid heap drift.
     socket.once("close", stopChild)
     socket.once("end", stopChild)
     socket.once("error", stopChild)

@@ -1,29 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "deepseek": {
-      "name": "DeepSeek",
-      "api": "@ai-sdk/openai-compatible",
-      "options": {
-        "apiKey": "",
-        "baseURL": "https://api.deepseek.com/v1"
-      },
-      "models": {
-        "deepseek-v4-flash": {
-          "name": "DeepSeek V4 Flash",
-          "api": "deepseek-v4-flash"
-        },
-        "deepseek-v4-pro": {
-          "name": "DeepSeek V4 Pro",
-          "api": "deepseek-v4-pro"
-        }
-      }
-    }
-  },
-  "enabled_providers": [
-    "deepseek"
-  ],
-  "model": "deepseek/deepseek-v4-flash",
   "permission": {},
   "mcp": {}
 }

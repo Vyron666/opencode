@@ -5,6 +5,9 @@ type LocalWorkerComposeConfig = {
   count: number
   capacity: number
   warmPoolTarget: number
+  sandboxMemoryBytes: number
+  sandboxNanoCpus: number
+  sandboxPidsLimit: number
 }
 
 const runtimeShellDir = path.resolve(import.meta.dir, "..")
@@ -37,6 +40,9 @@ async function readConfig() {
   const count = Number(parsed.count)
   const capacity = Number(parsed.capacity)
   const warmPoolTarget = Number(parsed.warmPoolTarget ?? 0)
+  const sandboxMemoryBytes = Number(parsed.sandboxMemoryBytes ?? 1536 * 1024 * 1024)
+  const sandboxNanoCpus = Number(parsed.sandboxNanoCpus ?? 1_000_000_000)
+  const sandboxPidsLimit = Number(parsed.sandboxPidsLimit ?? 256)
   if (!Number.isInteger(count) || count < 1) {
     throw new Error(`local worker count must be a positive integer: ${count}`)
   }
@@ -46,15 +52,27 @@ async function readConfig() {
   if (!Number.isInteger(warmPoolTarget) || warmPoolTarget < 0) {
     throw new Error(`local worker warmPoolTarget must be a non-negative integer: ${warmPoolTarget}`)
   }
+  if (!Number.isInteger(sandboxMemoryBytes) || sandboxMemoryBytes < 268435456) {
+    throw new Error(`sandboxMemoryBytes must be an integer >= 268435456: ${sandboxMemoryBytes}`)
+  }
+  if (!Number.isInteger(sandboxNanoCpus) || sandboxNanoCpus < 250000000) {
+    throw new Error(`sandboxNanoCpus must be an integer >= 250000000: ${sandboxNanoCpus}`)
+  }
+  if (!Number.isInteger(sandboxPidsLimit) || sandboxPidsLimit < 64) {
+    throw new Error(`sandboxPidsLimit must be an integer >= 64: ${sandboxPidsLimit}`)
+  }
   return {
     count,
     capacity,
     warmPoolTarget,
+    sandboxMemoryBytes,
+    sandboxNanoCpus,
+    sandboxPidsLimit,
   } satisfies LocalWorkerComposeConfig
 }
 
 function buildCompose(config: LocalWorkerComposeConfig) {
-  const workerServices = Array.from({ length: config.count }, (_, index) => buildWorkerService(index + 1)).join("\n\n")
+  const workerServices = Array.from({ length: config.count }, (_, index) => buildWorkerService(index + 1, config)).join("\n\n")
   const dependsOn = Array.from({ length: config.count }, (_, index) => {
     const serviceName = readWorkerServiceName(index + 1)
     return `      ${serviceName}:\n        condition: service_started`
@@ -66,7 +84,7 @@ function buildCompose(config: LocalWorkerComposeConfig) {
         id: readWorkerId(workerIndex),
         workerCode: readWorkerId(workerIndex),
         name: readWorkerServiceName(workerIndex),
-        baseUrl: `http://${readWorkerServiceName(workerIndex)}:4096`,
+        baseUrl: `http://${readWorkerServiceName(workerIndex)}:4097`,
         agentBaseUrl: `http://${readWorkerServiceName(workerIndex)}:4097`,
         capacity: config.capacity,
         version: `local-${workerIndex}`,
@@ -114,6 +132,7 @@ ${dependsOn}
       RUNTIME_SHELL_PORT: 3000
       # 中文/English: browser-facing package URLs must use the published host port.
       RUNTIME_SHELL_PUBLIC_BASE_URL: http://127.0.0.1:3100
+      RUNTIME_SHELL_INTERNAL_BASE_URL: http://runtime-shell:3000
       RUNTIME_SHELL_ADMIN_USERNAME: admin
       RUNTIME_SHELL_ADMIN_PASSWORD: change-me
       RUNTIME_SHELL_SESSION_COOKIE: runtime_shell_session
@@ -123,7 +142,7 @@ ${dependsOn}
       RUNTIME_SHELL_DB_DIALECT: postgres
       RUNTIME_SHELL_DB_URL: postgresql://postgres:change-me@postgres:5432/runtime_shell
       RUNTIME_SHELL_DB_SSL_MODE: disable
-      OPENCODE_BASE_URL: http://${readWorkerServiceName(1)}:4096
+      OPENCODE_BASE_URL: http://${readWorkerServiceName(1)}:4097
       RUNTIME_SHELL_WORKER_EXECUTION_MODE: remote
       RUNTIME_SHELL_WORKER_AGENT_TOKEN: change-me-worker-agent
       # 中文/English: runtime-shell must observe the same sandbox backend as workers,
@@ -157,7 +176,7 @@ ${dependsOn}
 `
 }
 
-function buildWorkerService(workerIndex: number) {
+function buildWorkerService(workerIndex: number, config: LocalWorkerComposeConfig) {
   const serviceName = readWorkerServiceName(workerIndex)
   return `  ${serviceName}:
     build:
@@ -187,11 +206,13 @@ function buildWorkerService(workerIndex: number) {
       # Production must replace this with an egress proxy or a network policy allowlist.
       RUNTIME_SHELL_SANDBOX_NETWORK_MODE: runtime-shell_default
       RUNTIME_SHELL_SANDBOX_USER: "1000:1000"
+      RUNTIME_SHELL_SANDBOX_MEMORY_BYTES: "${config.sandboxMemoryBytes}"
+      RUNTIME_SHELL_SANDBOX_NANO_CPUS: "${config.sandboxNanoCpus}"
+      RUNTIME_SHELL_SANDBOX_PIDS_LIMIT: "${config.sandboxPidsLimit}"
     # 中文/English: do not publish the worker port to host by default.
-    # runtime-shell connects via the compose network (${`http://${serviceName}:4096`}),
+    # runtime-shell connects via the compose network (${`http://${serviceName}:4097`}),
     # avoiding "port already allocated" on developer machines.
     expose:
-      - "4096"
       - "4097"
     volumes:
       - ${readWorkerDataDir(workerIndex)}:/root/.local/share/opencode
@@ -199,7 +220,7 @@ function buildWorkerService(workerIndex: number) {
       - ${composeWorkspaceDir}:${containerWorkspaceDir}
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /workspace
-    entrypoint: ["bash", "/workspace/runtime-shell/server/src/worker-agent/start-worker.sh"]`
+    entrypoint: ["bun", "/workspace/runtime-shell/server/src/worker-agent/index.ts"]`
 }
 
 function readWorkerServiceName(workerIndex: number) {

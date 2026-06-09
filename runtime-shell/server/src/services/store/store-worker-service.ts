@@ -23,6 +23,14 @@ export class StoreWorkerService {
     })
   }
 
+  async markWorkerOfflineIfHeartbeatExpired(workerId: string, expireBefore: string) {
+    return WorkerRepo.markWorkerOfflineIfHeartbeatExpired(workerId, expireBefore)
+  }
+
+  async refreshWorkerLoad(workerId: string, activeSessionCount: number) {
+    return WorkerRepo.refreshWorkerLoad(workerId, activeSessionCount)
+  }
+
   async registerWorker(input: {
     workerId?: string
     tenantId?: string

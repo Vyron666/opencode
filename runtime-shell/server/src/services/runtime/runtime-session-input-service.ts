@@ -1,7 +1,8 @@
-import { cancelRuntimePrompt, getRuntime, openRealRuntime, publishRuntimeEvent } from "../../acp-runtime-manager"
+import { cancelRuntimePrompt, getRuntime, publishRuntimeEvent } from "../../acp-runtime-manager"
 import type { inputPartSchema } from "../../http/schemas"
 import { createLogger } from "../../log"
 import type { User } from "../../types"
+import { openSessionWithFallback } from "../session/session-runtime-service"
 import { requireRuntimeSessionWorkspace } from "../workspace/workspace-access-service"
 import { requireSessionAction } from "../session/session-access-service"
 import { requireQuotaForRuntimeOperation } from "../sandbox/sandbox-quota-service"
@@ -56,7 +57,12 @@ export async function submitPromptForUser(input: {
     },
   })
   const hadLiveRuntime = Boolean(getRuntime(result.session.id))
-  const runtime = getRuntime(result.session.id) ?? (await openRealRuntime(workspaceResult.session))
+  if (!hadLiveRuntime) {
+    // 中文/English: reconnecting into an existing business session must first
+    // restore the original ACP session instead of creating a fresh prompt target.
+    await openSessionWithFallback(workspaceResult.session)
+  }
+  const runtime = getRuntime(result.session.id)
   if (!runtime || runtime.transport !== "real") {
     await markRuntimeOperationFailed(operation.id, "runtime not active")
     return { ok: false as const, reason: "runtime_not_active" }

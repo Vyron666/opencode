@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { api } from '../../api'
 import { ConfigHistoryPanel, McpConfigPanel, ProviderConfigPanel, SkillConfigPanel, WorkerOverviewPanel } from './admin-settings-panels'
@@ -7,91 +7,24 @@ import { ModelSettingPanel, ConfigSettingPanel } from './runtime-settings-panels
 import { WorkspaceSharePanel } from './workspace-share-panel'
 import { useViewerContext } from './sidebar-support'
 
-function DetailSection({ title, description, onBack, children }) {
-  return (
-    <section className="rounded-[22px] bg-[#f4f7ff] px-4 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[18px] font-semibold text-[#18233b]">{title}</div>
-          {description ? <div className="mt-1 text-[12px] leading-6 text-[#70809c]">{description}</div> : null}
-        </div>
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded-[10px] bg-white px-3 py-2 text-[12px] font-semibold text-[#61718d] transition-colors hover:bg-[#edf2ff]"
-        >
-          返回总览
-        </button>
-      </div>
-      <div className="mt-4 grid gap-3">{children}</div>
-    </section>
-  )
-}
-
-function OverviewCard({ title, actionLabel, onAction, children }) {
-  return (
-    <section className="rounded-[22px] bg-[#f4f7ff] px-4 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-[16px] font-semibold text-[#18233b]">{title}</div>
-        <button
-          type="button"
-          onClick={onAction}
-          className="rounded-[10px] bg-white px-3 py-1.5 text-[12px] font-medium text-[#3566df] transition-colors hover:bg-[#edf2ff]"
-        >
-          {actionLabel}
-        </button>
-      </div>
-      <div className="mt-3 grid gap-2.5 rounded-[18px] p-1">{children}</div>
-    </section>
-  )
-}
-
-function SummaryRow({ leadingColor = '#3566df', title, description, strong = false, trailing }) {
-  return (
-    <div
-      className={`flex items-center justify-between gap-3 rounded-[13px] border px-3 py-3 ${
-        strong ? 'border-[#7aa1ff] bg-white shadow-[inset_0_0_0_1px_rgba(94,143,255,0.22)]' : 'border-[#d9e4fb] bg-white'
-      }`}
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="inline-block h-5 w-5 shrink-0 rounded-[6px]" style={{ background: leadingColor }} />
-        <div className="min-w-0">
-          <div className="truncate text-[14px] font-semibold text-[#24324a]">{title}</div>
-          {description ? <div className="mt-1 truncate text-[12px] text-[#7c8aa5]">{description}</div> : null}
-        </div>
-      </div>
-      {trailing ? <div className="shrink-0 text-[12px] text-[#7c8aa5]">{trailing}</div> : null}
-    </div>
-  )
-}
-
-function ToggleRow({ title, enabled }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-[13px] border border-[#d9e4fb] bg-white px-3 py-3">
-      <div className={`truncate text-[14px] ${enabled ? 'font-semibold text-[#24324a]' : 'text-[#8ea0bb]'}`}>{title}</div>
-      <span className={`relative h-7 w-11 rounded-full transition-colors ${enabled ? 'bg-[#12a06f]' : 'bg-[#c8d3e5]'}`}>
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${enabled ? 'left-[22px]' : 'left-1'}`} />
-      </span>
-    </div>
-  )
-}
-
-function StatusRow({ title, enabled }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-[13px] border border-[#d9e4fb] bg-white px-3 py-3">
-      <div className="inline-flex min-w-0 items-center gap-2">
-        <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${enabled ? 'bg-[#12a06f]' : 'bg-[#cad5e5]'}`} />
-        <span className="truncate text-[14px] font-semibold text-[#24324a]">{title}</span>
-      </div>
-      <span className={`text-[12px] ${enabled ? 'text-[#12a06f]' : 'text-[#8ea0bb]'}`}>{enabled ? '已连接' : '未启用'}</span>
-    </div>
-  )
-}
+const SECTION_TABS = [
+  { id: 'overview', label: '概览' },
+  { id: 'provider', label: 'Provider' },
+  { id: 'skill', label: 'Skill' },
+  { id: 'mcp', label: 'MCP' },
+  { id: 'workspace', label: '工作区' },
+  { id: 'runtime', label: '运行时' },
+  { id: 'system', label: '系统' },
+]
 
 export default function SettingsDrawer({ open, activeSection = 'overview', onClose }) {
   const { canManageProviderSettings } = useViewerContext()
   const [focusedSection, setFocusedSection] = useState(activeSection || 'overview')
-  const [summary, setSummary] = useState(createEmptySummary())
+  const [summary, setSummary] = useState({
+    providerCount: 0,
+    skillCount: 0,
+    mcpCount: 0,
+  })
 
   useEffect(() => {
     if (!open) return
@@ -102,19 +35,16 @@ export default function SettingsDrawer({ open, activeSection = 'overview', onClo
     if (!open || !canManageProviderSettings) return
     let cancelled = false
 
-    // 中文/English: fetch lightweight summary data so the drawer keeps a single
-    // clear overview page instead of stacking a second settings version below it.
     void Promise.all([
       api.providerConfig.get().catch(() => ({ items: [] })),
-      api.skillConfig.get().catch(() => ({ items: [], paths: [], urls: [] })),
-      api.skillPackage.list().catch(() => ({ items: [] })),
+      api.skillConfig.get().catch(() => ({ items: [] })),
       api.mcpConfig.get().catch(() => ({ items: [] })),
-    ]).then(([providerData, skillConfigData, skillPackageData, mcpData]) => {
+    ]).then(([providerData, skillData, mcpData]) => {
       if (cancelled) return
       setSummary({
-        providers: normalizeProviderSummary(providerData.items),
-        skills: normalizeSkillSummary(skillConfigData.items, skillPackageData.items),
-        mcpServers: normalizeMcpSummary(mcpData.items),
+        providerCount: Array.isArray(providerData.items) ? providerData.items.length : 0,
+        skillCount: Array.isArray(skillData.items) ? skillData.items.length : 0,
+        mcpCount: Array.isArray(mcpData.items) ? mcpData.items.length : 0,
       })
     })
 
@@ -122,15 +52,6 @@ export default function SettingsDrawer({ open, activeSection = 'overview', onClo
       cancelled = true
     }
   }, [canManageProviderSettings, open])
-
-  const extraSections = useMemo(
-    () => [
-      { id: 'workspace', label: '工作区与会话' },
-      { id: 'runtime', label: '运行时' },
-      { id: 'system', label: '系统概览' },
-    ],
-    [],
-  )
 
   return (
     <AnimatePresence>
@@ -140,124 +61,95 @@ export default function SettingsDrawer({ open, activeSection = 'overview', onClo
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
-          className="fixed inset-0 z-40 bg-[rgba(15,23,42,0.22)] backdrop-blur-sm"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-[rgba(15,23,42,0.22)] p-4 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.aside
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 20, opacity: 0 }}
+            initial={{ y: 16, opacity: 0, scale: 0.985 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 16, opacity: 0, scale: 0.985 }}
             transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-            className="absolute left-1/2 top-4 flex h-[min(860px,calc(100vh-32px))] w-[min(460px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.18)]"
+            className="flex h-[min(920px,calc(100vh-32px))] w-[min(980px,calc(100vw-32px))] flex-col overflow-hidden rounded-[32px] bg-white shadow-[0_32px_90px_rgba(15,23,42,0.20)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex shrink-0 items-start justify-between gap-3 px-6 pb-4 pt-6">
-              <div>
-                <div className="text-[28px] font-bold tracking-[-0.02em] text-[#18233b]">⚙ 设置</div>
+            <div className="shrink-0 border-b border-[#ebf1fe] px-7 pb-5 pt-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="grid gap-1">
+                  <div className="text-[30px] font-bold tracking-[-0.02em] text-[#18233b]">设置</div>
+                  <div className="text-[13px] text-[#70809c]">统一管理 Provider、Skill、MCP 和运行时配置。</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="关闭设置"
+                  className="grid h-11 w-11 place-items-center rounded-[14px] bg-[#f3f6ff] text-[#6f7f99] transition-colors hover:bg-[#e9efff]"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="关闭设置"
-                className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#f3f6ff] text-[#6f7f99] transition-colors hover:bg-[#e9efff]"
-              >
-                ×
-              </button>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {SECTION_TABS.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => setFocusedSection(section.id)}
+                    className={`rounded-full px-4 py-2 text-[13px] font-semibold transition-colors ${
+                      focusedSection === section.id
+                        ? 'bg-[#3566df] text-white shadow-[0_12px_24px_rgba(53,102,223,0.18)]'
+                        : 'bg-[#f4f7ff] text-[#61718d] hover:bg-[#edf2ff]'
+                    }`}
+                  >
+                    {section.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6" style={{ scrollbarGutter: 'stable both-edges' }}>
+            <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-7 pt-6">
               {focusedSection === 'overview' ? (
-                <div className="grid gap-4">
-                  <OverviewCard title="🔌 Provider" actionLabel="+ 配置 Provider" onAction={() => setFocusedSection('provider')}>
-                    {summary.providers.length > 0 ? (
-                      summary.providers.slice(0, 3).map((provider, index) => (
-                        <SummaryRow
-                          key={`${provider.providerId}-${index}`}
-                          leadingColor={provider.color}
-                          title={provider.name}
-                          description={provider.description}
-                          trailing={provider.meta}
-                          strong={index === 0}
-                        />
-                      ))
-                    ) : (
-                      <SummaryRow leadingColor="#cad5e5" title="还没有 Provider" description="去配置模型与鉴权信息" />
-                    )}
-                  </OverviewCard>
-
-                  <OverviewCard title="🧩 Skills" actionLabel="+ 上传新 Skill 包" onAction={() => setFocusedSection('skill')}>
-                    {summary.skills.length > 0 ? (
-                      summary.skills.slice(0, 4).map((skill) => <ToggleRow key={skill.id} title={skill.name} enabled={skill.enabled} />)
-                    ) : (
-                      <ToggleRow title="暂无 Skill 包" enabled={false} />
-                    )}
-                  </OverviewCard>
-
-                  <OverviewCard title="🔗 MCP 服务器" actionLabel="+ 添加 MCP 服务器" onAction={() => setFocusedSection('mcp')}>
-                    {summary.mcpServers.length > 0 ? (
-                      summary.mcpServers.slice(0, 4).map((server) => <StatusRow key={server.name} title={server.name} enabled={server.enabled} />)
-                    ) : (
-                      <StatusRow title="暂无 MCP 服务" enabled={false} />
-                    )}
-                  </OverviewCard>
-
-                  <section className="rounded-[22px] bg-[#f4f7ff] px-4 py-4">
-                    <div className="text-[16px] font-semibold text-[#18233b]">更多设置</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {extraSections.map((section) => (
-                        <button
-                          key={section.id}
-                          type="button"
-                          onClick={() => setFocusedSection(section.id)}
-                          className="rounded-[12px] bg-white px-3.5 py-2 text-[13px] font-medium text-[#61718d] transition-colors hover:bg-[#edf2ff]"
-                        >
-                          {section.label}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                </div>
+                <OverviewGrid summary={summary} onSelect={setFocusedSection} />
               ) : null}
 
               {focusedSection === 'provider' ? (
-                <DetailSection title="Provider 配置" description="管理模型列表、API Key 与默认模型。" onBack={() => setFocusedSection('overview')}>
+                <PanelShell title="Provider 配置" description="系统模板只用于设置页配置；聊天模型下拉只显示真实可用配置和平台免费模型。">
                   <ProviderConfigPanel />
-                </DetailSection>
+                </PanelShell>
               ) : null}
 
               {focusedSection === 'skill' ? (
-                <DetailSection title="Skill 配置" description="管理 Skill 包、路径与远程地址。" onBack={() => setFocusedSection('overview')}>
+                <PanelShell title="Skill 配置" description="管理 Skill 包、路径和远程地址。">
                   <SkillConfigPanel />
-                </DetailSection>
+                </PanelShell>
               ) : null}
 
               {focusedSection === 'mcp' ? (
-                <DetailSection title="MCP 配置" description="维护本地或远程 MCP 服务连接。" onBack={() => setFocusedSection('overview')}>
+                <PanelShell title="MCP 配置" description="查看平台共享 MCP，并维护自己的私有 MCP。">
                   <McpConfigPanel />
-                </DetailSection>
+                </PanelShell>
               ) : null}
 
               {focusedSection === 'workspace' ? (
-                <DetailSection title="工作区与会话" description="创建工作区、新建会话与管理共享关系。" onBack={() => setFocusedSection('overview')}>
+                <PanelShell title="工作区与会话" description="创建工作区、创建会话、分支会话和管理共享关系。">
                   <CreateWorkspacePanel />
                   <CreateSessionPanel />
                   <ForkSessionPanel />
                   <WorkspaceSharePanel />
-                </DetailSection>
+                </PanelShell>
               ) : null}
 
               {focusedSection === 'runtime' ? (
-                <DetailSection title="运行时" description="切换模型、模式与当前会话参数。" onBack={() => setFocusedSection('overview')}>
+                <PanelShell title="运行时设置" description="切换当前会话的模型、模式和运行时选项。">
                   <ModelSettingPanel />
                   <ConfigSettingPanel />
-                </DetailSection>
+                </PanelShell>
               ) : null}
 
               {focusedSection === 'system' ? (
-                <DetailSection title="系统概览" description="查看 Worker 状态与配置历史。" onBack={() => setFocusedSection('overview')}>
+                <PanelShell title="系统概览" description="查看 Worker 状态和配置变更历史。">
                   <WorkerOverviewPanel />
                   <ConfigHistoryPanel />
-                </DetailSection>
+                </PanelShell>
               ) : null}
             </div>
           </motion.aside>
@@ -267,64 +159,72 @@ export default function SettingsDrawer({ open, activeSection = 'overview', onClo
   )
 }
 
-function createEmptySummary() {
-  return {
-    providers: [],
-    skills: [],
-    mcpServers: [],
-  }
+function OverviewGrid({ summary, onSelect }) {
+  const cards = [
+    {
+      id: 'provider',
+      title: 'Provider',
+      description: '模板与真实配置严格分离',
+      value: `${summary.providerCount} 项`,
+    },
+    {
+      id: 'skill',
+      title: 'Skill',
+      description: '统一查看平台共享与私有技能',
+      value: `${summary.skillCount} 项`,
+    },
+    {
+      id: 'mcp',
+      title: 'MCP',
+      description: '共享配置和私有配置同面板管理',
+      value: `${summary.mcpCount} 项`,
+    },
+    {
+      id: 'workspace',
+      title: '工作区',
+      description: '创建工作区、会话和共享关系',
+      value: '进入管理',
+    },
+    {
+      id: 'runtime',
+      title: '运行时',
+      description: '切换模型、模式和会话选项',
+      value: '进入管理',
+    },
+    {
+      id: 'system',
+      title: '系统',
+      description: '查看 Worker 和配置历史',
+      value: '进入管理',
+    },
+  ]
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {cards.map((card) => (
+        <button
+          key={card.id}
+          type="button"
+          onClick={() => onSelect(card.id)}
+          className="grid gap-2 rounded-[24px] border border-[#dbe6fb] bg-[#f7faff] px-5 py-5 text-left transition-colors hover:bg-[#f1f6ff]"
+        >
+          <div className="text-[17px] font-semibold text-[#18233b]">{card.title}</div>
+          <div className="text-[13px] leading-6 text-[#70809c]">{card.description}</div>
+          <div className="text-[13px] font-semibold text-[#3566df]">{card.value}</div>
+        </button>
+      ))}
+    </div>
+  )
 }
 
-function normalizeProviderSummary(items) {
-  if (!Array.isArray(items)) return []
-  const providers = items.filter(Boolean)
-  const preferred = providers.find((item) => item.source === 'user_private') || providers[0]
-  if (!preferred) return []
-
-  const colors = ['#3566df', '#6c67e8', '#12a06f']
-  return preferred.models?.length
-    ? preferred.models.map((model, index) => ({
-        providerId: preferred.providerId || `provider-${index}`,
-        name: model.name || model.id || preferred.name || preferred.providerId || 'Provider',
-        description: readProviderDescription(model, index),
-        meta: index === 0 ? '推荐' : model.api || '可用',
-        color: colors[index % colors.length],
-      }))
-    : [
-        {
-          providerId: preferred.providerId || 'provider',
-          name: preferred.name || preferred.providerId || 'Provider',
-          description: preferred.defaultModel || '已配置',
-          meta: '已启用',
-          color: colors[0],
-        },
-      ]
-}
-
-function normalizeSkillSummary(configItems, packages) {
-  const configUrls = new Set((Array.isArray(configItems) ? configItems : []).filter((item) => item.type === 'url').map((item) => item.value))
-  if (!Array.isArray(packages) || packages.length === 0) return []
-  return packages.map((item) => ({
-    id: item.id,
-    name: item.displayName || item.skillName || item.id,
-    enabled: !item.url || configUrls.size === 0 ? true : configUrls.has(item.url),
-  }))
-}
-
-function normalizeMcpSummary(items) {
-  if (!Array.isArray(items)) return []
-  const preferred = items.filter((item) => item.source === 'user_private')
-  const source = preferred.length ? preferred : items
-  return source.map((item) => ({
-    name: item.name || 'MCP',
-    enabled: item.enabled !== false,
-  }))
-}
-
-function readProviderDescription(model, index) {
-  const label = String(model?.name || model?.id || '').toLowerCase()
-  if (label.includes('flash')) return '快速响应'
-  if (label.includes('kimi')) return '长上下文'
-  if (label.includes('v4') || index === 0) return '高速推理'
-  return '可用于对话'
+function PanelShell({ title, description, children }) {
+  return (
+    <section className="grid gap-4 rounded-[26px] bg-[#f4f7ff] px-5 py-5">
+      <div className="grid gap-1">
+        <div className="text-[22px] font-semibold text-[#18233b]">{title}</div>
+        <div className="text-[13px] leading-6 text-[#70809c]">{description}</div>
+      </div>
+      <div className="grid gap-4">{children}</div>
+    </section>
+  )
 }

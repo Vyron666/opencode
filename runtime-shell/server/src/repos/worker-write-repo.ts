@@ -147,3 +147,59 @@ export async function updateWorker(workerId: string, patch: Partial<WorkerNode>)
   )
   return findWorkerById(workerId)
 }
+
+export async function markWorkerOfflineIfHeartbeatExpired(workerId: string, expireBefore: string) {
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE worker_node
+      SET
+        status = 'offline',
+        updated_at = ?,
+        updated_by = ?
+      WHERE id = ?
+        AND last_heartbeat_at < ?
+        AND status IN ('registering', 'ready', 'busy', 'degraded', 'offline', 'draining')
+        AND deleted_at IS NULL
+    `,
+    [
+      now(),
+      "system_worker",
+      workerId,
+      expireBefore,
+    ],
+  )
+  const updated = await findWorkerById(workerId)
+  if (!updated) return false
+  // 中文/English: governance must only treat the worker as offline when the
+  // persisted heartbeat is still stale after the conditional update finishes.
+  return updated.status === "offline" && new Date(updated.lastHeartbeatAt).getTime() < new Date(expireBefore).getTime()
+}
+
+export async function refreshWorkerLoad(workerId: string, activeSessionCount: number) {
+  const timestamp = now()
+  await getRuntimeDatabaseClient().execute(
+    `
+      UPDATE worker_node
+      SET
+        active_session_count = ?,
+        status = CASE
+          WHEN status = 'ready' AND ? >= capacity THEN 'busy'
+          WHEN status = 'busy' AND ? < capacity THEN 'ready'
+          ELSE status
+        END,
+        updated_at = ?,
+        updated_by = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `,
+    [
+      activeSessionCount,
+      activeSessionCount,
+      activeSessionCount,
+      timestamp,
+      "system_worker",
+      workerId,
+    ],
+  )
+  return findWorkerById(workerId)
+}

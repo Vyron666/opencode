@@ -119,6 +119,9 @@ export type BusinessSession = {
   createdAt: string
   updatedAt: string
   lastEventAt?: string
+  clientConnectedCount?: number
+  lastClientSeenAt?: string
+  lastClientDisconnectedAt?: string
   binding?: AcpBinding
   capabilityState?: SessionCapabilityState
 }

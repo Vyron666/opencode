@@ -104,6 +104,14 @@ export function registerSkillPackageRoutes(app: Hono) {
     return c.json(buildSkillIndexPayload([pkg]))
   })
 
+  app.get("/api/skill-package/content/:token/index.json", async (c) => {
+    const pkg = findSkillPackageByToken(c.req.param("token"))
+    if (!pkg) return c.notFound()
+    // 中文/English: opencode skill discovery appends index.json automatically,
+    // so runtime-shell needs to expose the same payload on both URL shapes.
+    return c.json(buildSkillIndexPayload([pkg]))
+  })
+
   app.get("/api/skill-package/content/:token/:skillName", async (c) => {
     const asset = await resolveSkillAsset({
       token: c.req.param("token"),

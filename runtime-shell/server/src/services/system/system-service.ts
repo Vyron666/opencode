@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises"
 import path from "node:path"
 import { Config } from "../../config"
 import { closeRuntime } from "../../acp-runtime-manager"
+import { isSystemWarmPoolSandboxInstance } from "../../lib/sandbox-instance-kind"
 import type { User } from "../../types"
 import { getOpencodeHealth } from "../../opencode"
 import * as SandboxInstanceRepo from "../../repos/sandbox-instance-repo"
@@ -109,8 +110,8 @@ export async function closeSandboxForUser(input: {
   if (!authorization.ok) return { ok: false as const, reason: "forbidden" }
   const sandbox = await SandboxInstanceRepo.findSandboxInstanceById(input.sandboxId)
   if (!sandbox) return { ok: false as const, reason: "sandbox_not_found" }
-  if (sandbox.detail?.source === "warm_pool") {
-    const slotId = typeof sandbox.detail.slotId === "string" ? sandbox.detail.slotId : ""
+  if (isSystemWarmPoolSandboxInstance(sandbox)) {
+    const slotId = readWarmPoolSlotId(sandbox.detail)
     if (!slotId) return { ok: false as const, reason: "invalid_warm_pool_slot" }
     const worker = Config.localWorkers.find((item) => item.id === sandbox.workerId)
     if (!worker) return { ok: false as const, reason: "worker_not_found" }
@@ -150,6 +151,13 @@ export async function closeSandboxForUser(input: {
   }
 }
 
+function readWarmPoolSlotId(detail: Record<string, unknown> | undefined) {
+  if (!detail) return ""
+  if (typeof detail.slotId === "string") return detail.slotId
+  if (typeof detail.poolSlotId === "string") return detail.poolSlotId
+  return ""
+}
+
 export async function cleanupSandboxesForUser(input: {
   user: User
   limit: number
@@ -164,7 +172,7 @@ export async function cleanupSandboxesForUser(input: {
 
   for (const sandbox of sandboxes) {
     if (cleanedSessionIds.length >= input.limit) break
-    if (sandbox.detail?.source === "warm_pool") continue
+    if (isSystemWarmPoolSandboxInstance(sandbox)) continue
     const session = await sessionService.getSession(sandbox.businessSessionId)
     if (!session || !sessionStatusAllowlist.has(session.status)) continue
     if (sandbox.status !== "closed") {

@@ -124,7 +124,7 @@ export default function LeftSidebar({ onOpenSettings }) {
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1" style={{ scrollbarGutter: 'stable' }}>
             <div className="grid gap-2">
               {filteredSessions.length === 0 ? (
                 <div className="rounded-[15px] border border-dashed border-[#cfdbf5] bg-white px-4 py-6 text-center text-xs text-[#7c8aa5]">
